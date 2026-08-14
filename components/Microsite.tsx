@@ -1,0 +1,358 @@
+import type { CSSProperties } from 'react';
+import { KV_PATTERNS, type Theme } from '@/lib/theme';
+import type { Density, EventInfo, KvPattern, Session } from '@/lib/types';
+
+const MONO = 'ui-monospace, monospace';
+
+interface MicrositeProps {
+  theme: Theme;
+  sessions: Session[];
+  icons: string[];
+  event: EventInfo;
+  kv?: string;
+  kvPattern?: KvPattern;
+  density?: Density;
+  wide?: boolean;
+}
+
+const FILES = [
+  { name: 'Early Intervention Strategies with ATELOVAN', meta: '24p' },
+  { name: 'Long-Term Adherence: RWE Review', meta: '18p' },
+];
+
+export default function Microsite({
+  theme: t,
+  sessions,
+  icons,
+  event: ev,
+  kv = '',
+  kvPattern = 'stripe',
+  density = '기본',
+  wide = false,
+}: MicrositeProps) {
+  const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
+  const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
+
+  const bg = kv ? `url("${kv}") center/cover` : KV_PATTERNS[kvPattern](t);
+  const heroFg = `oklch(0.985 0.006 ${t.h})`;
+
+  const sectionLabel: CSSProperties = {
+    fontFamily: MONO,
+    fontSize: 10,
+    letterSpacing: '0.16em',
+    color: t.muted,
+    margin: '0 0 11px',
+    textTransform: 'uppercase',
+  };
+
+  const numberIcons = icons[0].length > 1;
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'auto',
+        background: t.bg,
+        color: t.ink,
+        fontFamily: "Pretendard, 'Helvetica Neue', Helvetica, sans-serif",
+        letterSpacing: '-0.01em',
+      }}
+    >
+      <div style={{ position: 'relative', height: wide ? 244 : 210, background: bg, overflow: 'hidden' }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(to bottom, ${
+              t.mode === 'dark'
+                ? 'oklch(0 0 0 / 0.28), oklch(0 0 0 / 0.7)'
+                : 'oklch(0 0 0 / 0.18), oklch(0 0 0 / 0.58)'
+            })`,
+          }}
+        />
+        <div
+          style={{
+            position: 'relative',
+            padding: '22px 20px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 7,
+                background: heroFg,
+                color: `oklch(0.26 0.02 ${t.h})`,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              S
+            </div>
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                letterSpacing: '0.16em',
+                color: heroFg,
+                opacity: 0.92,
+                textTransform: 'uppercase',
+              }}
+            >
+              {ev.brandLabel || 'SYMPO STUDIO'}
+            </div>
+          </div>
+          <div>
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 11.5,
+                letterSpacing: '0.1em',
+                color: heroFg,
+                opacity: 0.86,
+                marginBottom: 7,
+              }}
+            >
+              {(ev.date || '2026-08-15').replace(/-/g, '. ')}
+            </div>
+            <div
+              style={{
+                fontSize: wide ? 30 : 25,
+                fontWeight: 750,
+                letterSpacing: '-0.035em',
+                lineHeight: 1.2,
+                color: heroFg,
+                textWrap: 'pretty',
+                marginBottom: 8,
+              }}
+            >
+              {ev.title || 'MERIDIAN 심포지엄'}
+            </div>
+            <div style={{ fontSize: 12.5, color: heroFg, opacity: 0.88 }}>
+              {ev.venue || '아르떼 호텔 서울'} · {ev.host || '좌장 서정우'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          background: t.surface,
+          borderBottom: `1px solid ${t.line}`,
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+        }}
+      >
+        {['아젠다', '자료', 'Q&A', '설문'].map((label, i) => (
+          <div
+            key={label}
+            style={{
+              height: 60,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              cursor: 'pointer',
+              color: i === 0 ? t.brand : t.muted,
+              borderBottom: `3px solid ${i === 0 ? t.brand : 'transparent'}`,
+            }}
+          >
+            <div
+              style={{
+                fontSize: numberIcons ? 12 : 16,
+                lineHeight: 1,
+                fontFamily: numberIcons ? MONO : 'inherit',
+                fontWeight: 700,
+              }}
+            >
+              {icons[i]}
+            </div>
+            <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        style={{
+          padding: wide ? '22px 28px 32px' : '18px 16px 28px',
+          maxWidth: wide ? 760 : 'none',
+          margin: '0 auto',
+        }}
+      >
+        <div style={sectionLabel}>아젠다</div>
+        <ol
+          style={{
+            listStyle: 'none',
+            margin: '0 0 24px',
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap,
+          }}
+        >
+          {sessions.map((s) => (
+            <li
+              key={s.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+                background: t.surface,
+                border: `1px solid ${t.line}`,
+                borderRadius: 13,
+                padding: `${pad}px 13px`,
+              }}
+            >
+              <div
+                style={{
+                  width: 46,
+                  flex: '0 0 46px',
+                  fontFamily: MONO,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '-0.03em',
+                  color: t.brand,
+                  paddingTop: 1,
+                }}
+              >
+                {s.time}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 650,
+                    lineHeight: 1.4,
+                    letterSpacing: '-0.02em',
+                    color: t.ink,
+                    textWrap: 'pretty',
+                  }}
+                >
+                  {s.title}
+                </div>
+                <div style={{ fontSize: 12, color: t.muted, marginTop: 4, lineHeight: 1.45 }}>{s.speaker}</div>
+              </div>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  color: t.muted,
+                  background: t.soft,
+                  padding: '4px 6px',
+                  borderRadius: 5,
+                  flex: '0 0 auto',
+                }}
+              >
+                {s.kind}
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        <div style={sectionLabel}>자료</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {FILES.map((f) => (
+            <div
+              key={f.name}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                background: t.surface,
+                border: `1px solid ${t.line}`,
+                borderRadius: 13,
+                padding: '12px 13px',
+                cursor: 'pointer',
+              }}
+            >
+              <div
+                style={{
+                  width: 34,
+                  height: 40,
+                  flex: '0 0 34px',
+                  borderRadius: 7,
+                  background: t.soft,
+                  color: t.brand,
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontFamily: MONO,
+                  fontSize: 8,
+                  fontWeight: 800,
+                }}
+              >
+                PDF
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13.5,
+                    fontWeight: 650,
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.35,
+                    color: t.ink,
+                  }}
+                >
+                  {f.name}
+                </div>
+                <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>{f.meta} · 앱 내 열람</div>
+              </div>
+              <div style={{ color: t.muted, fontSize: 14 }}>→</div>
+            </div>
+          ))}
+        </div>
+
+        {ev.engage.qa !== false && (
+          <div
+            style={{
+              height: 54,
+              borderRadius: 14,
+              background: t.brand,
+              color: t.onBrand,
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 14.5,
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+              cursor: 'pointer',
+              marginBottom: 10,
+            }}
+          >
+            질문 남기기
+          </div>
+        )}
+        {ev.engage.survey !== false && (
+          <div
+            style={{
+              height: 54,
+              borderRadius: 14,
+              background: 'transparent',
+              border: `1px solid ${t.line}`,
+              color: t.ink,
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 14,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              cursor: 'pointer',
+            }}
+          >
+            설문 참여 · 2분
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

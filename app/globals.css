@@ -1,0 +1,89 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: oklch(0.968 0.002 250);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+}
+
+a {
+  color: oklch(0.22 0.008 250);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  color: oklch(0.45 0.008 250);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.88 0.004 250);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* 디자인의 style-hover / style-focus 대응 (인라인 스타일 위에서 동작하도록 !important) */
+.hv-bg965:hover {
+  background: oklch(0.965 0.003 250) !important;
+}
+
+.hv-bg962:hover {
+  background: oklch(0.962 0.003 250) !important;
+}
+
+.hv-bg955:hover {
+  background: oklch(0.955 0.003 250) !important;
+}
+
+.hv-bg32:hover {
+  background: oklch(0.32 0.008 250) !important;
+}
+
+.hv-border78:hover {
+  border-color: oklch(0.78 0.006 250) !important;
+}
+
+.hv-border80:hover {
+  border-color: oklch(0.8 0.006 250) !important;
+}
+
+.hv-ink:hover {
+  color: oklch(0.4 0.008 250) !important;
+}
+
+.hv-x:hover {
+  background: oklch(0.955 0.003 250) !important;
+  color: oklch(0.35 0.008 250) !important;
+}
+
+.hv-white:hover {
+  color: #fff !important;
+}
+
+.hv-glass:hover {
+  background: oklch(1 0 0 / 0.12) !important;
+}
+
+input.inp:focus {
+  border-color: oklch(0.4 0.008 250) !important;
+  outline: none;
+}
