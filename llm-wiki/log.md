@@ -7,6 +7,7 @@
 > 제목은 주입만 보고도 무슨 일이 있었는지 알 수 있게 쓴다.
 
 ## 2026-08-15
+- **새 리포지토리 이전**: 원본 데이터가 남은 커밋 히스토리를 버리기 위해 기존 public 리포를 삭제하고 동일 이름(`fomula91/sympo-studio`)으로 재생성. 로컬 `.git` 초기화 → 단일 초기 커밋 `430dbe7`로 시작. 원격을 다시 clone해 `git log -S`로 원본 문자열 조회 0건 검증(`package-lock.json`의 sha512 해시에 `T2D`·`CKM`이 우연히 포함된 2건은 오탐). 삭제 전 `.git` 백업은 세션 스크래치패드에 보관.
 - **가상 데이터 전환**: 포트폴리오 공개를 위해 실존으로 보이는 의료인·소속기관·의약품·행사장 데이터를 전부 가상 세트로 교체. `lib/data.ts` 외에 `Microsite.tsx`(FILES·fallback), `StudioApp.tsx`(INITIAL), `ReportScreen.tsx`(하드코딩 문자열)에 흩어져 있던 것까지 정리. lint·build 통과. **커밋 aa065d4의 diff에 원본이 남아 있어 새 리포지토리 이전 필요**(→ Next-Tasks).
 - **방향 전환 — 포트폴리오용 무료 영구 배포**: 전 직장 담당 프로젝트를 포트폴리오로 마이그레이션하는 것이 목표. "오랫동안 무료"의 적은 비용이 아니라 무료 티어 정책 변경·비활성 pause라고 판단 → 런타임 의존성 0(정적 export + Cloudflare/GitHub Pages + localStorage) 방향으로 결정. DB·Auth·Realtime은 도입하지 않음.
 - **하네스 설치**: LLM-WIKI 하네스 보일러플레이트로 프로젝트 위키 초기화(repo 내장 모드). CLAUDE.md에 연동 규칙·검증 단계 병합.
