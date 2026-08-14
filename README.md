@@ -1,36 +1,89 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SYMPO STUDIO
 
-## Getting Started
+**제약 심포지엄 마이크로사이트를 만들고 운영하는 스튜디오.**
 
-First, run the development server:
+운영자가 콘솔에서 행사를 관리하고, 에디터에서 아젠다·자료·참여·테마를 편집하면 참가자용 마이크로사이트에 즉시 반영된다.
+
+> 이 영역의 운영 비효율을 실무에서 관찰할 기회가 있었고, **같은 문제를 처음부터 다시 설계한 개인 프로젝트**입니다.
+> 기획·설계·구현 전부 개인 작업이며, 등장하는 브랜드·인물·소속기관·의약품·행사장은 **모두 가상**입니다.
+
+---
+
+## 문제
+
+제약 심포지엄은 회차마다 새 마이크로사이트가 필요하다. 연 수십 회씩 열리는데, 매번 같은 비효율이 반복된다.
+
+- **행사명·날짜·장소가 한 문자열에 인코딩된다** — `260815 브랜드 심포지엄 호텔명` 같은 제목 하나가 사실상 유일한 식별자다. 캘린더 연동도, 장소별 조회도, 회차 비교도 불가능하다.
+- **아젠다가 이미지 슬라이드다** — 연자 한 명이 바뀌면 디자인 재작업이다. 행사 당일 변경이 흔한데도 그렇다.
+- **브랜드 컬러를 HEX로 12번 입력한다** — 회차마다 미묘하게 다른 색이 나오고, 대비비는 아무도 검증하지 않는다.
+- **Q&A와 설문이 외부 링크와 QR 이미지다** — 참가자가 페이지를 떠나고, 이탈한 만큼 응답률이 떨어진다.
+
+공통점은 하나다. **운영에 필요한 정보가 데이터가 아니라 이미지와 문자열 안에 갇혀 있다.**
+
+## 설계 판단
+
+| 무엇을 | Before | After | 왜 |
+|---|---|---|---|
+| **행사 식별** | 제목 한 문자열 | 행사명·일시·장소·좌장 필드 분해 + 슬러그 자동 생성 | 캘린더 연동·리마인더·장소 마스터 참조의 소스가 생긴다. 슬러그는 회차마다 고유해야 하므로 중복을 검사한다 |
+| **아젠다** | 이미지 슬라이드 | 구조화된 세션 레코드 + 드래그 정렬 | 재제작이 아니라 필드 수정이 된다. 세션 라이브러리에서 가져다 쓸 수 있다 |
+| **테마** | HEX 12개 입력 | 브랜드 프리셋 1회 선택 → OKLCH 파생 | 입력 자유도를 줄여 사고를 막는다. `{hue, chroma}` 두 값에서 배경·표면·경계·본문·브랜드색을 전부 유도한다 |
+| **접근성** | 검증 없음 | WCAG 대비비를 **저장 게이트**로 | 권고문은 지켜지지 않는다. 원칙은 UI가 강제해야 한다 |
+| **참여** | 외부 링크 + QR 이미지 | 페이지 내에서 완결 | 이탈 지점을 없앤다. 설문 완료 → 수료증까지 한 흐름 |
+| **프리뷰** | 별도 구현 | 참가자 화면과 **같은 컴포넌트** | "프리뷰와 실물이 다르다"를 구조적으로 불가능하게 만든다 |
+
+마지막 항목이 이 프로젝트에서 가장 마음에 드는 결정이다. 에디터의 라이브 프리뷰와 참가자 뷰어가 `Microsite` 하나를 공유하기 때문에, 두 화면이 어긋날 방법이 없다.
+
+## 다시 만들면서 바꾼 것
+
+실무판에는 없었지만 이번에 넣은 것:
+
+- **운영 리포트 층** — 세션별 열람률, 설문 응답률, 행사 셋업 소요시간. 도구가 스스로를 측정하지 않으면 개선됐는지 알 수 없다.
+- **대비비 검증의 게이트화** — 원래는 색상 검증이라는 개념 자체가 없었다.
+- **세션 라이브러리** — 반복 등장하는 연자·세션을 매번 새로 입력하지 않도록.
+
+> ⚠️ 리포트 화면의 수치는 **샘플 데이터**입니다. 실측값이 아니며, "어떤 지표를 봐야 하는가"에 대한 판단을 보여주기 위한 화면입니다.
+
+## 화면
+
+| 화면 | 하는 일 |
+|---|---|
+| **콘솔** | 행사 목록·검색·상태 필터·선택 모드 벌크 액션 |
+| **에디터** | 기본 정보 / 아젠다 / 자료 / 참여 / 테마 5개 섹션 + 라이브 프리뷰 (모바일·태블릿) |
+| **뷰어** | 참가자 화면을 모바일·태블릿 동시 렌더해 반응형 검증 |
+| **리포트** | 세션별 열람률과 운영 지표 |
+
+## 기술 선택
+
+**Next.js 16 (App Router) · React 19 · TypeScript**
+
+런타임 의존성이 `next`, `react`, `react-dom` **3개뿐**이다. 의도적이다 — 이 프로젝트는 오래 살아 있어야 하고, 의존성이 적을수록 2년 뒤에도 `npm install`이 그냥 된다.
+
+트레이드오프로 남겨둔 것:
+
+- **인라인 스타일 + OKLCH 리터럴** — 디자인 프로토타입 충실도를 우선한 결과다. hover를 CSS 헬퍼 클래스로 우회해야 하는 비용이 있다. Microsite는 테마가 런타임 파생값이라 CSS 변수로, 스튜디오 셸은 Tailwind로 나누는 것이 정리 방향이다.
+- **백엔드 없음** — 시드 데이터로 동작한다. 무료로 오래 유지되는 것이 이 저장소의 제약이라, 정적 배포 + localStorage 방향으로 간다.
+
+## 알고 있는 한계
+
+포트폴리오이므로 미완인 지점도 적어둔다. 상세는 [`llm-wiki/Next-Tasks.md`](llm-wiki/Next-Tasks.md)에 과제로 등록돼 있다.
+
+- **이벤트별 상태가 분리돼 있지 않다** — 콘솔에서 어떤 카드를 열어도 같은 아젠다를 편집한다. 상태 모델을 이벤트 단위로 내리는 작업이 남아 있다.
+- **저장 게이트가 아직 강제되지 않는다** — 대비비 미달 배지는 뜨지만 공개를 막지는 않는다.
+- **대비비가 근사 계산이다** — OKLCH 명도를 감마 보정 휘도로 취급하는 휴리스틱이라, 실제 sRGB 변환으로 교체해야 한다.
+- **자동 테스트가 없다** — 테마 파생·슬러그 생성은 순수 함수라 단위 테스트 대상이고, 에디터→프리뷰 반영은 E2E 대상이다.
+- **키보드 접근성** — 콘솔 카드와 아젠다 드래그가 포인터 전용이다.
+
+## 로컬 실행
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 데이터에 대하여
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+이 저장소의 모든 데이터는 가상이다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+브랜드(`MERIDIAN`, `AURORA` …), 의료인과 소속기관, 의약품(`ATELOVAN`, `KEIROSTA`), 행사장은 실존하는 캠페인·인물·기관·제품·장소와 무관하며 화면 구성을 위해 지어낸 것이다. 리포트의 수치 역시 샘플이다.

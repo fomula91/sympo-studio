@@ -12,6 +12,26 @@ export default function ReportScreen({ s }: { s: StudioState }) {
 
   return (
     <div style={{ padding: '24px 24px 80px', maxWidth: 1200 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            fontFamily: MONO,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            padding: '5px 9px',
+            borderRadius: 6,
+            background: 'oklch(0.955 0.035 78)',
+            color: 'oklch(0.44 0.09 68)',
+          }}
+        >
+          샘플 데이터
+        </div>
+        <div style={{ fontSize: 12, color: UI.muted }}>
+          실측값이 아닙니다. 어떤 지표를 봐야 하는지 보여주기 위한 화면입니다.
+        </div>
+      </div>
+
       <div
         style={{
           display: 'grid',
