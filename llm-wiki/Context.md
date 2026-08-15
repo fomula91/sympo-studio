@@ -9,7 +9,9 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 - 디자인 소스: claude.ai/design 프로젝트 `19de1b74-f6ac-4ef0-9fbc-f6ec958ccc9f` (`SYMPO STUDIO.dc.html`, `Microsite.dc.html`).
 
 ## 스택 / 구조
-- Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 전부 클라이언트 컴포넌트, 백엔드/DB 없음(시드 데이터 하드코딩).
+- Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 화면은 전부 클라이언트 컴포넌트이고 아직 시드 데이터로 그린다.
+- **백엔드(BE-1 완료)**: Cloudflare D1 + Route Handler. `wrangler.jsonc`(D1 바인딩 `DB`) · `migrations/0001_init.sql`(7개 테이블) · `lib/db.ts`(바인딩 접근·DTO 변환) · `app/api/events/*`(이벤트 CRUD). `next.config.ts`의 `initOpenNextCloudflareForDev()`가 있어야 `next dev`에서도 바인딩이 잡힌다. 스키마 근거는 [[0005-d1-schema]].
+- DB 명령: `npm run db:migrate`(로컬 적용) · `npm run db:console -- "SQL"`(조회) · `npm run cf:typegen`(wrangler.jsonc 수정 후 타입 재생성).
 - 스타일: 인라인 oklch(디자인 원본 충실) + `app/globals.css`의 hover/focus 헬퍼 클래스. Pretendard CDN.
 - 디렉터리: `components/StudioApp.tsx`(단일 상태 + patch 패턴, 네비/헤더/벌크바) · `components/screens/*`(4개 화면) · `components/Microsite.tsx`(참가자 뷰, 프리뷰/뷰어 공용) · `lib/theme.ts`(프리셋→OKLCH 파생 `derive`, WCAG 대비비 게이트) · `lib/data.ts`(시드·상수) · `lib/ui.ts`(공용 스타일).
 - 원격: https://github.com/fomula91/sympo-studio (public, main).
@@ -30,5 +32,6 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 - **방향 전환**: 정적 전용(localStorage) → 실제 동작하는 백엔드로. Q&A·설문이라는 제품 핵심을 정적으로는 증명할 수 없기 때문 → [[0001-backend-for-working-demo]].
 - 붙일 스택은 Cloudflare 단일 벤더(Workers + D1 + R2), 원칙은 **"저장·조회는 서버, 렌더링·생성은 클라이언트"** → [[0002-cloudflare-free-tier-stack]].
 - [[Next-Tasks]]는 **FE/BE 두 섹션**으로 나뉜다(제목 접두사 `FE-`/`BE-`가 훅 파싱 계약) → [[0003-next-tasks-fe-be-split]].
-- 다음 한 걸음: **BE-1**(D1 스키마 + 이벤트 CRUD). 나머지 BE 다섯과 FE-1이 여기에 얹힌다.
+- **BE-1 완료** — D1 스키마 7개 테이블 + 이벤트 CRUD가 로컬에서 왕복한다 → [[0005-d1-schema]].
+- 다음 한 걸음: **BE-2**(Cloudflare 배포). `wrangler.jsonc`의 `database_id`가 아직 placeholder라 원격 D1을 만들어 채워야 한다.
 - 서버 없이 지금 착수 가능한 것: **FE-2**(라우트 분리 + 폰트 자체 호스팅), **FE-7**(대비비 저장 게이트), FE-4의 수료증 부분.

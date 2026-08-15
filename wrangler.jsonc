@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sympo-studio",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-08-15",
+  // nodejs_compat: @opennextjs/cloudflare가 Next.js 런타임을 Workers에서 돌리는 데 필요하다.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sympo-studio-db",
+      // 로컬(--local)에서는 이 값이 쓰이지 않는다. 원격 배포는 BE-2에서
+      // `wrangler d1 create sympo-studio-db`로 발급받은 UUID를 채운다.
+      "database_id": "local-dev-placeholder",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
