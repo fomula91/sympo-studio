@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "W=\"$CLAUDE_PROJECT_DIR/llm-wiki\"; [ -d \"$W\" ] || exit 0; D=$(grep -m1 '^## [0-9]' \"$W/log.md\" 2>/dev/null); R=$(awk '/^## [0-9]/{c++} c==1{print} c==2{exit}' \"$W/log.md\" 2>/dev/null | grep '^- \\*\\*' | sed -E 's/^- \\*\\*([^*]+)\\*\\*.*/- \\1/'); O=$(awk '/^## 열린 과제/{f=1;next} /^## /{f=0} f&&/^### /{print}' \"$W/Next-Tasks.md\" 2>/dev/null | sed -E 's/^### /- /'); printf '최근 작업 로그(%s):\\n%s\\n\\n열린 과제:\\n%s' \"$D\" \"$R\" \"$O\" | jq -Rs '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:(\"[sympo-studio 위키 기억 — 상세 정본은 llm-wiki/ 참조]\\n\\n\"+.)}}'",
+            "command": "W=\"$CLAUDE_PROJECT_DIR/llm-wiki\"; [ -d \"$W\" ] || exit 0; D=$(grep -m1 '^## [0-9]' \"$W/log.md\" 2>/dev/null); R=$(awk '/^## [0-9]/{c++} c==1{print} c==2{exit}' \"$W/log.md\" 2>/dev/null | grep '^- \\*\\*' | sed -E 's/^- \\*\\*([^*]+)\\*\\*.*/- \\1/'); O=$(awk '/^### (FE|BE)-/{print}' \"$W/Next-Tasks.md\" 2>/dev/null | sed -E 's/^### /- /'); [ -z \"$O\" ] && O=\"- (열린 과제를 찾지 못했습니다 — llm-wiki/Next-Tasks.md의 제목이 '### FE-N.' 또는 '### BE-N.' 형식인지 확인하세요)\"; printf '최근 작업 로그(%s):\\n%s\\n\\n열린 과제:\\n%s' \"$D\" \"$R\" \"$O\" | jq -Rs '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:(\"[sympo-studio 위키 기억 — 상세 정본은 llm-wiki/ 참조]\\n\\n\"+.)}}'",
             "timeout": 10,
             "statusMessage": "위키 기억 불러오는 중..."
           }
