@@ -49,19 +49,20 @@ export function LogoMark({ size = 44 }: { size?: number }) {
   );
 }
 
-export function LogoLockup({ size = 44 }: { size?: number }) {
+// ink/sub는 배경에 맞춰 넘긴다 — 다크 배경(인트로 페이지 등)에서 라이트 셸 색을 그대로 쓰면 안 보인다.
+export function LogoLockup({ size = 44, ink = UI.ink, sub = UI.brand }: { size?: number; ink?: string; sub?: string }) {
   const wordStyle: CSSProperties = {
     fontSize: size * 0.34,
     fontWeight: 750,
     letterSpacing: '-0.045em',
-    color: UI.ink,
+    color: ink,
     lineHeight: 1.1,
   };
   const subStyle: CSSProperties = {
     fontFamily: MONO,
     fontSize: size * 0.19,
     letterSpacing: '0.34em',
-    color: UI.brand,
+    color: sub,
     marginTop: size * 0.06,
   };
   return (
