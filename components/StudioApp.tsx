@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { LogoMark } from '@/components/Logo';
 import ConsoleScreen from '@/components/screens/ConsoleScreen';
 import EditorScreen from '@/components/screens/EditorScreen';
 import ReportScreen from '@/components/screens/ReportScreen';
@@ -93,22 +94,8 @@ export default function StudioApp() {
           gap: 6,
         }}
       >
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 12,
-            background: UI.ink,
-            color: '#fff',
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 15,
-            fontWeight: 700,
-            letterSpacing: '-0.04em',
-            marginBottom: 14,
-          }}
-        >
-          SS
+        <div style={{ marginBottom: 14 }}>
+          <LogoMark size={44} />
         </div>
         {NAV.map((n) => {
           const inEditor = s.screen === 'editor';
@@ -142,8 +129,8 @@ export default function StudioApp() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 5,
-                background: on ? 'oklch(0.945 0.003 250)' : 'transparent',
-                color: 'oklch(0.28 0.008 250)',
+                background: on ? UI.brandSoft : 'transparent',
+                color: on ? UI.brand : 'oklch(0.28 0.008 250)',
               }}
             >
               <div
@@ -152,9 +139,9 @@ export default function StudioApp() {
                     ? {
                         width: 12,
                         height: 18,
-                        border: '1.7px solid oklch(0.3 0.008 250)',
+                        border: `1.7px solid ${on ? UI.brand : 'oklch(0.3 0.008 250)'}`,
                         borderRadius: 3.5,
-                        boxShadow: 'inset 0 -3.5px 0 -1.5px oklch(0.3 0.008 250)',
+                        boxShadow: `inset 0 -3.5px 0 -1.5px ${on ? UI.brand : 'oklch(0.3 0.008 250)'}`,
                       }
                     : {
                         fontSize: 17,
@@ -162,7 +149,7 @@ export default function StudioApp() {
                         height: 18,
                         display: 'grid',
                         placeItems: 'center',
-                        color: 'oklch(0.3 0.008 250)',
+                        color: on ? UI.brand : 'oklch(0.3 0.008 250)',
                       }
                 }
               >
@@ -242,7 +229,7 @@ export default function StudioApp() {
               >
                 되돌리기
               </button>
-              <button className="hv-bg32" onClick={() => patch({ screen: 'viewer' })} style={primaryBtn}>
+              <button className="hv-brandpress" onClick={() => patch({ screen: 'viewer' })} style={primaryBtn}>
                 공개하기
               </button>
             </div>
@@ -261,7 +248,7 @@ export default function StudioApp() {
                 선택 모드
               </button>
               <button
-                className="hv-bg32"
+                className="hv-brandpress"
                 onClick={() => patch({ screen: 'editor', section: 'basic' })}
                 style={primaryBtn}
               >

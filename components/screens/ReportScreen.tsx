@@ -40,10 +40,18 @@ export default function ReportScreen({ s }: { s: StudioState }) {
           marginBottom: 24,
         }}
       >
-        {METRICS.map((m) => (
+        {METRICS.map((m) => {
+          const highlight = m.label === '색상 AA 통과율';
+          return (
           <div
             key={m.label}
-            style={{ background: '#fff', border: `1px solid ${UI.line}`, borderRadius: 14, padding: '18px 20px' }}
+            style={{
+              background: '#fff',
+              border: `1px solid ${highlight ? UI.brand : UI.line}`,
+              boxShadow: highlight ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
+              borderRadius: 14,
+              padding: '18px 20px',
+            }}
           >
             <div style={{ fontSize: 12, color: UI.muted, marginBottom: 12 }}>{m.label}</div>
             <div
@@ -53,6 +61,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
                 letterSpacing: '-0.04em',
                 fontVariantNumeric: 'tabular-nums',
                 lineHeight: 1,
+                color: highlight ? UI.brand : UI.ink,
               }}
             >
               {m.value}
@@ -73,7 +82,8 @@ export default function ReportScreen({ s }: { s: StudioState }) {
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14, alignItems: 'start' }}>
@@ -113,8 +123,8 @@ export default function ReportScreen({ s }: { s: StudioState }) {
                     {b.pct}%
                   </div>
                 </div>
-                <div style={{ height: 8, borderRadius: 99, background: UI.lineFaint, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${b.pct}%`, borderRadius: 99, background: UI.ink }} />
+                <div style={{ height: 8, borderRadius: 99, background: UI.brandSoft, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${b.pct}%`, borderRadius: 99, background: UI.brand }} />
                 </div>
               </div>
             ))}
@@ -145,7 +155,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
                 >
                   {o.before}
                 </div>
-                <div style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, color: UI.ink }}>{o.after}</div>
+                <div style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, color: UI.brand }}>{o.after}</div>
               </div>
             ))}
           </div>
