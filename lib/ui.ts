@@ -11,10 +11,13 @@ export const UI = {
   muted: 'oklch(0.55 0.008 250)',
   faint: 'oklch(0.62 0.006 250)',
   green: 'oklch(0.55 0.11 145)',
+  brand: 'oklch(0.475 0.11 205)',
+  brandPress: 'oklch(0.31 0.075 205)',
+  brandSoft: 'oklch(0.955 0.016 205)',
 };
 
-// 세그먼트 토글 버튼 (정렬·모드·아이콘·밀도 등)
-export function seg(active: boolean): CSSProperties {
+// 세그먼트 토글 버튼 (정렬·모드·아이콘·밀도 등). brand=true면 선택 상태를 스튜디오 브랜드색으로 표시한다.
+export function seg(active: boolean, brand = false): CSSProperties {
   return {
     height: 44,
     padding: '0 15px',
@@ -24,7 +27,7 @@ export function seg(active: boolean): CSSProperties {
     fontSize: 12.5,
     fontWeight: 650,
     letterSpacing: '-0.01em',
-    background: active ? UI.ink : 'transparent',
+    background: active ? (brand ? UI.brand : UI.ink) : 'transparent',
     color: active ? '#fff' : 'oklch(0.48 0.008 250)',
   };
 }
@@ -46,7 +49,7 @@ export const primaryBtn: CSSProperties = {
   padding: '0 18px',
   borderRadius: 10,
   border: 'none',
-  background: UI.ink,
+  background: UI.brand,
   color: '#fff',
   fontSize: 13,
   fontWeight: 700,

@@ -68,7 +68,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
           }}
         >
           {SORTS.map((x) => (
-            <button key={x} onClick={() => patch({ sort: x })} style={seg(s.sort === x)}>
+            <button key={x} onClick={() => patch({ sort: x })} style={seg(s.sort === x, true)}>
               {x}
             </button>
           ))}
@@ -91,8 +91,8 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 fontSize: 12.5,
                 fontWeight: 650,
                 letterSpacing: '-0.01em',
-                border: `1px solid ${on ? UI.ink : UI.line}`,
-                background: on ? UI.ink : '#fff',
+                border: `1px solid ${on ? UI.brand : UI.line}`,
+                background: on ? UI.brand : '#fff',
                 color: on ? '#fff' : 'oklch(0.42 0.008 250)',
               }}
             >
@@ -129,7 +129,8 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 borderRadius: 16,
                 padding: 18,
                 cursor: 'pointer',
-                border: `1px solid ${on ? UI.ink : UI.line}`,
+                border: `1px solid ${on ? UI.brand : UI.line}`,
+                boxShadow: on ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -144,8 +145,8 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                       placeItems: 'center',
                       fontSize: 13,
                       color: '#fff',
-                      background: on ? UI.ink : 'transparent',
-                      border: `1.5px solid ${on ? UI.ink : 'oklch(0.85 0.005 250)'}`,
+                      background: on ? UI.brand : 'transparent',
+                      border: `1.5px solid ${on ? UI.brand : 'oklch(0.85 0.005 250)'}`,
                     }}
                   >
                     {on ? '✓' : ''}
@@ -182,7 +183,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                     style={{
                       fontFamily: MONO,
                       fontSize: 11,
-                      color: 'oklch(0.68 0.006 250)',
+                      color: on ? UI.brand : 'oklch(0.68 0.006 250)',
                       marginTop: 10,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -207,7 +208,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                   세션 {e.sessions} · 자료 {e.docs}
                 </div>
                 <div style={{ flex: 1 }} />
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'oklch(0.4 0.008 250)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : 'oklch(0.4 0.008 250)' }}>
                   {s.bulk ? (on ? '선택됨' : '탭하여 선택') : '편집 →'}
                 </div>
               </div>

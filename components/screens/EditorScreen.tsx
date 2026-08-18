@@ -415,7 +415,8 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
                 borderRadius: 13,
                 cursor: 'pointer',
                 background: '#fff',
-                border: `1px solid ${on ? UI.ink : UI.line}`,
+                border: `1px solid ${on ? UI.brand : UI.line}`,
+                boxShadow: on ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
               }}
             >
               <div style={{ display: 'flex', gap: 5 }}>
@@ -747,7 +748,8 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
                 fontWeight: 650,
                 letterSpacing: '-0.015em',
                 textAlign: 'left',
-                background: s.section === x.id ? 'oklch(0.945 0.003 250)' : 'transparent',
+                background: s.section === x.id ? UI.brandSoft : 'transparent',
+                boxShadow: s.section === x.id ? `inset 2.5px 0 0 0 ${UI.brand}` : undefined,
                 color: 'oklch(0.26 0.008 250)',
               }}
             >
@@ -812,7 +814,7 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 650,
-                  background: s.device === d.k ? UI.ink : 'transparent',
+                  background: s.device === d.k ? UI.brand : 'transparent',
                   color: s.device === d.k ? '#fff' : 'oklch(0.5 0.008 250)',
                 }}
               >
