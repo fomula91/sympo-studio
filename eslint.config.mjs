@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // `wrangler types`가 생성하는 파일. 손으로 고치지 않으므로 검사 대상이 아니다.
+    "worker-configuration.d.ts",
+    ".open-next/**",
   ]),
 ]);
 
