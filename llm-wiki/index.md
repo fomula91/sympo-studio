@@ -14,8 +14,9 @@
 - [[0001-backend-for-working-demo]] — 정적 전용을 버리고 실제 동작하는 백엔드를 붙인다
 - [[0002-cloudflare-free-tier-stack]] — Cloudflare 단일 벤더 + "저장·조회는 서버, 렌더링·생성은 클라이언트"
 - [[0003-next-tasks-fe-be-split]] — 열린 과제를 FE/BE 두 섹션으로 나눈다 (훅 파싱 계약 포함)
+- [[0004-problem-redefinition]] — 문제 정의를 실무 경험 기준으로 재정립하고, 관찰과 가설을 갈라 쓴다
 
 ## 상세 (Reference 정본)
-- (없음 — 출처 있는 상세 정본이 생기면 `Reference/`에 추가하고 여기 링크)
+- [[field-experience]] — **실무 경험 정본.** 무엇을 직접 겪었고 무엇을 겪지 않았는가. 문제를 서술할 때 여기 없는 내용을 "관찰"로 쓰지 않는다
 
 최근 변화: [[log]]
