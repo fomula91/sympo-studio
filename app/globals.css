@@ -152,3 +152,34 @@ input.inp:focus {
     flex: initial !important;
   }
 }
+
+/* 소개 페이지 스크롤 등장 애니메이션 — reduced-motion이면 이 블록 전체가 적용되지
+   않아 .reveal 요소가 처음부터 완전히 보인다(숨겼다가 못 보여주는 사고 방지).
+   opacity/transform만 움직여서 리플로우가 없고, 값이 뷰포트 크기와 무관한 고정
+   px라 화면 회전·리사이즈 중에 걸려도 어색하게 튀지 않는다. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .hero-in {
+    opacity: 0;
+    animation: hero-in 0.6s ease-out forwards;
+  }
+  @keyframes hero-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
