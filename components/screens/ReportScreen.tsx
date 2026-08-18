@@ -6,6 +6,7 @@ import { MONO, UI } from '@/lib/ui';
 
 export default function ReportScreen({ s }: { s: StudioState }) {
   const bars = s.sessions.map((x, i) => ({
+    id: x.id,
     label: `${x.time}  ${x.title}`,
     pct: 92 - i * 7 - (i % 2) * 4,
   }));
@@ -96,7 +97,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {bars.map((b) => (
-              <div key={b.label}>
+              <div key={b.id}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7 }}>
                   <div
                     style={{
