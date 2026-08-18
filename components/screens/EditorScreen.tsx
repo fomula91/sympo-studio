@@ -85,7 +85,7 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
               display: 'flex',
               alignItems: 'center',
               gap: 10,
-              background: '#fff',
+              background: UI.surface,
               borderRadius: 12,
               padding: '6px 8px 6px 0',
               userSelect: 'none',
@@ -136,9 +136,9 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
               >
                 {x.title}
               </div>
-              <div style={{ fontSize: 12, color: 'oklch(0.56 0.008 250)', marginTop: 3 }}>{x.speaker}</div>
+              <div style={{ fontSize: 12, color: UI.muted, marginTop: 3 }}>{x.speaker}</div>
             </div>
-            <div style={{ fontFamily: MONO, fontSize: 10, color: 'oklch(0.68 0.006 250)', paddingRight: 6 }}>
+            <div style={{ fontFamily: MONO, fontSize: 10, color: UI.faint, paddingRight: 6 }}>
               {x.kind}
             </div>
             <button
@@ -153,7 +153,7 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
                 border: 'none',
                 background: 'transparent',
                 borderRadius: 10,
-                color: 'oklch(0.65 0.006 250)',
+                color: UI.faint,
                 fontSize: 15,
                 cursor: 'pointer',
               }}
@@ -181,7 +181,7 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
               style={{
                 fontSize: 12,
                 fontWeight: 650,
-                color: 'oklch(0.45 0.008 250)',
+                color: UI.muted2,
                 marginBottom: 7,
                 letterSpacing: '-0.01em',
               }}
@@ -197,7 +197,7 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
                 height: 52,
                 borderRadius: 12,
                 border: `1px solid ${UI.line}`,
-                background: '#fff',
+                background: UI.surface,
                 padding: '0 16px',
                 fontSize: 14.5,
                 color: UI.ink,
@@ -207,11 +207,11 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             <div style={{ fontSize: 11.5, color: UI.faint, marginTop: 6 }}>{f.hint}</div>
           </label>
         ))}
-        <div style={{ border: `1px solid ${UI.line}`, borderRadius: 12, background: '#fff', padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 650, color: 'oklch(0.45 0.008 250)', marginBottom: 8 }}>
+        <div style={{ border: `1px solid ${UI.line}`, borderRadius: 12, background: UI.surface, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 8 }}>
             생성될 URL
           </div>
-          <div style={{ fontFamily: MONO, fontSize: 13, color: 'oklch(0.28 0.008 250)', wordBreak: 'break-all' }}>
+          <div style={{ fontFamily: MONO, fontSize: 13, color: UI.ink2, wordBreak: 'break-all' }}>
             sympo.studio/{autoSlug(s.title, s.venue, s.date)}
           </div>
           <div
@@ -246,7 +246,7 @@ function DocsSection() {
               display: 'flex',
               alignItems: 'center',
               gap: 14,
-              background: '#fff',
+              background: UI.surface,
               border: `1px solid ${UI.line}`,
               borderRadius: 12,
               padding: '12px 14px',
@@ -264,7 +264,7 @@ function DocsSection() {
                 fontFamily: MONO,
                 fontSize: 9,
                 fontWeight: 700,
-                color: 'oklch(0.48 0.008 250)',
+                color: UI.muted2,
               }}
             >
               PDF
@@ -282,7 +282,7 @@ function DocsSection() {
               >
                 {d.name}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: 'oklch(0.66 0.006 250)', marginTop: 3 }}>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: UI.faint, marginTop: 3 }}>
                 {d.meta}
               </div>
             </div>
@@ -294,7 +294,7 @@ function DocsSection() {
                 fontSize: 11,
                 fontWeight: 650,
                 background: UI.soft,
-                color: 'oklch(0.45 0.008 250)',
+                color: UI.muted2,
               }}
             >
               {d.tag}
@@ -304,7 +304,7 @@ function DocsSection() {
         <div
           style={{
             height: 64,
-            border: '1px dashed oklch(0.86 0.005 250)',
+            border: '1px dashed var(--hover-border)',
             borderRadius: 12,
             display: 'grid',
             placeItems: 'center',
@@ -340,7 +340,7 @@ function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 14,
-                background: '#fff',
+                background: UI.surface,
                 border: `1px solid ${UI.line}`,
                 borderRadius: 12,
                 padding: '14px 16px',
@@ -351,7 +351,7 @@ function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 650, letterSpacing: '-0.015em' }}>{t.label}</div>
-                <div style={{ fontSize: 12, color: 'oklch(0.58 0.008 250)', marginTop: 3 }}>{t.desc}</div>
+                <div style={{ fontSize: 12, color: UI.muted, marginTop: 3 }}>{t.desc}</div>
               </div>
               <div
                 style={{
@@ -362,7 +362,7 @@ function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
                   padding: 3,
                   display: 'flex',
                   justifyContent: on ? 'flex-end' : 'flex-start',
-                  background: on ? UI.ink : 'oklch(0.9 0.004 250)',
+                  background: on ? UI.brand : 'var(--line)',
                 }}
               >
                 <div style={{ width: 26, height: 26, borderRadius: 99, background: '#fff' }} />
@@ -414,7 +414,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
                 padding: '0 14px',
                 borderRadius: 13,
                 cursor: 'pointer',
-                background: '#fff',
+                background: UI.surface,
                 border: `1px solid ${on ? UI.brand : UI.line}`,
                 boxShadow: on ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
               }}
@@ -427,7 +427,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               <div style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 650, letterSpacing: '-0.015em' }}>
                 {p.label}
               </div>
-              <div style={{ fontSize: 13, color: 'oklch(0.5 0.008 250)' }}>{on ? '✓' : ''}</div>
+              <div style={{ fontSize: 13, color: UI.muted }}>{on ? '✓' : ''}</div>
             </button>
           );
         })}
@@ -439,7 +439,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           <div
             style={{
               display: 'flex',
-              background: '#fff',
+              background: UI.surface,
               border: `1px solid ${UI.line}`,
               borderRadius: 12,
               padding: 5,
@@ -458,7 +458,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           <div
             style={{
               display: 'flex',
-              background: '#fff',
+              background: UI.surface,
               border: `1px solid ${UI.line}`,
               borderRadius: 12,
               padding: 5,
@@ -481,7 +481,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           <div
             style={{
               display: 'flex',
-              background: '#fff',
+              background: UI.surface,
               border: `1px solid ${UI.line}`,
               borderRadius: 12,
               padding: 5,
@@ -522,8 +522,8 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           display: 'grid',
           placeItems: 'center',
           overflow: 'hidden',
-          background: s.dragOver ? UI.soft : '#fff',
-          border: `1.5px dashed ${s.dragOver ? 'oklch(0.35 0.008 250)' : 'oklch(0.86 0.005 250)'}`,
+          background: s.dragOver ? UI.soft : UI.surface,
+          border: `1.5px dashed ${s.dragOver ? UI.ink2 : 'var(--hover-border)'}`,
         }}
       >
         {s.keyVisual ? (
@@ -543,7 +543,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               textAlign: 'center',
               fontFamily: MONO,
               fontSize: 11,
-              color: 'oklch(0.6 0.006 250)',
+              color: UI.faint,
               lineHeight: 1.9,
               letterSpacing: '0.02em',
             }}
@@ -566,9 +566,9 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               cursor: 'pointer',
               fontSize: 12,
               fontWeight: 650,
-              background: '#fff',
-              border: `1px solid ${s.kvPattern === p.k && !s.keyVisual ? UI.ink : 'oklch(0.9 0.004 250)'}`,
-              color: 'oklch(0.35 0.008 250)',
+              background: UI.surface,
+              border: `1px solid ${s.kvPattern === p.k && !s.keyVisual ? UI.ink : 'var(--line)'}`,
+              color: UI.ink2,
             }}
           >
             {p.label}
@@ -581,11 +581,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             height: 44,
             padding: '0 14px',
             borderRadius: 10,
-            border: '1px solid oklch(0.9 0.004 250)',
-            background: '#fff',
+            border: '1px solid var(--line)',
+            background: UI.surface,
             fontSize: 12,
             fontWeight: 600,
-            color: 'oklch(0.5 0.008 250)',
+            color: UI.muted,
             cursor: 'pointer',
           }}
         >
@@ -599,7 +599,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             marginTop: 28,
             border: `1px solid ${UI.line}`,
             borderRadius: 14,
-            background: '#fff',
+            background: UI.surface,
             overflow: 'hidden',
           }}
         >
@@ -638,16 +638,16 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
                 alignItems: 'center',
                 gap: 12,
                 padding: '11px 16px',
-                borderBottom: '1px solid oklch(0.965 0.003 250)',
+                borderBottom: '1px solid var(--line-faint)',
               }}
             >
-              <div style={{ flex: 1, fontSize: 12.5, color: 'oklch(0.42 0.008 250)' }}>{r.label}</div>
+              <div style={{ flex: 1, fontSize: 12.5, color: UI.muted2 }}>{r.label}</div>
               <div
                 style={{
                   fontFamily: MONO,
                   fontSize: 12,
                   fontVariantNumeric: 'tabular-nums',
-                  color: 'oklch(0.3 0.008 250)',
+                  color: UI.ink2,
                 }}
               >
                 {r.ratio}
@@ -717,14 +717,14 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
           width: 180,
           flex: '0 0 180px',
           borderRight: `1px solid ${UI.line}`,
-          background: '#fff',
+          background: UI.surface,
           padding: '16px 12px',
           display: 'flex',
           flexDirection: 'column',
           gap: 3,
         }}
       >
-        <div style={{ ...monoLabel, color: 'oklch(0.65 0.006 250)', padding: '6px 10px 10px' }}>SECTIONS</div>
+        <div style={{ ...monoLabel, color: UI.faint, padding: '6px 10px 10px' }}>SECTIONS</div>
         {SECTIONS.map((x) => {
           const meta =
             x.id === 'agenda' ? String(s.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
@@ -745,16 +745,17 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
                 justifyContent: 'space-between',
                 gap: 8,
                 fontSize: 13.5,
-                fontWeight: 650,
+                fontWeight: s.section === x.id ? 700 : 600,
                 letterSpacing: '-0.015em',
                 textAlign: 'left',
-                background: s.section === x.id ? UI.brandSoft : 'transparent',
-                boxShadow: s.section === x.id ? `inset 2.5px 0 0 0 ${UI.brand}` : undefined,
-                color: 'oklch(0.26 0.008 250)',
+                background: 'transparent',
+                color: s.section === x.id ? UI.ink : UI.muted,
               }}
             >
               <span>{x.label}</span>
-              <span style={{ fontFamily: MONO, fontSize: 10, opacity: 0.55 }}>{meta}</span>
+              <span style={{ fontFamily: MONO, fontSize: 10, color: s.section === x.id ? UI.brand : UI.faint }}>
+                {meta}
+              </span>
             </button>
           );
         })}
@@ -795,8 +796,8 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
           <div
             style={{
               display: 'flex',
-              background: '#fff',
-              border: '1px solid oklch(0.9 0.004 250)',
+              background: UI.surface,
+              border: '1px solid var(--line)',
               borderRadius: 10,
               padding: 4,
               gap: 3,
@@ -815,7 +816,7 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
                   fontSize: 12,
                   fontWeight: 650,
                   background: s.device === d.k ? UI.brand : 'transparent',
-                  color: s.device === d.k ? '#fff' : 'oklch(0.5 0.008 250)',
+                  color: s.device === d.k ? UI.surface : UI.muted,
                 }}
               >
                 {d.label}
@@ -840,7 +841,7 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
               height: Math.round(kvH * scale),
               borderRadius: s.device === 'mobile' ? 28 : 16,
               overflow: 'hidden',
-              background: '#fff',
+              background: UI.surface,
               boxShadow: '0 18px 44px -18px oklch(0.4 0.02 250 / 0.4)',
             }}
           >

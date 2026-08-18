@@ -2,18 +2,23 @@ import type { CSSProperties } from 'react';
 
 export const MONO = "ui-monospace, 'SF Mono', Menlo, monospace";
 
+// 값은 app/globals.css의 CSS 변수를 가리킨다 — :root와 :root[data-theme='dark']에서 실제 색을 정의한다.
 export const UI = {
-  ink: 'oklch(0.22 0.008 250)',
-  bg: 'oklch(0.968 0.002 250)',
-  line: 'oklch(0.912 0.004 250)',
-  lineFaint: 'oklch(0.945 0.003 250)',
-  soft: 'oklch(0.955 0.003 250)',
-  muted: 'oklch(0.55 0.008 250)',
-  faint: 'oklch(0.62 0.006 250)',
-  green: 'oklch(0.55 0.11 145)',
-  brand: 'oklch(0.475 0.11 205)',
-  brandPress: 'oklch(0.31 0.075 205)',
-  brandSoft: 'oklch(0.955 0.016 205)',
+  ink: 'var(--ink)',
+  ink2: 'var(--ink2)',
+  bg: 'var(--bg)',
+  surface: 'var(--surface)',
+  line: 'var(--line)',
+  lineFaint: 'var(--line-faint)',
+  soft: 'var(--soft)',
+  muted: 'var(--muted)',
+  muted2: 'var(--muted2)',
+  faint: 'var(--faint)',
+  green: 'var(--green)',
+  brand: 'var(--brand)',
+  brandPress: 'var(--brand-press)',
+  brandSoft: 'var(--brand-soft)',
+  onBrand: 'var(--on-brand)',
 };
 
 // 세그먼트 토글 버튼 (정렬·모드·아이콘·밀도 등). brand=true면 선택 상태를 스튜디오 브랜드색으로 표시한다.
@@ -28,7 +33,7 @@ export function seg(active: boolean, brand = false): CSSProperties {
     fontWeight: 650,
     letterSpacing: '-0.01em',
     background: active ? (brand ? UI.brand : UI.ink) : 'transparent',
-    color: active ? '#fff' : 'oklch(0.48 0.008 250)',
+    color: active ? (brand ? UI.onBrand : UI.surface) : UI.muted,
   };
 }
 
@@ -36,11 +41,11 @@ export const ghostBtn: CSSProperties = {
   height: 44,
   padding: '0 16px',
   borderRadius: 10,
-  border: '1px solid oklch(0.9 0.004 250)',
-  background: '#fff',
+  border: `1px solid ${UI.line}`,
+  background: UI.surface,
   fontSize: 13,
   fontWeight: 600,
-  color: 'oklch(0.35 0.008 250)',
+  color: UI.ink2,
   cursor: 'pointer',
 };
 
@@ -50,7 +55,7 @@ export const primaryBtn: CSSProperties = {
   borderRadius: 10,
   border: 'none',
   background: UI.brand,
-  color: '#fff',
+  color: UI.onBrand,
   fontSize: 13,
   fontWeight: 700,
   cursor: 'pointer',
@@ -84,6 +89,6 @@ export function pillStyle(status: string): CSSProperties {
     fontWeight: 650,
     background: bg,
     color: fg,
-    ...(bg === 'transparent' ? { border: '1px solid oklch(0.9 0.004 250)' } : {}),
+    ...(bg === 'transparent' ? { border: `1px solid ${UI.line}` } : {}),
   };
 }

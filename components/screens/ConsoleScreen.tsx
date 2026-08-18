@@ -33,7 +33,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
               bottom: 0,
               display: 'flex',
               alignItems: 'center',
-              color: 'oklch(0.65 0.006 250)',
+              color: UI.faint,
               fontSize: 15,
             }}
           >
@@ -49,7 +49,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
               height: 56,
               borderRadius: 14,
               border: `1px solid ${UI.line}`,
-              background: '#fff',
+              background: UI.surface,
               padding: '0 18px 0 44px',
               fontSize: 15,
               color: UI.ink,
@@ -60,7 +60,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
         <div
           style={{
             display: 'flex',
-            background: '#fff',
+            background: UI.surface,
             border: `1px solid ${UI.line}`,
             borderRadius: 14,
             padding: 5,
@@ -92,8 +92,8 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 fontWeight: 650,
                 letterSpacing: '-0.01em',
                 border: `1px solid ${on ? UI.brand : UI.line}`,
-                background: on ? UI.brand : '#fff',
-                color: on ? '#fff' : 'oklch(0.42 0.008 250)',
+                background: on ? UI.brand : UI.surface,
+                color: on ? UI.surface : UI.muted2,
               }}
             >
               {x}
@@ -125,7 +125,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 }
               }}
               style={{
-                background: '#fff',
+                background: UI.surface,
                 borderRadius: 16,
                 padding: 18,
                 cursor: 'pointer',
@@ -144,9 +144,9 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                       display: 'grid',
                       placeItems: 'center',
                       fontSize: 13,
-                      color: '#fff',
+                      color: UI.surface,
                       background: on ? UI.brand : 'transparent',
-                      border: `1.5px solid ${on ? UI.brand : 'oklch(0.85 0.005 250)'}`,
+                      border: `1.5px solid ${on ? UI.brand : UI.line}`,
                     }}
                   >
                     {on ? '✓' : ''}
@@ -178,12 +178,12 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                   >
                     {e.brand} 심포지엄
                   </div>
-                  <div style={{ fontSize: 13, color: 'oklch(0.5 0.008 250)', lineHeight: 1.5 }}>{e.venue}</div>
+                  <div style={{ fontSize: 13, color: UI.muted, lineHeight: 1.5 }}>{e.venue}</div>
                   <div
                     style={{
                       fontFamily: MONO,
                       fontSize: 11,
-                      color: on ? UI.brand : 'oklch(0.68 0.006 250)',
+                      color: on ? UI.brand : UI.faint,
                       marginTop: 10,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -204,11 +204,11 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                   borderTop: `1px solid ${UI.lineFaint}`,
                 }}
               >
-                <div style={{ fontSize: 12, color: 'oklch(0.58 0.008 250)' }}>
+                <div style={{ fontSize: 12, color: UI.muted }}>
                   세션 {e.sessions} · 자료 {e.docs}
                 </div>
                 <div style={{ flex: 1 }} />
-                <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : 'oklch(0.4 0.008 250)' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : UI.muted2 }}>
                   {s.bulk ? (on ? '선택됨' : '탭하여 선택') : '편집 →'}
                 </div>
               </div>
@@ -218,7 +218,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
       </div>
 
       {list.length === 0 ? (
-        <div style={{ padding: '80px 0', textAlign: 'center', color: 'oklch(0.6 0.006 250)', fontSize: 14 }}>
+        <div style={{ padding: '80px 0', textAlign: 'center', color: UI.faint, fontSize: 14 }}>
           조건에 맞는 이벤트가 없습니다.
         </div>
       ) : null}
@@ -228,7 +228,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
           marginTop: 24,
           fontFamily: MONO,
           fontSize: 11,
-          color: 'oklch(0.65 0.006 250)',
+          color: UI.faint,
           letterSpacing: '0.04em',
         }}
       >

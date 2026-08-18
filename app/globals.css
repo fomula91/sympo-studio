@@ -1,8 +1,54 @@
+:root {
+  --ink: oklch(0.22 0.008 250);
+  --ink2: oklch(0.3 0.008 250);
+  --bg: oklch(0.968 0.002 250);
+  --surface: #fff;
+  --line: oklch(0.912 0.004 250);
+  --line-faint: oklch(0.945 0.003 250);
+  --soft: oklch(0.955 0.003 250);
+  --muted: oklch(0.55 0.008 250);
+  --muted2: oklch(0.45 0.008 250);
+  --faint: oklch(0.62 0.006 250);
+  --green: oklch(0.55 0.11 145);
+  --brand: oklch(0.475 0.11 205);
+  --brand-press: oklch(0.31 0.075 205);
+  --brand-soft: oklch(0.955 0.016 205);
+  --on-brand: #fff;
+  --hover: oklch(0.965 0.003 250);
+  --hover-border: oklch(0.78 0.006 250);
+}
+
+:root[data-theme='dark'] {
+  --ink: oklch(0.96 0.004 250);
+  --ink2: oklch(0.86 0.006 250);
+  --bg: oklch(0.19 0.006 250);
+  --surface: oklch(0.245 0.008 250);
+  --line: oklch(0.33 0.008 250);
+  --line-faint: oklch(0.28 0.006 250);
+  --soft: oklch(0.27 0.01 250);
+  --muted: oklch(0.68 0.01 250);
+  --muted2: oklch(0.62 0.01 250);
+  --faint: oklch(0.58 0.008 250);
+  --green: oklch(0.68 0.13 145);
+  --brand: oklch(0.72 0.1 205);
+  --brand-press: oklch(0.6 0.11 205);
+  --brand-soft: oklch(0.28 0.032 205);
+  --on-brand: oklch(0.15 0.02 205);
+  --hover: oklch(0.3 0.01 250);
+  --hover-border: oklch(0.42 0.01 250);
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  background: oklch(0.968 0.002 250);
+  background: var(--bg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 * {
@@ -20,13 +66,13 @@ textarea {
 }
 
 a {
-  color: oklch(0.22 0.008 250);
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 a:hover {
-  color: oklch(0.45 0.008 250);
+  color: var(--muted2);
 }
 
 ::-webkit-scrollbar {
@@ -35,44 +81,35 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.88 0.004 250);
+  background: var(--line);
   border-radius: 99px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 
 /* 디자인의 style-hover / style-focus 대응 (인라인 스타일 위에서 동작하도록 !important) */
-.hv-bg965:hover {
-  background: oklch(0.965 0.003 250) !important;
-}
-
-.hv-bg962:hover {
-  background: oklch(0.962 0.003 250) !important;
-}
-
+.hv-bg965:hover,
+.hv-bg962:hover,
 .hv-bg955:hover {
-  background: oklch(0.955 0.003 250) !important;
+  background: var(--hover) !important;
 }
 
 .hv-brandpress:hover {
-  background: oklch(0.31 0.075 205) !important;
+  background: var(--brand-press) !important;
 }
 
-.hv-border78:hover {
-  border-color: oklch(0.78 0.006 250) !important;
-}
-
+.hv-border78:hover,
 .hv-border80:hover {
-  border-color: oklch(0.8 0.006 250) !important;
+  border-color: var(--hover-border) !important;
 }
 
 .hv-ink:hover {
-  color: oklch(0.4 0.008 250) !important;
+  color: var(--muted2) !important;
 }
 
 .hv-x:hover {
-  background: oklch(0.955 0.003 250) !important;
-  color: oklch(0.35 0.008 250) !important;
+  background: var(--hover) !important;
+  color: var(--ink2) !important;
 }
 
 .hv-white:hover {
@@ -84,6 +121,34 @@ a:hover {
 }
 
 input.inp:focus {
-  border-color: oklch(0.4 0.008 250) !important;
+  border-color: var(--muted2) !important;
   outline: none;
+}
+
+/* 소개 페이지(/intro) 반응형 — grid는 auto-fit/minmax로 처리하고, 그걸로 안 되는
+   구조적 전환(내비 숨김, 라벨-설명 줄바꿈)만 미디어쿼리로 처리한다 */
+.intro-anchors {
+  display: flex;
+}
+
+.intro-limit-row {
+  display: flex;
+  gap: 20px;
+}
+
+@media (max-width: 767px) {
+  .intro-anchors {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .intro-limit-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .intro-limit-row > :first-child {
+    width: auto !important;
+    flex: initial !important;
+  }
 }
