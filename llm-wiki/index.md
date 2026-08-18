@@ -16,6 +16,7 @@
 - [[0002-cloudflare-free-tier-stack]] — Cloudflare 단일 벤더 + "저장·조회는 서버, 렌더링·생성은 클라이언트"
 - [[0003-next-tasks-fe-be-split]] — 열린 과제를 FE/BE 두 섹션으로 나눈다 (훅 파싱 계약 포함)
 - [[0004-problem-redefinition]] — 문제 정의를 실무 경험 기준으로 재정립하고, 관찰과 가설을 갈라 쓴다
+- [[0005-d1-schema]] — D1 스키마: 회차 고유성·프리셋 축적·문항 단위 설문
 
 ## 상세 (Reference 정본)
 - [[field-experience]] — **실무 경험 정본.** 무엇을 직접 겪었고 무엇을 겪지 않았는가. 문제를 서술할 때 여기 없는 내용을 "관찰"로 쓰지 않는다
