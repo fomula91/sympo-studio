@@ -6,6 +6,7 @@ import { MONO, UI } from '@/lib/ui';
 
 export default function ReportScreen({ s }: { s: StudioState }) {
   const bars = s.sessions.map((x, i) => ({
+    id: x.id,
     label: `${x.time}  ${x.title}`,
     pct: 92 - i * 7 - (i % 2) * 4,
   }));
@@ -46,7 +47,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
           <div
             key={m.label}
             style={{
-              background: '#fff',
+              background: UI.surface,
               border: `1px solid ${highlight ? UI.brand : UI.line}`,
               boxShadow: highlight ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
               borderRadius: 14,
@@ -87,16 +88,16 @@ export default function ReportScreen({ s }: { s: StudioState }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 14, alignItems: 'start' }}>
-        <div style={{ background: '#fff', border: `1px solid ${UI.line}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ background: UI.surface, border: `1px solid ${UI.line}`, borderRadius: 14, padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 4 }}>
             세션별 열람률
           </div>
-          <div style={{ fontSize: 12, color: 'oklch(0.58 0.008 250)', marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: UI.muted, marginBottom: 20 }}>
             260815 MERIDIAN 심포지엄 · 참가자 118명
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {bars.map((b) => (
-              <div key={b.label}>
+              <div key={b.id}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7 }}>
                   <div
                     style={{
@@ -116,7 +117,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
                     style={{
                       fontFamily: MONO,
                       fontSize: 11.5,
-                      color: 'oklch(0.5 0.008 250)',
+                      color: UI.muted,
                       fontVariantNumeric: 'tabular-nums',
                     }}
                   >
@@ -130,7 +131,7 @@ export default function ReportScreen({ s }: { s: StudioState }) {
             ))}
           </div>
         </div>
-        <div style={{ background: '#fff', border: `1px solid ${UI.line}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ background: UI.surface, border: `1px solid ${UI.line}`, borderRadius: 14, padding: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 20 }}>운영 지표</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {OPS.map((o) => (
@@ -141,15 +142,15 @@ export default function ReportScreen({ s }: { s: StudioState }) {
                   alignItems: 'center',
                   gap: 12,
                   padding: '13px 0',
-                  borderBottom: '1px solid oklch(0.96 0.003 250)',
+                  borderBottom: '1px solid var(--line-faint)',
                 }}
               >
-                <div style={{ flex: 1, fontSize: 12.5, color: 'oklch(0.42 0.008 250)' }}>{o.label}</div>
+                <div style={{ flex: 1, fontSize: 12.5, color: UI.muted2 }}>{o.label}</div>
                 <div
                   style={{
                     fontFamily: MONO,
                     fontSize: 12,
-                    color: 'oklch(0.68 0.006 250)',
+                    color: UI.faint,
                     textDecoration: 'line-through',
                   }}
                 >

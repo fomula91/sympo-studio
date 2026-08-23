@@ -1,68 +1,36 @@
 import type { CSSProperties } from 'react';
 import { MONO, UI } from '@/lib/ui';
 
-// 라운드 사각형 컨테이너 안에 라운드 사각형 두 개가 어긋나게 겹친 마크.
-// 에디터 프리뷰와 참가자 뷰어가 같은 컴포넌트라 어긋날 수 없다는 것을 형태로 표현한다.
+// public/logo-mark.png — 3개 가로 바(아젠다 블록) 마크. 모서리는 이미지 자체에
+// 이미 둥글게+투명 처리돼 있다(scratchpad/process-logo.js 참조).
 export function LogoMark({ size = 44 }: { size?: number }) {
-  const r = size / 44;
-  const containerRadius = 12 * r;
-  const sq = 16 * r;
-  const sqRadius = 4.5 * r;
-  const outline = 2.5 * r;
-  const rear = 11 * r;
-  const front = 18 * r;
-
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: size,
-        height: size,
-        flex: `0 0 ${size}px`,
-        borderRadius: containerRadius,
-        background: UI.brand,
-      }}
-    >
-      <div
-        style={{
-          position: 'absolute',
-          left: rear,
-          top: rear,
-          width: sq,
-          height: sq,
-          borderRadius: sqRadius,
-          border: `${outline}px solid #fff`,
-        }}
-      />
-      <div
-        style={{
-          position: 'absolute',
-          left: front,
-          top: front,
-          width: sq,
-          height: sq,
-          borderRadius: sqRadius,
-          background: '#fff',
-        }}
-      />
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/logo-mark.png"
+      alt="SYMPO STUDIO"
+      width={size}
+      height={size}
+      style={{ width: size, height: size, flex: `0 0 ${size}px`, display: 'block' }}
+    />
   );
 }
 
-export function LogoLockup({ size = 44 }: { size?: number }) {
+// ink/sub는 배경에 맞춰 넘긴다 — 다크 배경(인트로 페이지 등)에서 라이트 셸 색을 그대로 쓰면 안 보인다.
+export function LogoLockup({ size = 44, ink = UI.ink, sub = UI.brand }: { size?: number; ink?: string; sub?: string }) {
   const wordStyle: CSSProperties = {
-    fontSize: size * 0.34,
+    fontSize: size * 0.46,
     fontWeight: 750,
-    letterSpacing: '-0.045em',
-    color: UI.ink,
+    letterSpacing: '-0.04em',
+    color: ink,
     lineHeight: 1.1,
   };
   const subStyle: CSSProperties = {
     fontFamily: MONO,
-    fontSize: size * 0.19,
-    letterSpacing: '0.34em',
-    color: UI.brand,
-    marginTop: size * 0.06,
+    fontSize: size * 0.24,
+    letterSpacing: '0.3em',
+    color: sub,
+    marginTop: size * 0.07,
   };
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: size / 3 }}>

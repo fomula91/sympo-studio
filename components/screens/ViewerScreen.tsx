@@ -40,13 +40,13 @@ export default function ViewerScreen({ s }: { s: StudioState }) {
       }}
     >
       <div style={{ width: 414, flex: '0 0 414px' }}>
-        <div style={{ ...monoLabel, color: 'oklch(0.6 0.006 250)', marginBottom: 10 }}>MOBILE · 390</div>
+        <div style={{ ...monoLabel, color: UI.faint, marginBottom: 10 }}>MOBILE · 390</div>
         <div
           style={{
             width: 414,
             height: 844,
             borderRadius: 44,
-            background: UI.ink,
+            background: 'oklch(0.22 0.008 250)', // 항상 어둡게 — 실제 기기 베젤
             padding: 12,
             boxShadow: '0 24px 60px -20px oklch(0.4 0.02 250 / 0.35)',
           }}
@@ -57,11 +57,11 @@ export default function ViewerScreen({ s }: { s: StudioState }) {
         </div>
       </div>
       <div style={{ flex: 1, minWidth: 520, maxWidth: 820 }}>
-        <div style={{ ...monoLabel, color: 'oklch(0.6 0.006 250)', marginBottom: 10 }}>TABLET · 834</div>
+        <div style={{ ...monoLabel, color: UI.faint, marginBottom: 10 }}>TABLET · 834</div>
         <div
           style={{
             borderRadius: 28,
-            background: UI.ink,
+            background: 'oklch(0.22 0.008 250)', // 항상 어둡게 — 실제 기기 베젤
             padding: 14,
             boxShadow: '0 24px 60px -20px oklch(0.4 0.02 250 / 0.35)',
           }}

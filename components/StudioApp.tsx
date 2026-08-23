@@ -6,6 +6,7 @@ import ConsoleScreen from '@/components/screens/ConsoleScreen';
 import EditorScreen from '@/components/screens/EditorScreen';
 import ReportScreen from '@/components/screens/ReportScreen';
 import ViewerScreen from '@/components/screens/ViewerScreen';
+import ThemeToggle from '@/components/ThemeToggle';
 import { NAV, seedEvents, SESSIONS0 } from '@/lib/data';
 import type { Patch, PatchFn, StudioState } from '@/lib/types';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
@@ -85,7 +86,7 @@ export default function StudioApp() {
         style={{
           width: 92,
           flex: '0 0 92px',
-          background: '#fff',
+          background: UI.surface,
           borderRight: `1px solid ${UI.line}`,
           display: 'flex',
           flexDirection: 'column',
@@ -130,7 +131,7 @@ export default function StudioApp() {
                 justifyContent: 'center',
                 gap: 5,
                 background: on ? UI.brandSoft : 'transparent',
-                color: on ? UI.brand : 'oklch(0.28 0.008 250)',
+                color: on ? UI.brand : UI.ink2,
               }}
             >
               <div
@@ -139,9 +140,9 @@ export default function StudioApp() {
                     ? {
                         width: 12,
                         height: 18,
-                        border: `1.7px solid ${on ? UI.brand : 'oklch(0.3 0.008 250)'}`,
+                        border: `1.7px solid ${on ? UI.brand : UI.ink2}`,
                         borderRadius: 3.5,
-                        boxShadow: `inset 0 -3.5px 0 -1.5px ${on ? UI.brand : 'oklch(0.3 0.008 250)'}`,
+                        boxShadow: `inset 0 -3.5px 0 -1.5px ${on ? UI.brand : UI.ink2}`,
                       }
                     : {
                         fontSize: 17,
@@ -149,7 +150,7 @@ export default function StudioApp() {
                         height: 18,
                         display: 'grid',
                         placeItems: 'center',
-                        color: on ? UI.brand : 'oklch(0.3 0.008 250)',
+                        color: on ? UI.brand : UI.ink2,
                       }
                 }
               >
@@ -160,17 +161,19 @@ export default function StudioApp() {
           );
         })}
         <div style={{ flex: 1 }} />
+        <ThemeToggle size={36} />
         <div
           style={{
             width: 36,
             height: 36,
+            marginTop: 8,
             borderRadius: 99,
-            background: 'oklch(0.93 0.004 250)',
+            background: UI.line,
             display: 'grid',
             placeItems: 'center',
             fontSize: 11,
             fontWeight: 700,
-            color: 'oklch(0.45 0.008 250)',
+            color: UI.muted2,
           }}
         >
           OP
@@ -182,7 +185,7 @@ export default function StudioApp() {
           style={{
             height: 68,
             flex: '0 0 68px',
-            background: '#fff',
+            background: UI.surface,
             borderBottom: `1px solid ${UI.line}`,
             display: 'flex',
             alignItems: 'center',
@@ -241,8 +244,8 @@ export default function StudioApp() {
                 onClick={() => patch((st) => ({ bulk: !st.bulk, sel: [] }))}
                 style={{
                   ...ghostBtn,
-                  border: `1px solid ${s.bulk ? UI.ink : 'oklch(0.9 0.004 250)'}`,
-                  color: 'oklch(0.3 0.008 250)',
+                  border: `1px solid ${s.bulk ? UI.ink : UI.line}`,
+                  color: UI.ink2,
                 }}
               >
                 선택 모드
@@ -276,7 +279,8 @@ export default function StudioApp() {
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            background: UI.ink,
+            // 항상 어둡게 — 셸 다크모드와 무관하게 떠 있는 토스트 형태를 유지한다.
+            background: 'oklch(0.22 0.008 250)',
             color: '#fff',
             borderRadius: 16,
             padding: '10px 12px 10px 20px',
