@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
+import { extractPresetColor } from '@/lib/colorExtract';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
   Density,
   Device,
@@ -13,9 +14,27 @@ import type {
   Mode,
   PatchEventFn,
   PatchFn,
+  Preset,
   StudioState,
 } from '@/lib/types';
-import { ghostBtn, MONO, monoLabel, seg, UI } from '@/lib/ui';
+import { ghostBtn, MONO, monoLabel, primaryBtn, seg, UI } from '@/lib/ui';
+
+function slugifyLabel(label: string): string {
+  const base = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'preset';
+}
+
+function uniquePresetId(label: string, existing: Preset[]): string {
+  const base = slugifyLabel(label);
+  if (!existing.some((p) => p.id === base)) return base;
+  let n = 2;
+  while (existing.some((p) => p.id === `${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
 
 const MODES: { k: Mode; label: string }[] = [
   { k: 'light', label: '라이트' },
@@ -407,20 +426,50 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
 function ThemeSection({
   s,
   ev,
+  presets,
   patch,
   patchEvent,
   showContrast,
 }: {
   s: StudioState;
   ev: EventItem;
+  presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
   showContrast: boolean;
 }) {
-  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
   const cRows = contrastRows(theme, ev.mode);
   const allPass = contrastAllPass(preset, ev.mode);
+
+  const [draft, setDraft] = useState<{ h: number; extractedC: number; c: number; label: string } | null>(null);
+  const [extractError, setExtractError] = useState('');
+
+  const handleFile = async (file: File) => {
+    setExtractError('');
+    try {
+      const { h, c } = await extractPresetColor(file);
+      setDraft({ h, extractedC: c, c, label: file.name.replace(/\.[^.]+$/, '') });
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : '색을 추출하지 못했습니다.');
+    }
+  };
+
+  const draftPreset: Preset | null = draft ? { id: 'draft', label: draft.label, h: draft.h, c: draft.c } : null;
+  const draftTheme = draftPreset ? derive(draftPreset, ev.mode) : null;
+  const draftRows = draftPreset ? contrastRows(draftTheme!, ev.mode) : [];
+  const draftPass = draftPreset ? contrastAllPass(draftPreset, ev.mode) : false;
+
+  const saveDraft = () => {
+    if (!draft || !draftPass) return;
+    const id = uniquePresetId(draft.label, presets);
+    const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
+    patch({ customPresets: [...s.customPresets, newPreset] });
+    patchEvent({ presetId: id });
+    patch({ saved: '테마 반영됨' });
+    setDraft(null);
+  };
 
   return (
     <div style={{ maxWidth: 660 }}>
@@ -438,7 +487,7 @@ function ThemeSection({
           marginBottom: 28,
         }}
       >
-        {PRESETS.map((p) => {
+        {presets.map((p) => {
           const t = derive(p, ev.mode);
           const on = ev.presetId === p.id;
           const sw = { width: 14, height: 28, borderRadius: 4 } as const;
@@ -475,7 +524,122 @@ function ThemeSection({
             </button>
           );
         })}
+        <label
+          className="hv-border78"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            height: 60,
+            borderRadius: 13,
+            cursor: 'pointer',
+            border: '1.5px dashed var(--hover-border)',
+            background: UI.surface,
+            fontSize: 12.5,
+            fontWeight: 650,
+            color: UI.muted2,
+          }}
+        >
+          + 이미지에서 추출
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) handleFile(f);
+            }}
+          />
+        </label>
       </div>
+
+      {extractError ? (
+        <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 20 }}>{extractError}</div>
+      ) : null}
+
+      {draft && draftTheme ? (
+        <div
+          style={{
+            border: `1px solid ${UI.line}`,
+            borderRadius: 14,
+            background: UI.surface,
+            padding: 16,
+            marginBottom: 28,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 5 }}>
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.brand }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.soft }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.ink }} />
+            </div>
+            <input
+              className="inp"
+              value={draft.label}
+              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+              placeholder="프리셋 이름"
+              style={{
+                flex: 1,
+                height: 40,
+                borderRadius: 8,
+                border: `1px solid ${UI.line}`,
+                padding: '0 12px',
+                fontSize: 13,
+                color: UI.ink,
+                background: UI.surface,
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: UI.muted, marginBottom: 6 }}>채도 {draft.c.toFixed(3)}</div>
+            <input
+              type="range"
+              min={0}
+              max={draft.extractedC}
+              step={0.005}
+              value={draft.c}
+              onChange={(e) => setDraft({ ...draft, c: Number(e.target.value) })}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {draftRows.map((r) => (
+              <div
+                key={r.label}
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: MONO,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  background: r.pass ? 'oklch(0.955 0.03 145)' : 'oklch(0.955 0.04 28)',
+                  color: r.pass ? 'oklch(0.42 0.1 145)' : 'oklch(0.5 0.15 28)',
+                }}
+              >
+                {r.label.split(' ')[0]} {r.ratio}
+              </div>
+            ))}
+          </div>
+          {!draftPass ? (
+            <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 14 }}>
+              대비비 미달 — 채도를 낮추면 통과할 수 있습니다.
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={saveDraft}
+              disabled={!draftPass}
+              style={{ ...primaryBtn, opacity: draftPass ? 1 : 0.4, cursor: draftPass ? 'pointer' : 'not-allowed' }}
+            >
+              프리셋으로 저장
+            </button>
+            <button onClick={() => setDraft(null)} style={ghostBtn}>
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
@@ -739,15 +903,17 @@ function ThemeSection({
 export default function EditorScreen({
   s,
   ev,
+  presets,
   patch,
   patchEvent,
 }: {
   s: StudioState;
   ev: EventItem;
+  presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
 }) {
-  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
   const icons = ICONSETS[ev.iconSet].glyphs;
   const micrositeEvent = {
@@ -835,7 +1001,7 @@ export default function EditorScreen({
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
         {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'theme' ? (
-          <ThemeSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} showContrast />
+          <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
         ) : null}
         {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'docs' ? <DocsSection /> : null}

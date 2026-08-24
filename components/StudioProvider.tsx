@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { seedEvents } from '@/lib/data';
-import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, StudioState } from '@/lib/types';
+import { PRESETS } from '@/lib/theme';
+import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, Preset, StudioState } from '@/lib/types';
 
 const SEEDED_EVENTS = seedEvents();
 
@@ -15,6 +16,7 @@ const INITIAL: StudioState = {
   sel: [],
   events: SEEDED_EVENTS,
   editingId: SEEDED_EVENTS[0]?.id ?? null,
+  customPresets: [],
   viewerOpen: false,
   dragOver: false,
   dragIdx: -1,
@@ -26,6 +28,7 @@ const INITIAL: StudioState = {
 interface StudioContextValue {
   s: StudioState;
   ev: EventItem;
+  presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
 }
@@ -55,7 +58,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const ev = s.events.find((e) => e.id === s.editingId) ?? s.events[0];
-  const value = useMemo(() => ({ s, ev, patch, patchEvent }), [s, ev, patch, patchEvent]);
+  const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
+  const value = useMemo(() => ({ s, ev, presets, patch, patchEvent }), [s, ev, presets, patch, patchEvent]);
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
 }

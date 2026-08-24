@@ -6,7 +6,7 @@ import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { autoSlug, defaultEventDetail, NAV, SESSIONS0 } from '@/lib/data';
-import { contrastAllPass, PRESETS } from '@/lib/theme';
+import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
 const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
@@ -14,7 +14,7 @@ const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, patch, patchEvent } = useStudio();
+  const { s, ev, presets, patch, patchEvent } = useStudio();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -27,7 +27,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         ? 'report'
         : 'console';
 
-  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const canPublish = contrastAllPass(preset, ev.mode);
   const openViewer = () => {
     if (canPublish) patch({ viewerOpen: true });
@@ -283,7 +283,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         </header>
 
         <main style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          {s.viewerOpen ? <ViewerScreen ev={ev} /> : children}
+          {s.viewerOpen ? <ViewerScreen ev={ev} presets={presets} /> : children}
         </main>
       </div>
 

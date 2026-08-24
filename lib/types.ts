@@ -1,3 +1,10 @@
+export interface Preset {
+  id: string;
+  label: string;
+  h: number;
+  c: number;
+}
+
 export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
 export type Mode = 'light' | 'dark';
 export type IconSetId = 'geo' | 'solid' | 'number';
@@ -66,6 +73,7 @@ export interface StudioState {
   sel: number[];
   events: EventItem[];
   editingId: number | null;
+  customPresets: Preset[];
   dragOver: boolean;
   dragIdx: number;
   device: Device;

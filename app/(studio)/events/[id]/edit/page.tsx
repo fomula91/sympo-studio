@@ -7,11 +7,11 @@ import { useStudio } from '@/components/StudioProvider';
 
 export default function EditEventPage() {
   const { id } = useParams<{ id: string }>();
-  const { s, ev, patch, patchEvent } = useStudio();
+  const { s, ev, presets, patch, patchEvent } = useStudio();
 
   useEffect(() => {
     patch({ editingId: Number(id) });
   }, [id, patch]);
 
-  return <EditorScreen s={s} ev={ev} patch={patch} patchEvent={patchEvent} />;
+  return <EditorScreen s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} />;
 }

@@ -1,12 +1,12 @@
 'use client';
 
 import Microsite from '@/components/Microsite';
-import { derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { EventItem } from '@/lib/types';
+import { derive, ICONSETS } from '@/lib/theme';
+import type { EventItem, Preset } from '@/lib/types';
 import { monoLabel, UI } from '@/lib/ui';
 
-export default function ViewerScreen({ ev }: { ev: EventItem }) {
-  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: Preset[] }) {
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
   const icons = ICONSETS[ev.iconSet].glyphs;
   const micrositeEvent = {

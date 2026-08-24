@@ -1,12 +1,5 @@
 import { wcagContrast } from 'culori';
-import type { IconSetId, KvPattern, Mode } from './types';
-
-export interface Preset {
-  id: string;
-  label: string;
-  h: number;
-  c: number;
-}
+import type { IconSetId, KvPattern, Mode, Preset } from './types';
 
 export const PRESETS: Preset[] = [
   { id: 'slate', label: '슬레이트 뉴트럴', h: 255, c: 0.028 },
