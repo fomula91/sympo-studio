@@ -1,6 +1,9 @@
+'use client';
+
 import type { CSSProperties } from 'react';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, EventInfo, KvPattern, Session } from '@/lib/types';
+import { useOnlineStatus } from '@/lib/useOnlineStatus';
 
 const MONO = 'ui-monospace, monospace';
 
@@ -30,6 +33,7 @@ export default function Microsite({
   density = '기본',
   wide = false,
 }: MicrositeProps) {
+  const online = useOnlineStatus();
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
 
@@ -314,8 +318,24 @@ export default function Microsite({
           ))}
         </div>
 
+        {!online && (ev.engage.qa !== false || ev.engage.survey !== false) ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12.5,
+              color: t.muted,
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+            오프라인 상태 — 연결되면 다시 시도하세요
+          </div>
+        ) : null}
         {ev.engage.qa !== false && (
           <div
+            aria-disabled={!online}
             style={{
               height: 54,
               borderRadius: 14,
@@ -326,7 +346,8 @@ export default function Microsite({
               fontSize: 14.5,
               fontWeight: 700,
               letterSpacing: '-0.02em',
-              cursor: 'pointer',
+              cursor: online ? 'pointer' : 'not-allowed',
+              opacity: online ? 1 : 0.45,
               marginBottom: 10,
             }}
           >
@@ -335,6 +356,7 @@ export default function Microsite({
         )}
         {ev.engage.survey !== false && (
           <div
+            aria-disabled={!online}
             style={{
               height: 54,
               borderRadius: 14,
@@ -346,7 +368,8 @@ export default function Microsite({
               fontSize: 14,
               fontWeight: 650,
               letterSpacing: '-0.02em',
-              cursor: 'pointer',
+              cursor: online ? 'pointer' : 'not-allowed',
+              opacity: online ? 1 : 0.45,
             }}
           >
             설문 참여 · 2분
