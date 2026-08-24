@@ -9,16 +9,11 @@
 **FE는 서로 독립**이라 순서 없이 아무거나 착수할 수 있다(단, 대부분 대응하는 BE에 의존한다 — 각 과제의 `무엇`에 명시).
 **BE는 번호가 곧 의존 순서**다. 근거는 [[0001-backend-for-working-demo]], [[0002-cloudflare-free-tier-stack]].
 
-지금 당장 서버 없이 착수 가능한 것: **FE-2**, **FE-7**, **FE-8**, **FE-9**, FE-4의 수료증 부분, FE-6의 뷰어 부분.
+지금 당장 서버 없이 착수 가능한 것: **FE-7**, **FE-8**, **FE-9**, FE-4의 수료증 부분, FE-6의 뷰어 부분.
 
 문제 정의의 정본은 [[field-experience]]다. 과제의 `왜`를 쓸 때 **거기 없는 내용을 근거로 삼지 않는다** — 기존 README가 그렇게 무너졌다([[0004-problem-redefinition]]).
 
 ## 열린 과제 — 프론트엔드(FE)
-
-### FE-2. 라우트 분리 + 폰트 자체 호스팅
-**무엇** — 화면 4개를 App Router 라우트로 분리(`/console`, `/events/[id]/edit`, `/[slug]`, `/report`). Pretendard를 `next/font/local`로 자체 호스팅해 외부 CDN 의존을 제거한다. **BE 의존 없음 — 로컬에서 완결된다.**
-**왜** — 데모 링크를 특정 화면으로 공유할 수 있게 된다. 외부 CDN은 몇 달 뒤 링크가 열렸을 때 죽어 있을 수 있는 유일한 런타임 의존성이다.
-**완료 기준** — 4개 화면이 딥링크로 열림. 외부 네트워크 의존 0(네트워크 탭에서 자사 도메인 외 요청 없음). 이번에 하지 않는 것: 커스텀 도메인.
 
 ### FE-3. Q&A 화면 연결
 **무엇** — 참가자 화면의 "질문 남기기"를 BE-3 API에 연결. 목록 갱신은 3~5초 폴링. 전송 중·실패·rate limit 초과 상태를 화면에 드러낸다. 입력 영역은 **고령 사용자 기준**으로 잡는다(글자 크기, 터치 타깃 44px 이상, 안내 문구를 화면에 상시 노출). **BE-3 의존.**
@@ -107,3 +102,4 @@
 | 3 | 정적 export + 무료 영구 배포 | **폐기.** 정적 전용으로는 Q&A·설문이라는 제품 핵심을 증명할 수 없어 백엔드를 붙이는 방향으로 대체. 배포 자체는 BE-2로 계승 | [[0001-backend-for-working-demo]] |
 | BE-1 | D1 스키마 설계 + 이벤트 CRUD | 완료. 7개 테이블 + 이벤트 CRUD 4개 엔드포인트. 로컬 D1으로 생성·조회·수정·삭제 왕복, slug 충돌 회피, CASCADE 삭제, 설문 중복 방지 UNIQUE 확인. **서로 다른 이벤트가 각자의 아젠다·테마를 반환**하는 것까지 실측 | [[0005-d1-schema]], `migrations/0001_init.sql` (2026-08-15 [[log]]) |
 | FE-1 | 이벤트별 편집 상태 분리 | 완료. `StudioState`에 평평했던 편집 필드(title/venue/date/host/cap/engage/presetId/mode/iconSet/density/keyVisual/kvPattern/sessions)를 `EventDetail`로 묶어 `EventItem`이 갖도록 이동, `editingId` + `patchEvent`로 "현재 편집 중인 이벤트만" 갱신. 콘솔 카드 클릭이 `editingId`만 바꾸고, "새 이벤트"가 실제로 `events` 배열에 새 항목을 만듦. 헤드리스 브라우저로 이벤트1 아젠다·테마·제목 편집 후 이벤트2가 영향받지 않는 것, 새 이벤트 생성이 독립 상태로 시작하는 것 실측. lint·build 통과, 콘솔 에러 0건 | `lib/types.ts`, `lib/data.ts`, `components/StudioApp.tsx`, `components/screens/{Console,Editor,Viewer,Report}Screen.tsx` (2026-08-24 [[log]]) |
+| FE-2 | 라우트 분리 + 폰트 자체 호스팅 | 완료. 사용자와 상의해 범위를 좁힘 — `/[slug]` 공개 페이지는 만들지 않음(BE에 slug 조회 API 없음 + "행사 페이지는 관리자 화면 우측 미리보기로만" 결정). `/console`·`/events/[id]/edit`·`/report` 3개만 실제 라우트로 분리(`app/(studio)/` 라우트 그룹), 뷰어는 라우트 없이 `viewerOpen` 플래그로 현재 화면 위에 오버레이. 상태는 `StudioApp.tsx`(삭제)에서 `StudioProvider`(Context)로 끌어올려 레이아웃과 3개 페이지가 공유. Pretendard는 npm에서 가변 폰트 파일 1개(2.1MB)만 뽑아 `public/fonts/`에 커밋하고 `next/font/local`로 서빙 — 패키지 자체(72MB)는 `--no-save`로 설치해 `package.json`에 순증 없음. 헤드리스 브라우저로 3개 라우트 딥링크·카드클릭 네비게이션·뷰어 오버레이(URL 불변)·새 이벤트 생성 확인, 외부 요청 0건·콘솔 에러 0건 실측. lint·build 통과 | `lib/font.ts`, `components/Studio{Provider,Shell}.tsx`, `app/(studio)/**`, `app/{page,layout}.tsx` (2026-08-24 [[log]]) |

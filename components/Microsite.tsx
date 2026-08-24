@@ -55,7 +55,7 @@ export default function Microsite({
         overflow: 'auto',
         background: t.bg,
         color: t.ink,
-        fontFamily: "Pretendard, 'Helvetica Neue', Helvetica, sans-serif",
+        fontFamily: "var(--font-pretendard), 'Helvetica Neue', Helvetica, sans-serif",
         letterSpacing: '-0.01em',
       }}
     >

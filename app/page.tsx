@@ -1,5 +1,5 @@
-import StudioApp from '@/components/StudioApp';
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return <StudioApp />;
+  redirect('/console');
 }

@@ -1,73 +1,59 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { LogoMark } from '@/components/Logo';
-import ConsoleScreen from '@/components/screens/ConsoleScreen';
-import EditorScreen from '@/components/screens/EditorScreen';
-import ReportScreen from '@/components/screens/ReportScreen';
 import ViewerScreen from '@/components/screens/ViewerScreen';
+import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
-import { autoSlug, defaultEventDetail, NAV, seedEvents, SESSIONS0 } from '@/lib/data';
-import type { Patch, PatchEvent, PatchEventFn, PatchFn, StudioState } from '@/lib/types';
+import { autoSlug, defaultEventDetail, NAV, SESSIONS0 } from '@/lib/data';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
-
-const SEEDED_EVENTS = seedEvents();
-
-const INITIAL: StudioState = {
-  screen: 'console',
-  section: 'agenda',
-  query: '',
-  status: '전체',
-  sort: '최신',
-  bulk: false,
-  sel: [],
-  events: SEEDED_EVENTS,
-  editingId: SEEDED_EVENTS[0]?.id ?? null,
-  dragOver: false,
-  dragIdx: -1,
-  device: 'mobile',
-  saved: '방금 저장됨',
-  paneW: 0,
-};
 
 const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
 
-export default function StudioApp() {
-  const [s, setS] = useState<StudioState>(INITIAL);
-  const patch: PatchFn = useCallback((p) => {
-    setS((prev) => {
-      const delta: Patch = typeof p === 'function' ? p(prev) : p;
-      return delta ? { ...prev, ...delta } : prev;
-    });
-  }, []);
-  const patchEvent: PatchEventFn = useCallback((p) => {
-    setS((prev) => {
-      const idx = prev.events.findIndex((e) => e.id === prev.editingId);
-      if (idx < 0) return prev;
-      const delta: PatchEvent = typeof p === 'function' ? p(prev.events[idx]) : p;
-      if (!delta) return prev;
-      const events = prev.events.slice();
-      events[idx] = { ...events[idx], ...delta };
-      return { ...prev, events };
-    });
-  }, []);
+type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
-  const ev = s.events.find((e) => e.id === s.editingId) ?? s.events[0];
+export default function StudioShell({ children }: { children: React.ReactNode }) {
+  const { s, ev, patch, patchEvent } = useStudio();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const inEditor = pathname.startsWith('/events/');
+  const screenKind: ScreenKind = s.viewerOpen
+    ? 'viewer'
+    : inEditor
+      ? 'editor'
+      : pathname === '/report'
+        ? 'report'
+        : 'console';
+
+  const goTo = (target: 'console' | 'editor' | 'theme' | 'report' | 'viewer') => {
+    if (target === 'viewer') {
+      patch({ viewerOpen: true });
+      return;
+    }
+    patch((st) => ({
+      viewerOpen: false,
+      section:
+        target === 'theme' ? 'theme' : target === 'editor' ? (st.section === 'theme' ? 'agenda' : st.section) : st.section,
+    }));
+    router.push(target === 'theme' || target === 'editor' ? `/events/${ev.id}/edit` : `/${target}`);
+  };
+
   const dateCode = ev.date.replace(/-/g, '').slice(2);
   const crumb =
-    s.screen === 'console'
+    screenKind === 'console'
       ? 'EVENT CONSOLE'
-      : s.screen === 'editor'
+      : screenKind === 'editor'
         ? 'EVENT EDITOR'
-        : s.screen === 'viewer'
+        : screenKind === 'viewer'
           ? 'PARTICIPANT VIEW'
           : 'REPORT';
   const heading =
-    s.screen === 'console'
+    screenKind === 'console'
       ? `이벤트 ${s.events.length}건`
-      : s.screen === 'editor'
+      : screenKind === 'editor'
         ? `${dateCode} ${ev.title} · ${ev.venue}`
-        : s.screen === 'viewer'
+        : screenKind === 'viewer'
           ? '참가자 뷰 · 반응형 검증'
           : '운영 리포트';
 
@@ -78,7 +64,7 @@ export default function StudioApp() {
         height: '100vh',
         minHeight: 640,
         overflow: 'hidden',
-        fontFamily: "Pretendard, 'Helvetica Neue', Helvetica, sans-serif",
+        fontFamily: "var(--font-pretendard), 'Helvetica Neue', Helvetica, sans-serif",
         color: UI.ink,
         background: UI.bg,
         letterSpacing: '-0.01em',
@@ -101,26 +87,21 @@ export default function StudioApp() {
           <LogoMark size={44} />
         </div>
         {NAV.map((n) => {
-          const inEditor = s.screen === 'editor';
           const on =
-            n.id === 'theme'
-              ? inEditor && s.section === 'theme'
-              : n.id === 'editor'
-                ? inEditor && s.section !== 'theme'
-                : s.screen === n.id;
+            n.id === 'viewer'
+              ? s.viewerOpen
+              : s.viewerOpen
+                ? false
+                : n.id === 'theme'
+                  ? inEditor && s.section === 'theme'
+                  : n.id === 'editor'
+                    ? inEditor && s.section !== 'theme'
+                    : pathname === `/${n.id}`;
           return (
             <button
               key={n.id}
               className="hv-bg955"
-              onClick={() =>
-                patch((st) =>
-                  n.id === 'theme'
-                    ? { screen: 'editor', section: 'theme' }
-                    : n.id === 'editor'
-                      ? { screen: 'editor', section: st.section === 'theme' ? 'agenda' : st.section }
-                      : { screen: n.id as StudioState['screen'] },
-                )
-              }
+              onClick={() => goTo(n.id as 'console' | 'editor' | 'theme' | 'report' | 'viewer')}
               style={{
                 width: 68,
                 height: 60,
@@ -221,7 +202,7 @@ export default function StudioApp() {
             </div>
           </div>
           <div style={{ flex: 1 }} />
-          {s.screen === 'editor' ? (
+          {screenKind === 'editor' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: UI.muted }}>
                 <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.green }} />
@@ -237,12 +218,12 @@ export default function StudioApp() {
               >
                 되돌리기
               </button>
-              <button className="hv-brandpress" onClick={() => patch({ screen: 'viewer' })} style={primaryBtn}>
+              <button className="hv-brandpress" onClick={() => patch({ viewerOpen: true })} style={primaryBtn}>
                 공개하기
               </button>
             </div>
           ) : null}
-          {s.screen === 'console' ? (
+          {screenKind === 'console' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button
                 className="hv-bg965"
@@ -257,29 +238,27 @@ export default function StudioApp() {
               </button>
               <button
                 className="hv-brandpress"
-                onClick={() =>
-                  patch((st) => {
-                    const id = Date.now();
-                    const detail = defaultEventDetail();
-                    return {
-                      events: [
-                        ...st.events,
-                        {
-                          id,
-                          brand: '',
-                          status: '초안',
-                          dateCode: detail.date.replace(/-/g, '').slice(2),
-                          slug: autoSlug(detail.title, detail.venue, detail.date),
-                          docs: 0,
-                          ...detail,
-                        },
-                      ],
-                      editingId: id,
-                      screen: 'editor',
-                      section: 'basic',
-                    };
-                  })
-                }
+                onClick={() => {
+                  const id = Date.now();
+                  const detail = defaultEventDetail();
+                  patch((st) => ({
+                    events: [
+                      ...st.events,
+                      {
+                        id,
+                        brand: '',
+                        status: '초안',
+                        dateCode: detail.date.replace(/-/g, '').slice(2),
+                        slug: autoSlug(detail.title, detail.venue, detail.date),
+                        docs: 0,
+                        ...detail,
+                      },
+                    ],
+                    editingId: id,
+                    section: 'basic',
+                  }));
+                  router.push(`/events/${id}/edit`);
+                }}
                 style={primaryBtn}
               >
                 새 이벤트
@@ -289,10 +268,7 @@ export default function StudioApp() {
         </header>
 
         <main style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          {s.screen === 'console' ? <ConsoleScreen s={s} patch={patch} /> : null}
-          {s.screen === 'editor' ? <EditorScreen s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
-          {s.screen === 'viewer' ? <ViewerScreen ev={ev} /> : null}
-          {s.screen === 'report' ? <ReportScreen ev={ev} /> : null}
+          {s.viewerOpen ? <ViewerScreen ev={ev} /> : children}
         </main>
       </div>
 

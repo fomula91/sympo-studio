@@ -115,7 +115,7 @@ export default function IntroPage() {
       style={{
         background: UI.bg,
         color: UI.ink,
-        fontFamily: "Pretendard, 'Helvetica Neue', Helvetica, sans-serif",
+        fontFamily: "var(--font-pretendard), 'Helvetica Neue', Helvetica, sans-serif",
         letterSpacing: '-0.01em',
       }}
     >

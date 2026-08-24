@@ -1,4 +1,3 @@
-export type Screen = 'console' | 'editor' | 'viewer' | 'report';
 export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
 export type Mode = 'light' | 'dark';
 export type IconSetId = 'geo' | 'solid' | 'number';
@@ -58,7 +57,7 @@ export interface EventInfo {
 }
 
 export interface StudioState {
-  screen: Screen;
+  viewerOpen: boolean;
   section: Section;
   query: string;
   status: string;

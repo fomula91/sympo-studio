@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { STATUS } from '@/lib/data';
 import type { PatchFn, SortKey, StudioState } from '@/lib/types';
 import { MONO, pillStyle, seg, UI } from '@/lib/ui';
@@ -19,6 +20,7 @@ export function filterEvents(s: StudioState) {
 }
 
 export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: PatchFn }) {
+  const router = useRouter();
   const list = filterEvents(s);
 
   return (
@@ -116,7 +118,8 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                     sel: on ? st.sel.filter((x) => x !== e.id) : [...st.sel, e.id],
                   }));
                 } else {
-                  patch({ screen: 'editor', section: 'agenda', editingId: e.id });
+                  patch({ editingId: e.id, section: 'agenda' });
+                  router.push(`/events/${e.id}/edit`);
                 }
               }}
               style={{
