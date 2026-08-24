@@ -10,6 +10,9 @@
 > `[FE]` 프론트엔드 코드 · `[BE]` 백엔드·인프라 코드 · `[PROJ]` 위키·문서·설정 등 코드 외 작업.
 > 한 항목이 FE와 BE를 모두 건드렸다면 **항목을 쪼갠다** — 태그를 두 개 붙이지 않는다.
 
+## 2026-08-24
+- **[PROJ] `CLAUDE.local.md`에 역할 섹션 추가 + `.gitignore` 등록**: 프론트엔드 담당자로서 로컬 전용 지침 파일(`CLAUDE.local.md`, 기존에 이미 존재)에 "나는 프론트엔드 담당, BE는 팀원 담당" 역할 컨텍스트를 `## 0.` 섹션으로 추가 — BE 영역(D1·API·Cron 등)은 요청 없이 손대지 않는다는 것과 로그 태그는 기본 `[FE]`를 쓴다는 걸 명시. 그 과정에서 이 파일이 로컬 전용 의도임에도 `.gitignore`에 등록돼 있지 않아 `git status`에 untracked로 잡히는(커밋 시 함께 올라갈 수 있는) 상태였음을 발견 — `.gitignore`에 `CLAUDE.local.md` 추가로 해결. 코드 변경 없음.
+
 ## 2026-08-19
 - **[FE] 리포트 화면 React 키 중복 버그 수정 + 소개 페이지 스크롤 등장 애니메이션 추가**: 사용자가 실제 콘솔 에러("Encountered two children with the same key")를 보고 — `ReportScreen.tsx`의 세션 막대 리스트가 `time+title` 문자열을 키로 썼는데, 아젠다의 "라이브러리에서 가져오기"가 세션 라이브러리(3개)를 순환 참조하다 보니 4번째부터 같은 시간+제목 조합이 다시 들어가 충돌. `bars`에 세션의 실제 `id`를 담아 키로 교체, "가져오기" 5회 클릭으로 강제 재현해 수정 확인. 이어서 관리자 콘솔·참가자 화면·소개 페이지 전체를 스크린샷으로 훑는 디자인 감사 진행 — 상태 배지(진행중/검수대기 등)가 다크모드에서 라이트 배경 그대로 남아 튀는 문제를 재확인(알려진 갭, 미해결). 사용자 요청으로 소개 페이지에 스크롤 등장 애니메이션 추가: `components/Reveal.tsx`(`IntersectionObserver` 1회성 — 보이면 즉시 disconnect, 리사이즈로 재발동 없음)와 히어로용 CSS 키프레임 스태거. `opacity`/`transform`만 사용해 리플로우 없음, 값은 고정 px라 회전·리사이즈에 안전, 전체가 `@media (prefers-reduced-motion: no-preference)` 안에 있어 그 설정이면 애니메이션 없이 처음부터 완전히 보임 — 헤드리스 브라우저로 히어로 애니메이션 완료·스크롤 리빌·리사이즈 후 상태 유지·reduced-motion 즉시 표시 4가지 전부 수치로 확인. 소개 페이지 히어로 눈썹 라벨을 "Portfolio · Solo project"에서 "Portfolio"로 축약(사용자 요청). lint·build 통과.
 - **[PROJ] PR #6 충돌 해소 완료 + push**: 전날 시작한 `origin/main` 머지(log.md 충돌 수동 해소, BE-1 의존성 설치, lint·build 재확인)를 마무리하고 커밋(`89808d3`) 후 `fork`에 push. `gh pr view 6`로 `mergeStateStatus: CLEAN`, `mergeable: MERGEABLE` 확인 — PR #6이 이제 충돌 없이 머지 가능한 상태.
