@@ -13,9 +13,8 @@
     {
       "binding": "DB",
       "database_name": "sympo-studio-db",
-      // 로컬(--local)에서는 이 값이 쓰이지 않는다. 원격 배포는 BE-2에서
-      // `wrangler d1 create sympo-studio-db`로 발급받은 UUID를 채운다.
-      "database_id": "local-dev-placeholder",
+      // 로컬(--local)에서는 이 값이 쓰이지 않는다. `wrangler d1 create sympo-studio-db`로 발급(BE-2).
+      "database_id": "43899e71-26cd-428d-8038-d270355f628c",
       "migrations_dir": "migrations"
     }
   ]
