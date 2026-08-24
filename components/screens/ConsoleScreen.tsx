@@ -116,12 +116,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                     sel: on ? st.sel.filter((x) => x !== e.id) : [...st.sel, e.id],
                   }));
                 } else {
-                  patch({
-                    screen: 'editor',
-                    section: 'agenda',
-                    title: `${e.brand} 심포지엄`,
-                    venue: e.venue,
-                  });
+                  patch({ screen: 'editor', section: 'agenda', editingId: e.id });
                 }
               }}
               style={{
@@ -176,7 +171,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                       textWrap: 'pretty',
                     }}
                   >
-                    {e.brand} 심포지엄
+                    {e.title}
                   </div>
                   <div style={{ fontSize: 13, color: UI.muted, lineHeight: 1.5 }}>{e.venue}</div>
                   <div
@@ -205,7 +200,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 }}
               >
                 <div style={{ fontSize: 12, color: UI.muted }}>
-                  세션 {e.sessions} · 자료 {e.docs}
+                  세션 {e.sessions.length} · 자료 {e.docs}
                 </div>
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : UI.muted2 }}>

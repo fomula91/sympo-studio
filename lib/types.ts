@@ -7,14 +7,28 @@ export type KvPattern = 'stripe' | 'grid' | 'flat' | 'none';
 export type SortKey = '최신' | '행사일' | '이름';
 export type Device = 'mobile' | 'tablet';
 
-export interface EventItem {
+export interface EventDetail {
+  title: string;
+  venue: string;
+  date: string;
+  host: string;
+  cap: string;
+  engage: Engage;
+  presetId: string;
+  mode: Mode;
+  iconSet: IconSetId;
+  density: Density;
+  keyVisual: string;
+  kvPattern: KvPattern;
+  sessions: Session[];
+}
+
+export interface EventItem extends EventDetail {
   id: number;
   brand: string;
-  venue: string;
   status: string;
   dateCode: string;
   slug: string;
-  sessions: number;
   docs: number;
 }
 
@@ -52,25 +66,16 @@ export interface StudioState {
   bulk: boolean;
   sel: number[];
   events: EventItem[];
-  sessions: Session[];
-  presetId: string;
-  mode: Mode;
-  iconSet: IconSetId;
-  density: Density;
-  keyVisual: string;
-  kvPattern: KvPattern;
+  editingId: number | null;
   dragOver: boolean;
   dragIdx: number;
   device: Device;
-  title: string;
-  venue: string;
-  date: string;
-  cap: string;
-  host: string;
-  engage: Engage;
   saved: string;
   paneW: number;
 }
 
 export type Patch = Partial<StudioState> | null;
 export type PatchFn = (p: Patch | ((s: StudioState) => Patch)) => void;
+
+export type PatchEvent = Partial<EventDetail> | null;
+export type PatchEventFn = (p: PatchEvent | ((ev: EventItem) => PatchEvent)) => void;

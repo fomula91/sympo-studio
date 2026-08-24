@@ -7,9 +7,11 @@ import EditorScreen from '@/components/screens/EditorScreen';
 import ReportScreen from '@/components/screens/ReportScreen';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import ThemeToggle from '@/components/ThemeToggle';
-import { NAV, seedEvents, SESSIONS0 } from '@/lib/data';
-import type { Patch, PatchFn, StudioState } from '@/lib/types';
+import { autoSlug, defaultEventDetail, NAV, seedEvents, SESSIONS0 } from '@/lib/data';
+import type { Patch, PatchEvent, PatchEventFn, PatchFn, StudioState } from '@/lib/types';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
+
+const SEEDED_EVENTS = seedEvents();
 
 const INITIAL: StudioState = {
   screen: 'console',
@@ -19,23 +21,11 @@ const INITIAL: StudioState = {
   sort: '최신',
   bulk: false,
   sel: [],
-  events: seedEvents(),
-  sessions: SESSIONS0.slice(),
-  presetId: 'aurora',
-  mode: 'light',
-  iconSet: 'geo',
-  density: '기본',
-  keyVisual: '',
-  kvPattern: 'stripe',
+  events: SEEDED_EVENTS,
+  editingId: SEEDED_EVENTS[0]?.id ?? null,
   dragOver: false,
   dragIdx: -1,
   device: 'mobile',
-  title: 'MERIDIAN 심포지엄',
-  venue: '아르떼 호텔 서울',
-  date: '2026-08-15',
-  cap: '120',
-  host: '좌장 서정우',
-  engage: { qa: true, survey: true, chat: false, cert: true },
   saved: '방금 저장됨',
   paneW: 0,
 };
@@ -50,8 +40,20 @@ export default function StudioApp() {
       return delta ? { ...prev, ...delta } : prev;
     });
   }, []);
+  const patchEvent: PatchEventFn = useCallback((p) => {
+    setS((prev) => {
+      const idx = prev.events.findIndex((e) => e.id === prev.editingId);
+      if (idx < 0) return prev;
+      const delta: PatchEvent = typeof p === 'function' ? p(prev.events[idx]) : p;
+      if (!delta) return prev;
+      const events = prev.events.slice();
+      events[idx] = { ...events[idx], ...delta };
+      return { ...prev, events };
+    });
+  }, []);
 
-  const dateCode = s.date.replace(/-/g, '').slice(2);
+  const ev = s.events.find((e) => e.id === s.editingId) ?? s.events[0];
+  const dateCode = ev.date.replace(/-/g, '').slice(2);
   const crumb =
     s.screen === 'console'
       ? 'EVENT CONSOLE'
@@ -64,7 +66,7 @@ export default function StudioApp() {
     s.screen === 'console'
       ? `이벤트 ${s.events.length}건`
       : s.screen === 'editor'
-        ? `${dateCode} ${s.title} · ${s.venue}`
+        ? `${dateCode} ${ev.title} · ${ev.venue}`
         : s.screen === 'viewer'
           ? '참가자 뷰 · 반응형 검증'
           : '운영 리포트';
@@ -227,7 +229,10 @@ export default function StudioApp() {
               </div>
               <button
                 className="hv-bg965"
-                onClick={() => patch({ sessions: SESSIONS0.slice(), saved: '되돌렸습니다' })}
+                onClick={() => {
+                  patchEvent({ sessions: SESSIONS0.slice() });
+                  patch({ saved: '되돌렸습니다' });
+                }}
                 style={ghostBtn}
               >
                 되돌리기
@@ -252,7 +257,29 @@ export default function StudioApp() {
               </button>
               <button
                 className="hv-brandpress"
-                onClick={() => patch({ screen: 'editor', section: 'basic' })}
+                onClick={() =>
+                  patch((st) => {
+                    const id = Date.now();
+                    const detail = defaultEventDetail();
+                    return {
+                      events: [
+                        ...st.events,
+                        {
+                          id,
+                          brand: '',
+                          status: '초안',
+                          dateCode: detail.date.replace(/-/g, '').slice(2),
+                          slug: autoSlug(detail.title, detail.venue, detail.date),
+                          docs: 0,
+                          ...detail,
+                        },
+                      ],
+                      editingId: id,
+                      screen: 'editor',
+                      section: 'basic',
+                    };
+                  })
+                }
                 style={primaryBtn}
               >
                 새 이벤트
@@ -263,9 +290,9 @@ export default function StudioApp() {
 
         <main style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           {s.screen === 'console' ? <ConsoleScreen s={s} patch={patch} /> : null}
-          {s.screen === 'editor' ? <EditorScreen s={s} patch={patch} /> : null}
-          {s.screen === 'viewer' ? <ViewerScreen s={s} /> : null}
-          {s.screen === 'report' ? <ReportScreen s={s} /> : null}
+          {s.screen === 'editor' ? <EditorScreen s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+          {s.screen === 'viewer' ? <ViewerScreen ev={ev} /> : null}
+          {s.screen === 'report' ? <ReportScreen ev={ev} /> : null}
         </main>
       </div>
 

@@ -2,30 +2,30 @@
 
 import Microsite from '@/components/Microsite';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { StudioState } from '@/lib/types';
+import type { EventItem } from '@/lib/types';
 import { monoLabel, UI } from '@/lib/ui';
 
-export default function ViewerScreen({ s }: { s: StudioState }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const icons = ICONSETS[s.iconSet].glyphs;
-  const ev = {
-    title: s.title,
-    venue: s.venue,
-    date: s.date,
-    host: s.host,
-    cap: s.cap,
-    engage: s.engage,
+export default function ViewerScreen({ ev }: { ev: EventItem }) {
+  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const theme = derive(preset, ev.mode);
+  const icons = ICONSETS[ev.iconSet].glyphs;
+  const micrositeEvent = {
+    title: ev.title,
+    venue: ev.venue,
+    date: ev.date,
+    host: ev.host,
+    cap: ev.cap,
+    engage: ev.engage,
     brandLabel: preset.label,
   };
   const micrositeProps = {
     theme,
-    sessions: s.sessions,
+    sessions: ev.sessions,
     icons,
-    event: ev,
-    kv: s.keyVisual,
-    kvPattern: s.kvPattern,
-    density: s.density,
+    event: micrositeEvent,
+    kv: ev.keyVisual,
+    kvPattern: ev.kvPattern,
+    density: ev.density,
   };
 
   return (

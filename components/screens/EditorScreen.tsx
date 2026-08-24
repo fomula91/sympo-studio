@@ -4,7 +4,17 @@ import { useCallback, useEffect, useRef } from 'react';
 import Microsite from '@/components/Microsite';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
 import { contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { Density, Device, IconSetId, KvPattern, Mode, PatchFn, StudioState } from '@/lib/types';
+import type {
+  Density,
+  Device,
+  EventItem,
+  IconSetId,
+  KvPattern,
+  Mode,
+  PatchEventFn,
+  PatchFn,
+  StudioState,
+} from '@/lib/types';
 import { ghostBtn, MONO, monoLabel, seg, UI } from '@/lib/ui';
 
 const MODES: { k: Mode; label: string }[] = [
@@ -30,22 +40,35 @@ const sectionDesc = {
   lineHeight: 1.6,
 } as const;
 
-function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function AgendaSection({
+  s,
+  ev,
+  patch,
+  patchEvent,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+}) {
   const startDrag = (idx: number) => (e: React.PointerEvent) => {
     e.preventDefault();
+    let cur = idx;
     patch({ dragIdx: idx });
-    const move = (ev: PointerEvent) => {
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const move = (pe: PointerEvent) => {
+      const el = document.elementFromPoint(pe.clientX, pe.clientY);
       const row = el?.closest?.('[data-idx]');
       if (!row) return;
       const to = parseInt(row.getAttribute('data-idx') ?? '', 10);
-      patch((st) => {
-        if (st.dragIdx < 0 || to === st.dragIdx || isNaN(to)) return null;
-        const arr = st.sessions.slice();
-        const [it] = arr.splice(st.dragIdx, 1);
+      if (isNaN(to) || to === cur) return;
+      patchEvent((curEv) => {
+        const arr = curEv.sessions.slice();
+        const [it] = arr.splice(cur, 1);
         arr.splice(to, 0, it);
-        return { sessions: arr, dragIdx: to, saved: '변경 저장 중…' };
+        return { sessions: arr };
       });
+      cur = to;
+      patch({ dragIdx: to, saved: '변경 저장 중…' });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -63,12 +86,13 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
         <div style={{ flex: 1 }} />
         <button
           className="hv-bg965"
-          onClick={() =>
-            patch((st) => {
-              const pick = SESSION_LIB[st.sessions.length % SESSION_LIB.length];
-              return { sessions: [...st.sessions, { id: Date.now(), ...pick }], saved: '방금 저장됨' };
-            })
-          }
+          onClick={() => {
+            patchEvent((curEv) => {
+              const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
+              return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
+            });
+            patch({ saved: '방금 저장됨' });
+          }}
           style={{ ...ghostBtn, fontWeight: 600 }}
         >
           라이브러리에서 가져오기
@@ -77,7 +101,7 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
       <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꿉니다.</p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {s.sessions.map((x, i) => (
+        {ev.sessions.map((x, i) => (
           <div
             key={x.id}
             data-idx={i}
@@ -143,9 +167,10 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             </div>
             <button
               className="hv-x"
-              onClick={() =>
-                patch((st) => ({ sessions: st.sessions.filter((_, j) => j !== i), saved: '방금 저장됨' }))
-              }
+              onClick={() => {
+                patchEvent((curEv) => ({ sessions: curEv.sessions.filter((_, j) => j !== i) }));
+                patch({ saved: '방금 저장됨' });
+              }}
               style={{
                 width: 44,
                 height: 44,
@@ -167,7 +192,7 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
   );
 }
 
-function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={sectionTitle}>기본 정보</h2>
@@ -190,8 +215,11 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             </div>
             <input
               className="inp"
-              value={s[f.k]}
-              onChange={(e) => patch({ [f.k]: e.target.value, saved: '변경 저장 중…' })}
+              value={ev[f.k]}
+              onChange={(e) => {
+                patchEvent({ [f.k]: e.target.value });
+                patch({ saved: '변경 저장 중…' });
+              }}
               style={{
                 width: '100%',
                 height: 52,
@@ -212,7 +240,7 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             생성될 URL
           </div>
           <div style={{ fontFamily: MONO, fontSize: 13, color: UI.ink2, wordBreak: 'break-all' }}>
-            sympo.studio/{autoSlug(s.title, s.venue, s.date)}
+            sympo.studio/{autoSlug(ev.title, ev.venue, ev.date)}
           </div>
           <div
             style={{
@@ -321,21 +349,22 @@ function DocsSection() {
   );
 }
 
-function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={sectionTitle}>참여</h2>
       <p style={sectionDesc}>Q&A와 설문을 외부 링크·QR 이미지 대신 페이지 안에서 완결시킵니다.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ENGAGE_DEFS.map((t) => {
-          const on = s.engage[t.k];
+          const on = ev.engage[t.k];
           return (
             <button
               key={t.k}
               className="hv-border80"
-              onClick={() =>
-                patch((st) => ({ engage: { ...st.engage, [t.k]: !st.engage[t.k] }, saved: '방금 저장됨' }))
-              }
+              onClick={() => {
+                patchEvent((curEv) => ({ engage: { ...curEv.engage, [t.k]: !curEv.engage[t.k] } }));
+                patch({ saved: '방금 저장됨' });
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -375,10 +404,22 @@ function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
   );
 }
 
-function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: PatchFn; showContrast: boolean }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const cRows = contrastRows(theme, s.mode);
+function ThemeSection({
+  s,
+  ev,
+  patch,
+  patchEvent,
+  showContrast,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  showContrast: boolean;
+}) {
+  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const theme = derive(preset, ev.mode);
+  const cRows = contrastRows(theme, ev.mode);
   const allPass = cRows.every((r) => r.pass);
 
   return (
@@ -398,14 +439,17 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
         }}
       >
         {PRESETS.map((p) => {
-          const t = derive(p, s.mode);
-          const on = s.presetId === p.id;
+          const t = derive(p, ev.mode);
+          const on = ev.presetId === p.id;
           const sw = { width: 14, height: 28, borderRadius: 4 } as const;
           return (
             <button
               key={p.id}
               className="hv-border78"
-              onClick={() => patch({ presetId: p.id, saved: '테마 반영됨' })}
+              onClick={() => {
+                patchEvent({ presetId: p.id });
+                patch({ saved: '테마 반영됨' });
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -447,7 +491,14 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             }}
           >
             {MODES.map((m) => (
-              <button key={m.k} onClick={() => patch({ mode: m.k, saved: '테마 반영됨' })} style={seg(s.mode === m.k)}>
+              <button
+                key={m.k}
+                onClick={() => {
+                  patchEvent({ mode: m.k });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.mode === m.k)}
+              >
                 {m.label}
               </button>
             ))}
@@ -468,8 +519,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             {(Object.keys(ICONSETS) as IconSetId[]).map((k) => (
               <button
                 key={k}
-                onClick={() => patch({ iconSet: k, saved: '테마 반영됨' })}
-                style={seg(s.iconSet === k)}
+                onClick={() => {
+                  patchEvent({ iconSet: k });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.iconSet === k)}
               >
                 {ICONSETS[k].label}
               </button>
@@ -491,8 +545,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             {DENSITIES.map((d) => (
               <button
                 key={d}
-                onClick={() => patch({ density: d, saved: '테마 반영됨' })}
-                style={seg(s.density === d)}
+                onClick={() => {
+                  patchEvent({ density: d });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.density === d)}
               >
                 {d}
               </button>
@@ -508,7 +565,8 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           patch({ dragOver: false });
           const f = e.dataTransfer?.files?.[0];
           if (f && f.type.startsWith('image')) {
-            patch({ keyVisual: URL.createObjectURL(f), saved: '키 비주얼 교체됨' });
+            patchEvent({ keyVisual: URL.createObjectURL(f) });
+            patch({ saved: '키 비주얼 교체됨' });
           }
         }}
         onDragOver={(e) => {
@@ -526,7 +584,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           border: `1.5px dashed ${s.dragOver ? UI.ink2 : 'var(--hover-border)'}`,
         }}
       >
-        {s.keyVisual ? (
+        {ev.keyVisual ? (
           <div
             role="img"
             aria-label="키 비주얼"
@@ -534,7 +592,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               width: '100%',
               height: '100%',
               borderRadius: 13,
-              background: `url("${s.keyVisual}") center/cover no-repeat`,
+              background: `url("${ev.keyVisual}") center/cover no-repeat`,
             }}
           />
         ) : (
@@ -558,7 +616,10 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
         {KV_CHOICES.map((p) => (
           <button
             key={p.k}
-            onClick={() => patch({ kvPattern: p.k, keyVisual: '', saved: '키 비주얼 교체됨' })}
+            onClick={() => {
+              patchEvent({ kvPattern: p.k, keyVisual: '' });
+              patch({ saved: '키 비주얼 교체됨' });
+            }}
             style={{
               height: 44,
               padding: '0 14px',
@@ -567,7 +628,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               fontSize: 12,
               fontWeight: 650,
               background: UI.surface,
-              border: `1px solid ${s.kvPattern === p.k && !s.keyVisual ? UI.ink : 'var(--line)'}`,
+              border: `1px solid ${ev.kvPattern === p.k && !ev.keyVisual ? UI.ink : 'var(--line)'}`,
               color: UI.ink2,
             }}
           >
@@ -576,7 +637,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
         ))}
         <button
           className="hv-bg965"
-          onClick={() => patch({ keyVisual: '', kvPattern: 'none' })}
+          onClick={() => patchEvent({ keyVisual: '', kvPattern: 'none' })}
           style={{
             height: 44,
             padding: '0 14px',
@@ -675,17 +736,27 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
   );
 }
 
-export default function EditorScreen({ s, patch }: { s: StudioState; patch: PatchFn }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const icons = ICONSETS[s.iconSet].glyphs;
-  const ev = {
-    title: s.title,
-    venue: s.venue,
-    date: s.date,
-    host: s.host,
-    cap: s.cap,
-    engage: s.engage,
+export default function EditorScreen({
+  s,
+  ev,
+  patch,
+  patchEvent,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+}) {
+  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const theme = derive(preset, ev.mode);
+  const icons = ICONSETS[ev.iconSet].glyphs;
+  const micrositeEvent = {
+    title: ev.title,
+    venue: ev.venue,
+    date: ev.date,
+    host: ev.host,
+    cap: ev.cap,
+    engage: ev.engage,
     brandLabel: preset.label,
   };
 
@@ -727,7 +798,7 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
         <div style={{ ...monoLabel, color: UI.faint, padding: '6px 10px 10px' }}>SECTIONS</div>
         {SECTIONS.map((x) => {
           const meta =
-            x.id === 'agenda' ? String(s.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
+            x.id === 'agenda' ? String(ev.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
           return (
             <button
               key={x.id}
@@ -762,11 +833,13 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
       </div>
 
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
-        {s.section === 'agenda' ? <AgendaSection s={s} patch={patch} /> : null}
-        {s.section === 'theme' ? <ThemeSection s={s} patch={patch} showContrast /> : null}
-        {s.section === 'basic' ? <BasicSection s={s} patch={patch} /> : null}
+        {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'theme' ? (
+          <ThemeSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} showContrast />
+        ) : null}
+        {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'docs' ? <DocsSection /> : null}
-        {s.section === 'engage' ? <EngageSection s={s} patch={patch} /> : null}
+        {s.section === 'engage' ? <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
       </div>
 
       <div
@@ -848,12 +921,12 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
             <div style={{ width: kvW, height: kvH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               <Microsite
                 theme={theme}
-                sessions={s.sessions}
+                sessions={ev.sessions}
                 icons={icons}
-                event={ev}
-                kv={s.keyVisual}
-                kvPattern={s.kvPattern}
-                density={s.density}
+                event={micrositeEvent}
+                kv={ev.keyVisual}
+                kvPattern={ev.kvPattern}
+                density={ev.density}
               />
             </div>
           </div>
