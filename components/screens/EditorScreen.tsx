@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import Microsite from '@/components/Microsite';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type {
   Density,
   Device,
@@ -420,7 +420,7 @@ function ThemeSection({
   const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
   const theme = derive(preset, ev.mode);
   const cRows = contrastRows(theme, ev.mode);
-  const allPass = cRows.every((r) => r.pass);
+  const allPass = contrastAllPass(preset, ev.mode);
 
   return (
     <div style={{ maxWidth: 660 }}>

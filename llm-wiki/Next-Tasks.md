@@ -9,7 +9,7 @@
 **FE는 서로 독립**이라 순서 없이 아무거나 착수할 수 있다(단, 대부분 대응하는 BE에 의존한다 — 각 과제의 `무엇`에 명시).
 **BE는 번호가 곧 의존 순서**다. 근거는 [[0001-backend-for-working-demo]], [[0002-cloudflare-free-tier-stack]].
 
-지금 당장 서버 없이 착수 가능한 것: **FE-7**, **FE-8**, **FE-9**, FE-4의 수료증 부분, FE-6의 뷰어 부분.
+지금 당장 서버 없이 착수 가능한 것: **FE-8**, **FE-9**, FE-4의 수료증 부분, FE-6의 뷰어 부분.
 
 문제 정의의 정본은 [[field-experience]]다. 과제의 `왜`를 쓸 때 **거기 없는 내용을 근거로 삼지 않는다** — 기존 README가 그렇게 무너졌다([[0004-problem-redefinition]]).
 
@@ -34,11 +34,6 @@
 **무엇** — PDF 렌더링을 **PDF.js 클라이언트**로 구현하고 페이지 이동·확대 UI를 만든다. 함께 **현장 업로드 경로**를 넣는다 — 자료 도착 전의 "준비 중" 상태 표시, 태블릿에서 올릴 수 있는 업로드 UI, 올린 즉시 참가자 화면 반영. 데모용 가상 강의자료 PDF 제작 포함. **업로드는 BE-6 의존**이나, 로컬 PDF로 뷰어 개발까지는 먼저 할 수 있다.
 **왜** — 실무에서 **연자가 늦게 도착해 자료가 행사 진행 중에 올라왔다**([[field-experience]]). 자료를 올리는 곳은 사무실 책상이 아니라 현장이었고, 그때까지 빈 목록이 그냥 결함처럼 보였다. 뷰어만으로는 이 상황을 다루지 못한다.
 **완료 기준** — **모바일·태블릿에서 페이지 이동·확대가 동작**(`<iframe>` 방식은 iOS Safari에서 깨져 기각). 자료 없는 상태가 "준비 중"으로 읽힘. 태블릿 화면에서 업로드 완주 가능. 번들은 lazy load로 초기 로딩에 포함되지 않음.
-
-### FE-7. 대비비 저장 게이트 실장
-**무엇** — `lib/theme.ts:40`의 `lum(L) = L³` 근사를 culori 기반 실제 OKLCH→sRGB 변환으로 교체하고, `allPass`가 거짓일 때 "공개하기"를 실제로 차단한다(`StudioApp.tsx:245`). **BE 의존 없음.**
-**왜** — "대비비 미달 조합은 만들 수 없다"가 이 제품의 주장인데 지금은 배지만 그리고 저장을 막지 않는다. **보여주려는 것 자체가 구현돼 있지 않다.** 실무에서 대비비로 사고가 난 적은 없지만, 색을 눈으로 맞추던 상황에서는 **안 났다는 보장도 없었다**([[field-experience]]). FE-8이 이미지에서 뽑은 색을 검증 없이 쓰면 위험하므로 그쪽의 전제이기도 하다.
-**완료 기준** — 미달 조합에서 공개 버튼 비활성 + 사유 노출. WCAG 수치가 실제 sRGB 변환 기준. Vitest로 프리셋별 대비비 회귀 테스트.
 
 ### FE-8. 브랜드 컬러를 대표 이미지에서 추출 + 프리셋 축적
 **무엇** — 브랜드 대표 이미지를 올리면 주조색을 추출해 `{hue, chroma}`로 변환하고, 기존 `derive` 파이프라인에 태운다. 추출 결과는 **프리셋으로 저장해 다음 회차에 재사용**한다. 추출값은 그대로 쓰지 않고 대비비 게이트(FE-7)를 통과시킨다. **BE 의존 없음** — 이미지 처리는 전부 클라이언트에서 가능하다.
@@ -103,3 +98,4 @@
 | BE-1 | D1 스키마 설계 + 이벤트 CRUD | 완료. 7개 테이블 + 이벤트 CRUD 4개 엔드포인트. 로컬 D1으로 생성·조회·수정·삭제 왕복, slug 충돌 회피, CASCADE 삭제, 설문 중복 방지 UNIQUE 확인. **서로 다른 이벤트가 각자의 아젠다·테마를 반환**하는 것까지 실측 | [[0005-d1-schema]], `migrations/0001_init.sql` (2026-08-15 [[log]]) |
 | FE-1 | 이벤트별 편집 상태 분리 | 완료. `StudioState`에 평평했던 편집 필드(title/venue/date/host/cap/engage/presetId/mode/iconSet/density/keyVisual/kvPattern/sessions)를 `EventDetail`로 묶어 `EventItem`이 갖도록 이동, `editingId` + `patchEvent`로 "현재 편집 중인 이벤트만" 갱신. 콘솔 카드 클릭이 `editingId`만 바꾸고, "새 이벤트"가 실제로 `events` 배열에 새 항목을 만듦. 헤드리스 브라우저로 이벤트1 아젠다·테마·제목 편집 후 이벤트2가 영향받지 않는 것, 새 이벤트 생성이 독립 상태로 시작하는 것 실측. lint·build 통과, 콘솔 에러 0건 | `lib/types.ts`, `lib/data.ts`, `components/StudioApp.tsx`, `components/screens/{Console,Editor,Viewer,Report}Screen.tsx` (2026-08-24 [[log]]) |
 | FE-2 | 라우트 분리 + 폰트 자체 호스팅 | 완료. 사용자와 상의해 범위를 좁힘 — `/[slug]` 공개 페이지는 만들지 않음(BE에 slug 조회 API 없음 + "행사 페이지는 관리자 화면 우측 미리보기로만" 결정). `/console`·`/events/[id]/edit`·`/report` 3개만 실제 라우트로 분리(`app/(studio)/` 라우트 그룹), 뷰어는 라우트 없이 `viewerOpen` 플래그로 현재 화면 위에 오버레이. 상태는 `StudioApp.tsx`(삭제)에서 `StudioProvider`(Context)로 끌어올려 레이아웃과 3개 페이지가 공유. Pretendard는 npm에서 가변 폰트 파일 1개(2.1MB)만 뽑아 `public/fonts/`에 커밋하고 `next/font/local`로 서빙 — 패키지 자체(72MB)는 `--no-save`로 설치해 `package.json`에 순증 없음. 헤드리스 브라우저로 3개 라우트 딥링크·카드클릭 네비게이션·뷰어 오버레이(URL 불변)·새 이벤트 생성 확인, 외부 요청 0건·콘솔 에러 0건 실측. lint·build 통과 | `lib/font.ts`, `components/Studio{Provider,Shell}.tsx`, `app/(studio)/**`, `app/{page,layout}.tsx` (2026-08-24 [[log]]) |
+| FE-7 | 대비비 저장 게이트 실장 | 완료. `lib/theme.ts`의 근사식(`lum(L) = L³`, 채도·색상 무시)을 `culori`의 `wcagContrast`로 교체 — `contrastRows`가 이제 `theme.L.*`(명도 숫자) 대신 실제 `oklch(...)` 색 문자열을 비교한다. 신규 export `contrastAllPass(preset, mode)`로 게이트 판정을 한 곳에 모으고, `StudioShell.tsx`의 "공개하기" 버튼·내비 "뷰어" 아이콘 둘 다 이걸로 가드(미달 시 버튼 비활성 + "대비비 미달로 공개할 수 없음" 문구). 실측: 기존 내장 프리셋 5개는 근사·실측 양쪽 다 여유 있게 통과(가장 타이트해도 5.2:1, 기준 4.5:1) — 게이트를 걸어도 지금 데모는 안 깨짐. 이 저장소 첫 자동 테스트로 Vitest 도입(`npm run test`), `lib/theme.test.ts`에 5프리셋×라이트/다크 통과 회귀 + 인위적 고채도(`c=0.8`) 조합으로 실패 케이스(브랜드 위 텍스트 4.48:1, 기준 4.5:1 근소 미달) 검증 — 근사식이었다면 못 잡았을 미세 미달을 실제 sRGB 변환이라야 잡아낸다는 것의 증거. 헤드리스 브라우저로 UI 경로도 실측: 임시로 그 실패 프리셋을 `PRESETS`에 추가해 테마 탭에서 직접 선택 → 공개하기 비활성+사유 노출+강제 클릭해도 뷰어 안 열림, 정상 프리셋으로 되돌리면 재활성화까지 확인 후 원복(최종 diff엔 남지 않음). culori는 런타임 의존성(2.1kB, `@types/culori` devDependency 동반), lint·build·test 전부 통과, 콘솔 에러 0건 | `lib/theme.ts`, `lib/theme.test.ts`, `components/StudioShell.tsx`, `components/screens/EditorScreen.tsx` (2026-08-24 [[log]]) |

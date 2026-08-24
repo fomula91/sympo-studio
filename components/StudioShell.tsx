@@ -6,6 +6,7 @@ import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { autoSlug, defaultEventDetail, NAV, SESSIONS0 } from '@/lib/data';
+import { contrastAllPass, PRESETS } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
 const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
@@ -26,9 +27,15 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         ? 'report'
         : 'console';
 
+  const preset = PRESETS.find((p) => p.id === ev.presetId) || PRESETS[0];
+  const canPublish = contrastAllPass(preset, ev.mode);
+  const openViewer = () => {
+    if (canPublish) patch({ viewerOpen: true });
+  };
+
   const goTo = (target: 'console' | 'editor' | 'theme' | 'report' | 'viewer') => {
     if (target === 'viewer') {
-      patch({ viewerOpen: true });
+      openViewer();
       return;
     }
     patch((st) => ({
@@ -218,7 +225,15 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               >
                 되돌리기
               </button>
-              <button className="hv-brandpress" onClick={() => patch({ viewerOpen: true })} style={primaryBtn}>
+              {!canPublish ? (
+                <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)' }}>대비비 미달로 공개할 수 없음</div>
+              ) : null}
+              <button
+                className="hv-brandpress"
+                onClick={openViewer}
+                disabled={!canPublish}
+                style={{ ...primaryBtn, opacity: canPublish ? 1 : 0.4, cursor: canPublish ? 'pointer' : 'not-allowed' }}
+              >
                 공개하기
               </button>
             </div>
