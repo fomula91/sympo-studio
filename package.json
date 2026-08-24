@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "db:migrate": "wrangler d1 migrations apply sympo-studio-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply sympo-studio-db --remote",
     "db:console": "wrangler d1 execute sympo-studio-db --local --command",
