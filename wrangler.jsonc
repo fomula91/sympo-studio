@@ -1,7 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "sympo-studio",
-  "main": ".open-next/worker.js",
+  // OpenNext 생성 워커를 감싸 scheduled(Cron)를 추가한 커스텀 엔트리 (worker/index.ts 주석 참조)
+  "main": "worker/index.ts",
+  "triggers": {
+    // 매일 15:00 UTC = 00:00 KST — 데모 데이터 시드 리셋 (lib/seed.ts, BE-3)
+    "crons": ["0 15 * * *"]
+  },
   "compatibility_date": "2026-08-15",
   // nodejs_compat: @opennextjs/cloudflare가 Next.js 런타임을 Workers에서 돌리는 데 필요하다.
   "compatibility_flags": ["nodejs_compat"],
