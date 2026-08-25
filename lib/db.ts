@@ -141,6 +141,17 @@ export async function ensureUniqueSlug(db: D1Database, base: string): Promise<st
 /** 잘못된 입력을 400으로 되돌리기 위한 예외. */
 export class BadRequest extends Error {}
 
+/** Next.js 16에서 동적 라우트의 params는 Promise다. await 없이 쓰면 런타임에서 터진다. */
+export type IdCtx = { params: Promise<{ id: string }> };
+
+/** `[id]` 라우트 공통 — 경로 파라미터를 검증해 숫자 id로 바꾼다. */
+export async function eventId(ctx: IdCtx): Promise<number> {
+  const { id } = await ctx.params;
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) throw new BadRequest('id는 양의 정수여야 합니다.');
+  return n;
+}
+
 export function json(data: unknown, status = 200) {
   return Response.json(data, { status });
 }

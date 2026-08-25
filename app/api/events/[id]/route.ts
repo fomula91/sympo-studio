@@ -1,23 +1,15 @@
 import type { NextRequest } from 'next/server';
 import {
   BadRequest,
+  eventId,
   getDb,
   json,
   toEventDTO,
   toSessionDTO,
   type EventRow,
+  type IdCtx,
   type SessionRow,
 } from '@/lib/db';
-
-/** Next.js 16에서 params는 Promise다. await 없이 쓰면 런타임에서 터진다. */
-type Ctx = { params: Promise<{ id: string }> };
-
-async function eventId(ctx: Ctx): Promise<number> {
-  const { id } = await ctx.params;
-  const n = Number(id);
-  if (!Number.isInteger(n) || n <= 0) throw new BadRequest('id는 양의 정수여야 합니다.');
-  return n;
-}
 
 /**
  * GET /api/events/[id] — 이벤트 단건 + 아젠다
@@ -26,7 +18,7 @@ async function eventId(ctx: Ctx): Promise<number> {
  * 아젠다를 편집하는데(FE-1), 그 결함을 고치려면 이벤트마다 자기 세션 목록을
  * 받아올 수 있어야 한다.
  */
-export async function GET(_request: NextRequest, ctx: Ctx) {
+export async function GET(_request: NextRequest, ctx: IdCtx) {
   try {
     const db = await getDb();
     const id = await eventId(ctx);
@@ -79,7 +71,7 @@ const ENGAGE: Record<string, string> = {
  * slug는 여기서 바꾸지 않는다. 공개된 뒤 주소가 바뀌면 이미 공유된 링크가
  * 깨지고, 회차별 고유 주소라는 전제도 흔들린다.
  */
-export async function PATCH(request: NextRequest, ctx: Ctx) {
+export async function PATCH(request: NextRequest, ctx: IdCtx) {
   try {
     const db = await getDb();
     const id = await eventId(ctx);
@@ -136,7 +128,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
  *
  * 세션·자료·질문·설문응답·로그는 FK의 ON DELETE CASCADE로 함께 지워진다.
  */
-export async function DELETE(_request: NextRequest, ctx: Ctx) {
+export async function DELETE(_request: NextRequest, ctx: IdCtx) {
   try {
     const db = await getDb();
     const id = await eventId(ctx);

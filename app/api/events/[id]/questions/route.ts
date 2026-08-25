@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { BadRequest, getDb, json, type EventRow } from '@/lib/db';
+import { BadRequest, eventId, getDb, json, type EventRow, type IdCtx } from '@/lib/db';
 import {
   assertRateLimit,
   clientHash,
@@ -9,24 +9,16 @@ import {
   type QuestionRow,
 } from '@/lib/qa';
 
-/** Next.js 16에서 params는 Promise다. await 없이 쓰면 런타임에서 터진다. */
-type Ctx = { params: Promise<{ id: string }> };
-
-async function eventId(ctx: Ctx): Promise<number> {
-  const { id } = await ctx.params;
-  const n = Number(id);
-  if (!Number.isInteger(n) || n <= 0) throw new BadRequest('id는 양의 정수여야 합니다.');
-  return n;
-}
-
 /**
  * GET /api/events/[id]/questions — 질문 목록
  *
  * 참가자 화면이 3~5초 폴링으로 때리는 엔드포인트다(FE-3). status='hidden'은
  * 돌려주지 않는다 — 숨김 처리는 운영자 몫이고 참가자 화면에는 없던 일이다.
- * 오래된 것부터(ASC) 준다 — 채팅처럼 아래로 쌓이는 화면을 전제한다.
+ * 최신 200건을 잘라 오래된 순으로 준다 — 채팅처럼 아래로 쌓이는 화면 전제는
+ * 그대로되, 오래된 쪽부터 자르면 200건을 넘는 순간 새 질문이 영영 안 보이므로
+ * 윈도우는 반드시 최신 쪽에 둔다.
  */
-export async function GET(_request: NextRequest, ctx: Ctx) {
+export async function GET(_request: NextRequest, ctx: IdCtx) {
   try {
     const db = await getDb();
     const id = await eventId(ctx);
@@ -38,12 +30,12 @@ export async function GET(_request: NextRequest, ctx: Ctx) {
       .prepare(
         `SELECT * FROM questions
          WHERE event_id = ? AND status = 'published'
-         ORDER BY created_at ASC, id ASC LIMIT 200`,
+         ORDER BY id DESC LIMIT 200`,
       )
       .bind(id)
       .all<QuestionRow>();
 
-    return json({ questions: results.map(toQuestionDTO) });
+    return json({ questions: results.map(toQuestionDTO).reverse() });
   } catch (e) {
     if (e instanceof BadRequest) return json({ error: e.message }, 400);
     throw e;
@@ -65,7 +57,7 @@ interface CreateBody {
  * 실패는 조용히 넘기지 않는다 — 400/403/429에 사람이 읽을 이유를 담는다(FE-3의
  * "rate limit 초과 시 사용자가 이유를 알 수 있음"이 이 응답을 그대로 보여준다).
  */
-export async function POST(request: NextRequest, ctx: Ctx) {
+export async function POST(request: NextRequest, ctx: IdCtx) {
   try {
     const db = await getDb();
     const id = await eventId(ctx);

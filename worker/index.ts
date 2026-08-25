@@ -11,8 +11,10 @@ export default {
 
   // 매일 15:00 UTC = 00:00 KST (wrangler.jsonc triggers.crons)
   // 공개 데모의 하루치 입력을 비우고 시드 상태로 되돌린다(BE-3).
-  async scheduled(_event, env, ctx) {
-    ctx.waitUntil(resetDemoData(env.DB));
+  // waitUntil로 흘리지 않고 await한다 — 실패가 reject로 전파돼야
+  // Cron 실행 지표와 wrangler tail에 남는다(waitUntil은 실패를 삼킨다).
+  async scheduled(_event, env) {
+    await resetDemoData(env.DB);
   },
 } satisfies ExportedHandler<CloudflareEnv>;
 

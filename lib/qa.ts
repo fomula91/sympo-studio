@@ -39,17 +39,22 @@ export const RATE_MAX_PER_DAY = 30;
 /**
  * rate limit 판정용 클라이언트 해시.
  *
- * 원문 IP는 저장하지 않는다(스키마 주석 참조). SHA-256(ip|UTC날짜)를 앞 16자로
+ * 원문 IP는 저장하지 않는다(스키마 주석 참조). SHA-256(ip|KST날짜)를 앞 16자로
  * 자른다 — 날짜를 섞어 해시가 매일 바뀌므로 회차를 넘는 추적이 안 되고,
- * "하루 N건" 판정은 해시당 총 건수 조회로 끝난다(시드 리셋 Cron이 매일 비우는
- * 것과도 맞물린다).
+ * "하루 N건" 판정은 해시당 총 건수 조회로 끝난다. 날짜가 KST인 것이 요점이다:
+ * 시드 리셋 Cron(00:00 KST)과 해시 로테이션이 같은 순간이어야 하는데, UTC 날짜를
+ * 쓰면 두 경계가 9시간 어긋나 카운터가 하루 두 번 리셋된다(IP당 실질 60건).
  */
 export async function clientHash(request: Request): Promise<string> {
+  // cf-connecting-ip는 CF 엣지가 채운다. x-forwarded-for 폴백은 엣지 밖
+  // (next dev·wrangler preview) 전용이다 — 클라이언트가 위조할 수 있으므로
+  // 운영에서 판정 근거가 되면 안 된다. ??가 아니라 ||인 이유: 빈 문자열
+  // 헤더는 nullish가 아니라서 ??로는 'unknown'에 떨어지지 않는다.
   const ip =
-    request.headers.get('cf-connecting-ip') ??
-    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+    request.headers.get('cf-connecting-ip') ||
+    request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
     'unknown';
-  const day = new Date().toISOString().slice(0, 10);
+  const day = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}|${day}`));
   return [...new Uint8Array(digest)]
     .map((b) => b.toString(16).padStart(2, '0'))
