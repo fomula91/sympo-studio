@@ -1,6 +1,14 @@
 import type { NextRequest } from 'next/server';
 import { autoSlug } from '@/lib/data';
-import { BadRequest, ensureUniqueSlug, getDb, json, toEventDTO, type EventRow } from '@/lib/db';
+import {
+  BadRequest,
+  ensureUniqueSlug,
+  getDb,
+  json,
+  toEventDTO,
+  withRoute,
+  type EventRow,
+} from '@/lib/db';
 
 /**
  * GET /api/events — 이벤트 목록
@@ -8,7 +16,7 @@ import { BadRequest, ensureUniqueSlug, getDb, json, toEventDTO, type EventRow } 
  * 콘솔 화면의 검색·상태 필터·정렬을 그대로 받는다.
  *   ?q=검색어  ?status=진행중  ?sort=최신|행사일|이름
  */
-export async function GET(request: NextRequest) {
+export const GET = withRoute(async (request: NextRequest) => {
   const db = await getDb();
   const sp = request.nextUrl.searchParams;
   const q = sp.get('q')?.trim();
@@ -42,7 +50,7 @@ export async function GET(request: NextRequest) {
     .all<EventRow>();
 
   return json({ events: results.map(toEventDTO) });
-}
+});
 
 interface CreateBody {
   brand?: unknown;
@@ -70,43 +78,42 @@ function str(v: unknown, field: string, required = false): string | null {
  * slug를 넘기지 않으면 행사명·장소·날짜에서 만든다. 어느 쪽이든 중복은
  * 접미사로 피한다(ensureUniqueSlug).
  */
-export async function POST(request: NextRequest) {
-  try {
-    const db = await getDb();
-    const body = (await request.json().catch(() => {
-      throw new BadRequest('요청 본문이 JSON이 아닙니다.');
-    })) as CreateBody;
-
-    const brand = str(body.brand, 'brand', true)!;
-    const title = str(body.title, 'title', true)!;
-    const venue = str(body.venue, 'venue');
-    const date = str(body.date, 'date');
-    const host = str(body.host, 'host');
-    const status = str(body.status, 'status') ?? '초안';
-
-    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
-    }
-    if (body.capacity !== undefined && body.capacity !== null && typeof body.capacity !== 'number') {
-      throw new BadRequest('capacity는 숫자여야 합니다.');
-    }
-
-    const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
-    const slug = await ensureUniqueSlug(db, requested);
-
-    const row = await db
-      .prepare(
-        `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         RETURNING *`,
-      )
-      .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status)
-      .first<EventRow>();
-
-    if (!row) throw new Error('이벤트 생성 후 행을 돌려받지 못했습니다.');
-    return json(toEventDTO(row), 201);
-  } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    throw e;
+export const POST = withRoute(async (request: NextRequest) => {
+  const db = await getDb();
+  const body = (await request.json().catch(() => {
+    throw new BadRequest('요청 본문이 JSON이 아닙니다.');
+  })) as CreateBody | null;
+  // JSON 리터럴 null은 파싱에 성공하므로 위 catch에 안 걸린다.
+  if (body === null || typeof body !== 'object') {
+    throw new BadRequest('요청 본문은 JSON 객체여야 합니다.');
   }
-}
+
+  const brand = str(body.brand, 'brand', true)!;
+  const title = str(body.title, 'title', true)!;
+  const venue = str(body.venue, 'venue');
+  const date = str(body.date, 'date');
+  const host = str(body.host, 'host');
+  const status = str(body.status, 'status') ?? '초안';
+
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
+  }
+  if (body.capacity !== undefined && body.capacity !== null && typeof body.capacity !== 'number') {
+    throw new BadRequest('capacity는 숫자여야 합니다.');
+  }
+
+  const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
+  const slug = await ensureUniqueSlug(db, requested);
+
+  const row = await db
+    .prepare(
+      `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING *`,
+    )
+    .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status)
+    .first<EventRow>();
+
+  if (!row) throw new Error('이벤트 생성 후 행을 돌려받지 못했습니다.');
+  return json(toEventDTO(row), 201);
+});

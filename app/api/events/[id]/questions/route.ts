@@ -1,11 +1,11 @@
 import type { NextRequest } from 'next/server';
-import { BadRequest, eventId, getDb, json, type EventRow, type IdCtx } from '@/lib/db';
+import { BadRequest, eventId, getDb, json, withRoute, type EventRow, type IdCtx } from '@/lib/db';
 import {
   assertRateLimit,
   clientHash,
-  RateLimited,
   toQuestionDTO,
   validateQuestionInput,
+  type QuestionDTOInput,
   type QuestionRow,
 } from '@/lib/qa';
 
@@ -18,29 +18,33 @@ import {
  * 그대로되, 오래된 쪽부터 자르면 200건을 넘는 순간 새 질문이 영영 안 보이므로
  * 윈도우는 반드시 최신 쪽에 둔다.
  */
-export async function GET(_request: NextRequest, ctx: IdCtx) {
-  try {
-    const db = await getDb();
-    const id = await eventId(ctx);
+export const GET = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
+  const db = await getDb();
+  const id = await eventId(ctx);
 
-    const event = await db.prepare('SELECT id FROM events WHERE id = ?').bind(id).first();
-    if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  const event = await db.prepare('SELECT id FROM events WHERE id = ?').bind(id).first();
+  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
-    const { results } = await db
-      .prepare(
-        `SELECT * FROM questions
-         WHERE event_id = ? AND status = 'published'
-         ORDER BY id DESC LIMIT 200`,
-      )
-      .bind(id)
-      .all<QuestionRow>();
+  // created_at DESC라야 idx_questions_event(event_id, created_at DESC)를 걸어
+  // 200건에서 멈춘다 — id DESC는 LIMIT과 무관하게 전체 행을 읽어 임시 정렬한다
+  // (EXPLAIN QUERY PLAN 실측). 같은 초 동점만 아래 JS 정렬로 안정화한다.
+  const { results } = await db
+    .prepare(
+      `SELECT id, session_id, body, author, created_at FROM questions
+       WHERE event_id = ? AND status = 'published'
+       ORDER BY created_at DESC LIMIT 200`,
+    )
+    .bind(id)
+    .all<QuestionDTOInput>();
 
-    return json({ questions: results.map(toQuestionDTO).reverse() });
-  } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    throw e;
-  }
-}
+  const questions = results
+    .sort((a, b) =>
+      a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id - b.id,
+    )
+    .map(toQuestionDTO);
+
+  return json({ questions });
+});
 
 interface CreateBody {
   body?: unknown;
@@ -57,53 +61,62 @@ interface CreateBody {
  * 실패는 조용히 넘기지 않는다 — 400/403/429에 사람이 읽을 이유를 담는다(FE-3의
  * "rate limit 초과 시 사용자가 이유를 알 수 있음"이 이 응답을 그대로 보여준다).
  */
-export async function POST(request: NextRequest, ctx: IdCtx) {
-  try {
-    const db = await getDb();
-    const id = await eventId(ctx);
+export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
+  const db = await getDb();
+  const id = await eventId(ctx);
 
-    const event = await db
-      .prepare('SELECT id, engage_qa FROM events WHERE id = ?')
-      .bind(id)
-      .first<Pick<EventRow, 'id' | 'engage_qa'>>();
-    if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    if (!event.engage_qa) return json({ error: '이 행사는 Q&A를 받지 않습니다.' }, 403);
+  const event = await db
+    .prepare('SELECT id, engage_qa FROM events WHERE id = ?')
+    .bind(id)
+    .first<Pick<EventRow, 'id' | 'engage_qa'>>();
+  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  if (!event.engage_qa) return json({ error: '이 행사는 Q&A를 받지 않습니다.' }, 403);
 
-    const raw = (await request.json().catch(() => {
-      throw new BadRequest('요청 본문이 JSON이 아닙니다.');
-    })) as CreateBody;
+  const raw = (await request.json().catch(() => {
+    throw new BadRequest('요청 본문이 JSON이 아닙니다.');
+  })) as CreateBody | null;
+  // JSON 리터럴 null은 파싱에 성공하므로 위 catch에 안 걸린다 — 여기서 막지
+  // 않으면 아래 프로퍼티 접근이 TypeError로 터져 400이 아니라 500이 된다.
+  if (raw === null || typeof raw !== 'object') {
+    throw new BadRequest('요청 본문은 JSON 객체여야 합니다.');
+  }
 
-    const { body, author } = validateQuestionInput(raw.body, raw.author);
+  const { body, author } = validateQuestionInput(raw.body, raw.author);
 
-    let sessionId: number | null = null;
-    if (raw.sessionId !== undefined && raw.sessionId !== null) {
-      if (typeof raw.sessionId !== 'number' || !Number.isInteger(raw.sessionId)) {
-        throw new BadRequest('sessionId는 정수여야 합니다.');
-      }
-      const session = await db
-        .prepare('SELECT 1 FROM sessions WHERE id = ? AND event_id = ?')
-        .bind(raw.sessionId, id)
-        .first();
-      if (!session) throw new BadRequest('해당 이벤트의 세션이 아닙니다.');
-      sessionId = raw.sessionId;
+  let sessionId: number | null = null;
+  if (raw.sessionId !== undefined && raw.sessionId !== null) {
+    if (typeof raw.sessionId !== 'number' || !Number.isInteger(raw.sessionId)) {
+      throw new BadRequest('sessionId는 정수여야 합니다.');
     }
+    const session = await db
+      .prepare('SELECT 1 FROM sessions WHERE id = ? AND event_id = ?')
+      .bind(raw.sessionId, id)
+      .first();
+    if (!session) throw new BadRequest('해당 이벤트의 세션이 아닙니다.');
+    sessionId = raw.sessionId;
+  }
 
-    const hash = await clientHash(request);
-    await assertRateLimit(db, hash);
+  const hash = await clientHash(request);
+  await assertRateLimit(db, hash);
 
-    const row = await db
+  let row: QuestionRow | null;
+  try {
+    row = await db
       .prepare(
         `INSERT INTO questions (event_id, session_id, body, author, client_hash)
          VALUES (?, ?, ?, ?, ?) RETURNING *`,
       )
       .bind(id, sessionId, body, author, hash)
       .first<QuestionRow>();
-
-    if (!row) throw new Error('질문 저장 후 행을 돌려받지 못했습니다.');
-    return json(toQuestionDTO(row), 201);
   } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    if (e instanceof RateLimited) return json({ error: e.message }, 429);
+    // 자정(KST) 시드 리셋과 경합하면 위의 존재 검사 이후 이벤트가 사라질 수
+    // 있다 — 그때의 FK 위반은 결함이 아니라 "이벤트가 없어졌다"이므로 404.
+    if (e instanceof Error && e.message.includes('FOREIGN KEY constraint failed')) {
+      return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+    }
     throw e;
   }
-}
+
+  if (!row) throw new Error('질문 저장 후 행을 돌려받지 못했습니다.');
+  return json(toQuestionDTO(row), 201);
+});

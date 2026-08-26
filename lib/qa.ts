@@ -1,4 +1,4 @@
-import { BadRequest } from './db';
+import { ApiError, BadRequest } from './db';
 
 /** questions 테이블의 행. 컬럼명은 스키마와 1:1이다. */
 export interface QuestionRow {
@@ -12,13 +12,22 @@ export interface QuestionRow {
   created_at: string;
 }
 
-export function toQuestionDTO(row: QuestionRow) {
+/** DTO가 실제로 읽는 컬럼만 — 목록 조회가 이 부분집합만 SELECT할 수 있게 한다. */
+export type QuestionDTOInput = Pick<
+  QuestionRow,
+  'id' | 'session_id' | 'body' | 'author' | 'created_at'
+>;
+
+export function toQuestionDTO(row: QuestionDTOInput) {
   return {
     id: row.id,
     sessionId: row.session_id,
     body: row.body,
     author: row.author,
-    createdAt: row.created_at,
+    // SQLite의 datetime('now')은 존 표기 없는 UTC('YYYY-MM-DD HH:MM:SS')다.
+    // 그대로 내보내면 클라이언트 new Date()가 로컬 시간으로 오해해 KST에서
+    // 9시간 어긋난다 — ISO-8601 + 'Z'로 바꿔 내보낸다.
+    createdAt: row.created_at.replace(' ', 'T') + 'Z',
   };
 }
 
@@ -62,8 +71,12 @@ export async function clientHash(request: Request): Promise<string> {
     .slice(0, 16);
 }
 
-/** 429로 되돌리기 위한 예외. BadRequest(400)와 구분한다. */
-export class RateLimited extends Error {}
+/** rate limit 초과 → 429. withRoute가 상태코드를 읽는다. */
+export class RateLimited extends ApiError {
+  constructor(message: string) {
+    super(message, 429);
+  }
+}
 
 /**
  * 이 해시가 한도를 넘었는지 판정한다. 넘었으면 RateLimited를 던진다.
@@ -72,12 +85,17 @@ export class RateLimited extends Error {}
  * 남용 통제의 목적(무료 티어 소진 방지)에 영향이 없다.
  */
 export async function assertRateLimit(db: D1Database, hash: string): Promise<void> {
+  // "하루"의 경계를 쿼리 자체에 둔다(KST 하루 시작 = UTC now+9h의 start of day를
+  // 다시 UTC로). 해시의 KST 날짜 소금만 믿으면 키 설계가 바뀌는 순간(BE-9)
+  // COUNT(*)가 조용히 전체 기간 카운트가 된다 — 정합성을 쿼리에 국소화한다.
   const row = await db
     .prepare(
       `SELECT
          COUNT(*) AS day_count,
          SUM(created_at >= datetime('now', ?)) AS recent_count
-       FROM questions WHERE client_hash = ?`,
+       FROM questions
+       WHERE client_hash = ?
+         AND created_at >= datetime('now', '+9 hours', 'start of day', '-9 hours')`,
     )
     .bind(`-${RATE_WINDOW_SECONDS} seconds`, hash)
     .first<{ day_count: number; recent_count: number | null }>();

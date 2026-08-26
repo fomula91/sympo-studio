@@ -7,7 +7,9 @@ import handler from '../.open-next/worker.js';
 import { resetDemoData } from '../lib/seed';
 
 export default {
-  fetch: handler.fetch,
+  // fetch만 골라 담지 않고 스프레드한다 — 어댑터 업그레이드로 생성 워커가
+  // 자기 핸들러(queue/tail 등)를 추가해도 조용히 누락되지 않게.
+  ...handler,
 
   // 매일 15:00 UTC = 00:00 KST (wrangler.jsonc triggers.crons)
   // 공개 데모의 하루치 입력을 비우고 시드 상태로 되돌린다(BE-3).

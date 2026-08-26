@@ -6,6 +6,7 @@ import {
   json,
   toEventDTO,
   toSessionDTO,
+  withRoute,
   type EventRow,
   type IdCtx,
   type SessionRow,
@@ -18,27 +19,22 @@ import {
  * 아젠다를 편집하는데(FE-1), 그 결함을 고치려면 이벤트마다 자기 세션 목록을
  * 받아올 수 있어야 한다.
  */
-export async function GET(_request: NextRequest, ctx: IdCtx) {
-  try {
-    const db = await getDb();
-    const id = await eventId(ctx);
+export const GET = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
+  const db = await getDb();
+  const id = await eventId(ctx);
 
-    const [event, sessions] = await Promise.all([
-      db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRow>(),
-      db
-        .prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id')
-        .bind(id)
-        .all<SessionRow>(),
-    ]);
+  const [event, sessions] = await Promise.all([
+    db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRow>(),
+    db
+      .prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id')
+      .bind(id)
+      .all<SessionRow>(),
+  ]);
 
-    if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
-    return json({ ...toEventDTO(event), sessions: sessions.results.map(toSessionDTO) });
-  } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    throw e;
-  }
-}
+  return json({ ...toEventDTO(event), sessions: sessions.results.map(toSessionDTO) });
+});
 
 /** PATCH가 받는 필드 → 컬럼 매핑. 여기 없는 키는 조용히 무시된다. */
 const PATCHABLE: Record<string, string> = {
@@ -71,77 +67,70 @@ const ENGAGE: Record<string, string> = {
  * slug는 여기서 바꾸지 않는다. 공개된 뒤 주소가 바뀌면 이미 공유된 링크가
  * 깨지고, 회차별 고유 주소라는 전제도 흔들린다.
  */
-export async function PATCH(request: NextRequest, ctx: IdCtx) {
-  try {
-    const db = await getDb();
-    const id = await eventId(ctx);
-    const body = (await request.json().catch(() => {
-      throw new BadRequest('요청 본문이 JSON이 아닙니다.');
-    })) as Record<string, unknown>;
-
-    const sets: string[] = [];
-    const binds: unknown[] = [];
-
-    for (const [key, column] of Object.entries(PATCHABLE)) {
-      if (!(key in body)) continue;
-      const value = body[key];
-      if (key === 'date' && typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
-      }
-      if (key === 'capacity' && value !== null && typeof value !== 'number') {
-        throw new BadRequest('capacity는 숫자여야 합니다.');
-      }
-      sets.push(`${column} = ?`);
-      binds.push(value ?? null);
-    }
-
-    const engage = body.engage;
-    if (engage && typeof engage === 'object') {
-      for (const [key, column] of Object.entries(ENGAGE)) {
-        const value = (engage as Record<string, unknown>)[key];
-        if (value === undefined) continue;
-        sets.push(`${column} = ?`);
-        binds.push(value ? 1 : 0);
-      }
-    }
-
-    if (!sets.length) throw new BadRequest('수정할 필드가 없습니다.');
-
-    sets.push("updated_at = datetime('now')");
-    binds.push(id);
-
-    const row = await db
-      .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
-      .bind(...binds)
-      .first<EventRow>();
-
-    if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    return json(toEventDTO(row));
-  } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    throw e;
+export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
+  const db = await getDb();
+  const id = await eventId(ctx);
+  const body = (await request.json().catch(() => {
+    throw new BadRequest('요청 본문이 JSON이 아닙니다.');
+  })) as Record<string, unknown> | null;
+  if (body === null || typeof body !== 'object') {
+    throw new BadRequest('요청 본문은 JSON 객체여야 합니다.');
   }
-}
+
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+
+  for (const [key, column] of Object.entries(PATCHABLE)) {
+    if (!(key in body)) continue;
+    const value = body[key];
+    if (key === 'date' && typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
+    }
+    if (key === 'capacity' && value !== null && typeof value !== 'number') {
+      throw new BadRequest('capacity는 숫자여야 합니다.');
+    }
+    sets.push(`${column} = ?`);
+    binds.push(value ?? null);
+  }
+
+  const engage = body.engage;
+  if (engage && typeof engage === 'object') {
+    for (const [key, column] of Object.entries(ENGAGE)) {
+      const value = (engage as Record<string, unknown>)[key];
+      if (value === undefined) continue;
+      sets.push(`${column} = ?`);
+      binds.push(value ? 1 : 0);
+    }
+  }
+
+  if (!sets.length) throw new BadRequest('수정할 필드가 없습니다.');
+
+  sets.push("updated_at = datetime('now')");
+  binds.push(id);
+
+  const row = await db
+    .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
+    .bind(...binds)
+    .first<EventRow>();
+
+  if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  return json(toEventDTO(row));
+});
 
 /**
  * DELETE /api/events/[id]
  *
  * 세션·자료·질문·설문응답·로그는 FK의 ON DELETE CASCADE로 함께 지워진다.
  */
-export async function DELETE(_request: NextRequest, ctx: IdCtx) {
-  try {
-    const db = await getDb();
-    const id = await eventId(ctx);
+export const DELETE = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
+  const db = await getDb();
+  const id = await eventId(ctx);
 
-    const row = await db
-      .prepare('DELETE FROM events WHERE id = ? RETURNING id')
-      .bind(id)
-      .first<{ id: number }>();
+  const row = await db
+    .prepare('DELETE FROM events WHERE id = ? RETURNING id')
+    .bind(id)
+    .first<{ id: number }>();
 
-    if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    return json({ deleted: row.id });
-  } catch (e) {
-    if (e instanceof BadRequest) return json({ error: e.message }, 400);
-    throw e;
-  }
-}
+  if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  return json({ deleted: row.id });
+});
