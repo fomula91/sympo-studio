@@ -4,6 +4,7 @@
 
 ## Core
 - [[Onboarding-FE]] — **프론트엔드 담당자는 여기부터.** 읽는 순서·규칙·검증·지금 착수 가능한 과제
+- [[API-Guide-FE]] — FE용 API 정본. 엔드포인트·에러 규약·rate limit·주의사항
 - [[Context]] — 지금 무엇을 만드는가 (Claude Code 우선 읽기)
 - [[design]] — 디자인 컨셉 정본 (색·타이포·반응형·컴포넌트 패턴)
 - [[Next-Tasks]] — 다음 과제 (열린 과제 / 종료 기록)
