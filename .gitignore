@@ -36,6 +36,9 @@ yarn-error.log*
 # claude code local-only settings
 CLAUDE.local.md
 
+# bkit plugin — 세션별 감사 로그(audit/*.jsonl)와 로컬 상태(state/*.json)
+/.bkit/
+
 # vercel
 .vercel
 
