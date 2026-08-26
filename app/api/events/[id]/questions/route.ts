@@ -2,7 +2,7 @@ import type { NextRequest } from 'next/server';
 import { BadRequest, eventId, getDb, json, withRoute, type EventRow, type IdCtx } from '@/lib/db';
 import {
   assertRateLimit,
-  clientHash,
+  rateKeys,
   toQuestionDTO,
   validateQuestionInput,
   type QuestionDTOInput,
@@ -57,7 +57,8 @@ interface CreateBody {
  *
  * 남용 통제를 이 자리에서 함께 한다(BE-3의 요점 — 나중이 아니라).
  *   - 글자 수 제한: body 2~300자, author ≤ 40자
- *   - IP당 rate limit: 60초 3건 / 하루 30건 (판정은 questions 테이블 자체로)
+ *   - rate limit 2층(ADR 0006): x-client-token 브라우저 버킷 60초 3건/하루 30건
+ *     + IP 총량 60초 20건/하루 300건. 토큰 없으면 IP 단독 버킷(3건/30건)으로 강등
  * 실패는 조용히 넘기지 않는다 — 400/403/429에 사람이 읽을 이유를 담는다(FE-3의
  * "rate limit 초과 시 사용자가 이유를 알 수 있음"이 이 응답을 그대로 보여준다).
  */
@@ -96,17 +97,17 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     sessionId = raw.sessionId;
   }
 
-  const hash = await clientHash(request);
-  await assertRateLimit(db, hash);
+  const keys = await rateKeys(request);
+  await assertRateLimit(db, keys);
 
   let row: QuestionRow | null;
   try {
     row = await db
       .prepare(
-        `INSERT INTO questions (event_id, session_id, body, author, client_hash)
-         VALUES (?, ?, ?, ?, ?) RETURNING *`,
+        `INSERT INTO questions (event_id, session_id, body, author, client_hash, token_hash)
+         VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
       )
-      .bind(id, sessionId, body, author, hash)
+      .bind(id, sessionId, body, author, keys.ipHash, keys.tokenHash)
       .first<QuestionRow>();
   } catch (e) {
     // 자정(KST) 시드 리셋과 경합하면 위의 존재 검사 이후 이벤트가 사라질 수
