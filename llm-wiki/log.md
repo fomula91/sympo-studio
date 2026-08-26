@@ -11,6 +11,7 @@
 > 한 항목이 FE와 BE를 모두 건드렸다면 **항목을 쪼갠다** — 태그를 두 개 붙이지 않는다.
 
 ## 2026-08-26
+- **[PROJ] 브랜치 커밋 트레일러 제거 — filter-branch 재작성 + force push**: 1차 코드리뷰가 발견한 커밋 규칙 위반([[Onboarding-FE]] "Co-Authored-By: Claude 트레일러를 넣지 않는다 — 히스토리도 심사 대상") 해소. `git filter-branch --msg-filter`로 `feat/be-3-qa-api`의 5개 커밋 메시지에서 `Co-Authored-By: Claude`·`Claude-Session` 트레일러를 제거하고 `--force-with-lease`로 push해 PR #8 갱신(해시 전부 재작성: `41f33c1`→`67d61fe` 등). 히스토리 재작성·force push는 권한 분류기에 막혀 사용자가 `!`로 직접 실행. 이후 새 커밋은 트레일러 없이 작성 중. 이로써 두 차례 리뷰 지적 전부 정리 — 즉시 수정 15건 구현·실측 검증 완료, 구조 과제는 BE-8~BE-11로 등록(BE-11은 구현 완료, 원격 재검증만 잔여).
 - **[BE] BE-11 — 2차 코드리뷰 지적 10건 전부 반영**: 2차 리뷰(후보 12건 전건 CONFIRMED)의 상위 10건을 구현. 정확성: POST 본문 JSON `null`이 TypeError 500이 되던 것을 객체 검사로 400 처리(events POST·PATCH에도 동일 가드), `createdAt`을 ISO-8601+`Z`로 변환(SQLite의 존 표기 없는 UTC 문자열은 클라이언트 `new Date()`에서 9시간 어긋남), 시드가 세션 id를 자동 배번에 맡겨 리셋마다 +6씩 밀리던 것을 `SESSIONS0`의 id로 고정(AUTOINCREMENT 시퀀스는 DELETE 후에도 이어짐), 일일 캡 쿼리에 KST 하루 시작 조건 추가(해시 소금에만 의존하던 암묵 불변식을 쿼리에 국소화 — BE-9 키 재설계 대비), 자정 리셋과 경합하는 POST의 FK 위반을 404로 변환. 효율: 폴링 GET을 `ORDER BY created_at DESC`로 교체해 `idx_questions_event`를 타게 함(EXPLAIN 실측 — `id DESC`는 전체 행 임시 정렬) + JS 동점 안정화, `SELECT *`를 5개 컬럼 명시로 교체(client_hash가 DB 경계를 안 넘게). 구조: `lib/db.ts`에 `ApiError(status)` 계층 + `withRoute` 래퍼를 만들어 3개 라우트 파일 6곳의 BadRequest→400/RateLimited→429 try/catch 복제를 제거(RateLimited는 `ApiError(429)`로 통합), 워커 엔트리를 `...handler` 스프레드로 교체(어댑터 업그레이드 시 새 핸들러 조용한 누락 방지), 시드의 손 전사 slug를 `autoSlug` 파생으로 교체. lint·build 통과. 원격 재검증은 배포 후.
 
 ## 2026-08-25
