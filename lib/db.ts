@@ -138,8 +138,52 @@ export async function ensureUniqueSlug(db: D1Database, base: string): Promise<st
   throw new Error(`slug 후보를 100회 시도했으나 모두 충돌했습니다: ${clean}`);
 }
 
-/** 잘못된 입력을 400으로 되돌리기 위한 예외. */
-export class BadRequest extends Error {}
+/** HTTP 상태를 아는 예외의 공통 부모. withRoute가 status 그대로 응답을 만든다. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** 잘못된 입력 → 400. */
+export class BadRequest extends ApiError {
+  constructor(message: string) {
+    super(message, 400);
+  }
+}
+
+/**
+ * 라우트 핸들러 공통 래퍼 — ApiError(BadRequest 400, RateLimited 429 …)를
+ * 사람이 읽을 사유가 담긴 JSON으로 바꾼다. 핸들러마다 try/catch를 복사하면
+ * 새 핸들러가 catch를 빼먹는 순간 400이 사유 없는 500으로 새므로(FE-3은
+ * 이 응답 본문을 그대로 보여준다), 매핑은 이 한 곳에만 둔다.
+ */
+export function withRoute<A extends unknown[]>(
+  handler: (...args: A) => Promise<Response>,
+): (...args: A) => Promise<Response> {
+  return async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (e) {
+      if (e instanceof ApiError) return json({ error: e.message }, e.status);
+      throw e;
+    }
+  };
+}
+
+/** Next.js 16에서 동적 라우트의 params는 Promise다. await 없이 쓰면 런타임에서 터진다. */
+export type IdCtx = { params: Promise<{ id: string }> };
+
+/** `[id]` 라우트 공통 — 경로 파라미터를 검증해 숫자 id로 바꾼다. */
+export async function eventId(ctx: IdCtx): Promise<number> {
+  const { id } = await ctx.params;
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) throw new BadRequest('id는 양의 정수여야 합니다.');
+  return n;
+}
 
 export function json(data: unknown, status = 200) {
   return Response.json(data, { status });
