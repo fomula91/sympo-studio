@@ -11,6 +11,7 @@
 > 한 항목이 FE와 BE를 모두 건드렸다면 **항목을 쪼갠다** — 태그를 두 개 붙이지 않는다.
 
 ## 2026-08-27
+- **[PROJ] PR #9 Codex(GPT-5.4) 교차 리뷰 + 비교 코멘트 게시**: 사용자 요청으로 codex:rescue를 통해 동일 PR을 Codex에 독립 리뷰시키고 Claude 리뷰와 대조해 [비교 코멘트](https://github.com/fomula91/sympo-studio/pull/9#issuecomment-5437845580) 게시. **9건이 교차 확인**(양쪽 독립 발견 — 딥링크·드래그·대비비 gamut 등, 수정 우선순위도 완전 일치), Codex 단독 신규 2건은 PR head 코드로 직접 재검증 후 채택: ① '최신' 정렬이 실제 정렬 없음 + 새 이벤트 append로 맨 아래 표시, ② 신규 이벤트 slug 유일성 미검사(같은 날 2개 생성 시 중복 — 서버의 `ensureUniqueSlug`와 대비). Claude 단독 1건(게이트 무음 no-op) 유지. 세부 보정 2건: 폰트 wght 축 실측 45–930(→ `weight: '45 930'`), 대비비 수정은 culori `toGamut('rgb')` 권장(Codex 실측 raw 7.91 vs toGamut 6.85). 합산 확정 지적 12건.
 - **[PROJ] PR #9(FE-1·2·7·8·9) 코드리뷰 완료 + 결과를 PR 코멘트로 게시**: 멀티에이전트 리뷰(finder 8각도 → 전 후보 반박 검증)로 후보 14건 중 12건 CONFIRMED·1건 반박·하위 2건 컷, 상위 10건을 [PR #9 코멘트](https://github.com/fomula91/sympo-studio/pull/9#issuecomment-5437576416)로 정리해 게시. 핵심: ① 죽은 `editingId` 딥링크(새 이벤트 URL 새로고침 시 events[0] 폴백 표시 + patchEvent 조기 반환으로 편집 무음 유실, saved 표시는 계속 동작), ② 드래그 정렬의 함수형 업데이터가 재할당되는 `let cur`를 클로저로 잡아 빠른 이동 유실(리팩토링 전 코드는 면역 — 회귀), ③ culori `wcagContrast`가 감이 클램핑을 안 해 FE-8 추출 크로마(~0.32)에서 게이트 PASS↔실렌더 FAIL 역전 실측(최대 6.15:1 오차), ④ 뒤로가기 후 뷰어 오버레이 잔류, ⑤ `localFont()` weight 미지정으로 전 사이트 600~800이 가짜 볼드(next 16 로더 소스 확인, `weight: '45 920'` 한 줄), ⑥~⑩ 검색이 표시용 title 미포함·되돌리기가 공용 시드로 덮어씀·dateCode/slug 미재계산·게이트 실패 무음 no-op·UTC 기본 날짜. 확정 버그 대부분이 FE-1+FE-2 리팩토링의 이음새(URL↔상태 동기화·오버레이 상태·기준선)에서 발생 — 1~3번은 머지 전 수정 권장으로 표시. 커밋 규칙 위반 없음. 수정은 FE 담당자 몫으로 넘김.
 
 ## 2026-08-26
