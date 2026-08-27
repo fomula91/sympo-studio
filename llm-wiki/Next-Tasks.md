@@ -87,6 +87,7 @@
 **무엇** — 2단 설문 응답 저장과 `GROUP BY` 집계 엔드포인트.
 **왜** — BE-3과 구조가 거의 같아 코드가 재사용된다. 설문 응답률은 리포트의 핵심 지표라 BE-5의 입력이기도 하다.
 **완료 기준** — 응답이 저장되고 집계 수치가 조회됨. 남용 통제는 BE-3과 동일 정책 적용.
+**진행** — 구현·로컬 실측 완료([[log]] 2026-08-27): `POST /api/events/[id]/survey`(배치, `x-client-token` 필수, 재제출은 upsert 덮어쓰기), `GET …/survey/summary`(분포+응답률, batch 왕복 1회). rate limit은 `lib/rate-limit.ts`로 공통화해 BE-3 정책 구조 재사용 + upsert 우회를 막는 `write_count` 하루 캡(마이그레이션 0003). 계약은 [[API-Guide-FE]]. 남은 것: wrangler 재인증(`wrangler login` — 현 토큰이 read 전용이라 7403) 후 `db:migrate:remote` → `deploy` → 프로덕션 실측.
 
 ### BE-5. 이벤트 로그 적재 + OPS 집계
 **무엇** — 세션별 열람·자료 열람·설문 완료를 이벤트 로그로 적재하고 집계 엔드포인트를 제공한다.

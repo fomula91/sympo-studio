@@ -1,13 +1,13 @@
 import type { NextRequest } from 'next/server';
 import { BadRequest, eventId, getDb, json, withRoute, type EventRow, type IdCtx } from '@/lib/db';
 import {
-  assertRateLimit,
-  rateKeys,
+  QUESTION_RATE_POLICY,
   toQuestionDTO,
   validateQuestionInput,
   type QuestionDTOInput,
   type QuestionRow,
 } from '@/lib/qa';
+import { assertRateLimit, rateKeys } from '@/lib/rate-limit';
 
 /**
  * GET /api/events/[id]/questions — 질문 목록
@@ -98,7 +98,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   }
 
   const keys = await rateKeys(request);
-  await assertRateLimit(db, keys);
+  await assertRateLimit(db, keys, QUESTION_RATE_POLICY);
 
   let row: QuestionRow | null;
   try {

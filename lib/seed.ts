@@ -56,5 +56,20 @@ export async function resetDemoData(db: D1Database): Promise<void> {
       ),
   );
 
+  // 예시 설문 응답 — 집계(BE-4)와 리포트(FE-5)가 빈 화면으로 시작하지 않게
+  // 한다. respondent는 시드 전용 표식이고 client_hash NULL이라 rate limit
+  // 판정에 섞이지 않는다. 문항 키는 FE-4가 확정하기 전의 예시 값이다.
+  statements.push(
+    db
+      .prepare(
+        `INSERT INTO survey_responses (event_id, session_id, question_key, answer, respondent) VALUES
+           (1, 1, 'session_rating', '5', 'seed-r1'),
+           (1, 1, 'session_rating', '4', 'seed-r2'),
+           (1, NULL, 'overall_satisfaction', '5', 'seed-r1'),
+           (1, NULL, 'overall_satisfaction', '4', 'seed-r2'),
+           (1, NULL, 'overall_satisfaction', '4', 'seed-r3')`,
+      ),
+  );
+
   await db.batch(statements);
 }
