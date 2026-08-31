@@ -10,7 +10,7 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 
 ## 스택 / 구조
 - Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 화면은 전부 클라이언트 컴포넌트이고 아직 시드 데이터로 그린다.
-- **백엔드(배포됨)**: Cloudflare Workers + D1 + Route Handler. `wrangler.jsonc`(D1 바인딩 `DB`) · `migrations/000{1..3}_*.sql`(7개 테이블 + rate limit 키 컬럼) · `lib/db.ts`(바인딩 접근·DTO 변환·`ApiError`/`withRoute`) · `lib/rate-limit.ts`(2층 판정 공통화) · `app/api/events/*`(이벤트 CRUD·Q&A·설문) · `app/api/public/[slug]`(참가자 공개 조회). **아젠다·자료 쓰기 라우트는 아직 없다**(BE-14). `next.config.ts`의 `initOpenNextCloudflareForDev()`가 있어야 `next dev`에서도 바인딩이 잡힌다. 스키마 근거는 [[0005-d1-schema]].
+- **백엔드(배포됨)**: Cloudflare Workers + D1 + Route Handler. `wrangler.jsonc`(D1 바인딩 `DB`) · `migrations/000{1..3}_*.sql`(7개 테이블 + rate limit 키 컬럼) · `lib/db.ts`(바인딩 접근·DTO 변환·`ApiError`/`withRoute`) · `app/api/events/*`(이벤트 CRUD·Q&A) · `app/api/public/[slug]`(참가자 공개 조회). **아젠다·자료 쓰기 라우트는 아직 없다**(BE-14). 설문 라우트와 `lib/rate-limit.ts`(2층 판정 공통화)는 **PR #12에 있고 main에는 아직 없다** — 머지되면 이 줄에서 단서를 뗀다. `next.config.ts`의 `initOpenNextCloudflareForDev()`가 있어야 `next dev`에서도 바인딩이 잡힌다. 스키마 근거는 [[0005-d1-schema]].
 - DB 명령: `npm run db:migrate`(로컬 적용) · `npm run db:console -- "SQL"`(조회) · `npm run cf:typegen`(wrangler.jsonc 수정 후 타입 재생성).
 - 스타일: 인라인 oklch(디자인 원본 충실) + `app/globals.css`의 hover/focus 헬퍼 클래스. Pretendard CDN.
 - 디렉터리: `components/StudioApp.tsx`(단일 상태 + patch 패턴, 네비/헤더/벌크바) · `components/screens/*`(4개 화면) · `components/Microsite.tsx`(참가자 뷰, 프리뷰/뷰어 공용) · `lib/theme.ts`(프리셋→OKLCH 파생 `derive`, WCAG 대비비 게이트) · `lib/data.ts`(시드·상수) · `lib/ui.ts`(공용 스타일).
