@@ -10,7 +10,7 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 
 ## 스택 / 구조
 - Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 화면은 전부 클라이언트 컴포넌트이고 아직 시드 데이터로 그린다.
-- **백엔드(BE-1 완료)**: Cloudflare D1 + Route Handler. `wrangler.jsonc`(D1 바인딩 `DB`) · `migrations/0001_init.sql`(7개 테이블) · `lib/db.ts`(바인딩 접근·DTO 변환) · `app/api/events/*`(이벤트 CRUD). `next.config.ts`의 `initOpenNextCloudflareForDev()`가 있어야 `next dev`에서도 바인딩이 잡힌다. 스키마 근거는 [[0005-d1-schema]].
+- **백엔드(배포됨)**: Cloudflare Workers + D1 + Route Handler. `wrangler.jsonc`(D1 바인딩 `DB`) · `migrations/000{1..3}_*.sql`(7개 테이블 + rate limit 키 컬럼) · `lib/db.ts`(바인딩 접근·DTO 변환·`ApiError`/`withRoute`) · `app/api/events/*`(이벤트 CRUD·Q&A) · `app/api/public/[slug]`(참가자 공개 조회). **아젠다·자료 쓰기 라우트는 아직 없다**(BE-14). 설문 라우트와 `lib/rate-limit.ts`(2층 판정 공통화)는 **PR #12에 있고 main에는 아직 없다** — 머지되면 이 줄에서 단서를 뗀다. `next.config.ts`의 `initOpenNextCloudflareForDev()`가 있어야 `next dev`에서도 바인딩이 잡힌다. 스키마 근거는 [[0005-d1-schema]].
 - DB 명령: `npm run db:migrate`(로컬 적용) · `npm run db:console -- "SQL"`(조회) · `npm run cf:typegen`(wrangler.jsonc 수정 후 타입 재생성).
 - 스타일: 인라인 oklch(디자인 원본 충실) + `app/globals.css`의 hover/focus 헬퍼 클래스. Pretendard CDN.
 - 디렉터리: `components/StudioApp.tsx`(단일 상태 + patch 패턴, 네비/헤더/벌크바) · `components/screens/*`(4개 화면) · `components/Microsite.tsx`(참가자 뷰, 프리뷰/뷰어 공용) · `lib/theme.ts`(프리셋→OKLCH 파생 `derive`, WCAG 대비비 게이트) · `lib/data.ts`(시드·상수) · `lib/ui.ts`(공용 스타일).
@@ -26,6 +26,7 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 ## 핵심 판단 (요약)
 - 테마는 HEX 입력 대신 브랜드 프리셋 1회 선택 → OKLCH 파생. WCAG AA 대비비 미달 조합은 저장 게이트로 차단하는 것이 제품 컨셉. **단 프리셋만으로는 절반의 해법** — 실무에서 넘어오는 건 색상 값이 아니라 이미지라, 대표 이미지에서 추출해 프리셋으로 쌓는 흐름이 있어야 실제 문제를 푼다(FE-8).
 - 에디터 프리뷰와 참가자 뷰는 같은 `Microsite` 컴포넌트를 공유한다(단일 렌더 경로).
+- **계정은 게스트/로그인 이원 구조**다. 비로그인도 콘솔·에디터를 전부 조작하며 편집은 `localStorage` 워크스페이스에 영속하고, 로그인(Google SSO)하면 서버에 소유권(`events.owner_id`)을 갖는다. 로그인 시 로컬 작업을 계정으로 **가져오는** 경로가 함께 있다 → [[0007-sso-and-account-model]].
 - dc 프로토타입 런타임(support.js)은 React로 대체 — 포팅 시 DCLogic의 setState 패턴을 patch 함수로 이식.
 
 ## 목적과 제약 (이게 기술 선택을 좌우한다)
@@ -34,11 +35,11 @@ Claude Code가 우선 읽는 구현 컨텍스트. "지금 무엇을 만드는가
 - 브랜드·인물·소속기관·의약품·행사장은 **전부 가상**이며, 리포트 수치도 샘플이다.
 - **커밋 메시지에 `Co-Authored-By: Claude` 트레일러를 넣지 않는다.** 커밋 히스토리도 심사 대상이라서다(2026-08-15 결정, 기존 커밋 2건도 제거 후 재작성).
 
-## 지금 단계
-- 프론트 구현 완료(lint·build 통과), 데이터는 목업. README·리포지토리 정리 완료.
-- **방향 전환**: 정적 전용(localStorage) → 실제 동작하는 백엔드로. Q&A·설문이라는 제품 핵심을 정적으로는 증명할 수 없기 때문 → [[0001-backend-for-working-demo]].
-- 붙일 스택은 Cloudflare 단일 벤더(Workers + D1 + R2), 원칙은 **"저장·조회는 서버, 렌더링·생성은 클라이언트"** → [[0002-cloudflare-free-tier-stack]].
-- [[Next-Tasks]]는 **FE/BE 두 섹션**으로 나뉜다(제목 접두사 `FE-`/`BE-`가 훅 파싱 계약) → [[0003-next-tasks-fe-be-split]].
-- **BE-1 완료** — D1 스키마 7개 테이블 + 이벤트 CRUD가 로컬에서 왕복한다 → [[0005-d1-schema]].
-- 다음 한 걸음: **BE-2**(Cloudflare 배포). `wrangler.jsonc`의 `database_id`가 아직 placeholder라 원격 D1을 만들어 채워야 한다.
-- 서버 없이 지금 착수 가능한 것: **FE-2**(라우트 분리 + 폰트 자체 호스팅), **FE-7**(대비비 저장 게이트), FE-4의 수료증 부분.
+## 지금 단계 (2026-08-31)
+- **방향 전환은 끝났다**: 정적 전용(localStorage) → 실제 동작하는 백엔드 → [[0001-backend-for-working-demo]]. 스택은 Cloudflare 단일 벤더, 원칙은 **"저장·조회는 서버, 렌더링·생성은 클라이언트"** → [[0002-cloudflare-free-tier-stack]]. 단 정적 안(A)은 폐기되지 않고 **게스트 모드로 살아남았다** → [[0007-sso-and-account-model]].
+- **살아있는 링크**: https://sympo-studio.fomula91.workers.dev (BE-2). 남은 것은 대시보드 작업 2건(GitHub push→자동 배포 연결, 결제 수단 미등록 확인).
+- **서버에서 끝난 것**: BE-1(D1 스키마 7개 테이블 → [[0005-d1-schema]]) · BE-3(Q&A 저장·조회 + 남용 통제) · BE-7(참가자 공개 조회 `GET /api/public/[slug]`) · BE-9(rate limit 2층 키 → [[0006-rate-limit-key]]) · BE-11(2차 리뷰 10건). 전부 프로덕션 실측까지.
+- **리뷰 대기 중**: BE-4 설문(PR #12) · FE-1·2·7·8·9(PR #9). **양쪽 다 머지 전 수정 권고가 남아 있다** — PR #12는 upsert가 rate limit 회계를 깨는 결함(Codex·Claude 교차 확증).
+- **화면은 아직 목업으로 돈다.** 서버는 준비됐고 FE 연결(FE-3·FE-5)이 남았다. 계약은 [[API-Guide-FE]].
+- **다음 한 걸음**: PR #12 수정 마무리 → **BE-14**(아젠다·자료 쓰기 API — 인증과 무관하게 지금 비어 있는 구멍) 또는 **BE-12**(인증 기반). 읽기 비용이 급하면 BE-8.
+- 지금 착수 가능한 FE: **FE-3**(Q&A 연결 — 서버가 필요하지만 BE는 준비 완료) · **FE-15의 게스트 로컬 워크스페이스**와 FE-4의 수료증 부분(둘 다 서버 없이 완결).
