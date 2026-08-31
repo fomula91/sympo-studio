@@ -75,13 +75,21 @@ export class RateLimited extends ApiError {
 }
 
 /**
- * 라우트별 rate limit 정책. 대상 테이블은 client_hash·token_hash·created_at
- * 컬럼과 (client_hash, created_at)·(token_hash, created_at) 인덱스를 갖춰야
- * 한다. table은 여기 유니온에 있는 상수만 허용된다 — SQL에 문자열로 삽입되므로
+ * 라우트별 rate limit 정책. 대상 테이블은 client_hash·token_hash와 timeColumn이
+ * 가리키는 시각 컬럼, 그리고 (client_hash, 시각)·(token_hash, 시각) 인덱스를
+ * 갖춰야 한다. table은 여기 유니온에 있는 상수만 허용된다 — SQL에 문자열로 삽입되므로
  * 임의 값이 들어오는 경로를 타입에서 막는다.
  */
 export interface RatePolicy {
   table: 'questions' | 'survey_responses';
+  /**
+   * 판정이 보는 시각 컬럼. 상수 유니온만 허용한다 — SQL에 문자열로 삽입된다.
+   *
+   * upsert하는 테이블(설문)은 created_at이 최초 제출이라 재제출을 못 본다.
+   * 마지막 쓰기 시각(updated_at)을 봐야 "같은 행 두드리기"가 60초 창과 하루
+   * 경계에 잡힌다. 인덱스도 이 컬럼 기준이어야 한다(0004_survey_updated_at).
+   */
+  timeColumn: 'created_at' | 'updated_at';
   windowSeconds: number;
   /** 브라우저(또는 토큰 없는 IP) 버킷 한도 — 행 기준. */
   maxPerWindow: number;
@@ -124,7 +132,7 @@ export async function assertRateLimit(
   cost = 1,
 ): Promise<void> {
   const windowBind = `-${policy.windowSeconds} seconds`;
-  const { table, messages } = policy;
+  const { table, timeColumn, messages } = policy;
   // 하루 한도의 단위: 행 1개(기본) 또는 그 행의 누적 쓰기 수(countWrites).
   const unit = policy.countWrites ? 'write_count' : '1';
 
@@ -133,9 +141,9 @@ export async function assertRateLimit(
       .prepare(
         `SELECT
            SUM(${unit}) AS day_count,
-           SUM(created_at >= datetime('now', ?)) AS recent_count
+           SUM(${timeColumn} >= datetime('now', ?)) AS recent_count
          FROM ${table}
-         WHERE client_hash = ? AND created_at >= ${KST_DAY_START_SQL}`,
+         WHERE client_hash = ? AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
       )
       .bind(windowBind, keys.ipHash)
       .first<{ day_count: number | null; recent_count: number | null }>();
@@ -153,12 +161,12 @@ export async function assertRateLimit(
     .prepare(
       `SELECT
          SUM(CASE WHEN token_hash = ?1 THEN ${unit} ELSE 0 END) AS browser_day,
-         SUM(token_hash = ?1 AND created_at >= datetime('now', ?3)) AS browser_recent,
+         SUM(token_hash = ?1 AND ${timeColumn} >= datetime('now', ?3)) AS browser_recent,
          SUM(CASE WHEN client_hash = ?2 THEN ${unit} ELSE 0 END) AS ip_day,
-         SUM(client_hash = ?2 AND created_at >= datetime('now', ?3)) AS ip_recent
+         SUM(client_hash = ?2 AND ${timeColumn} >= datetime('now', ?3)) AS ip_recent
        FROM ${table}
        WHERE (token_hash = ?1 OR client_hash = ?2)
-         AND created_at >= ${KST_DAY_START_SQL}`,
+         AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
     )
     .bind(keys.tokenHash, keys.ipHash, windowBind)
     .first<{

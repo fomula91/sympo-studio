@@ -33,6 +33,8 @@ export const MAX_ANSWERS_PER_REQUEST = 20;
 //     담는다. D1 쓰기 무료 티어(10만/일)의 2%라 상한까지 남용돼도 티어는 안전하다.
 export const SURVEY_RATE_POLICY: RatePolicy = {
   table: 'survey_responses',
+  // 재제출이 upsert라 created_at(최초 제출)로는 재제출이 판정에 안 잡힌다.
+  timeColumn: 'updated_at',
   windowSeconds: 60,
   maxPerWindow: 60,
   maxPerDay: 200,

@@ -49,6 +49,8 @@ export const IP_MAX_PER_DAY = 300; // IP 총량 하루 — 브라우저 일 한�
 /** 질문 POST의 rate limit 정책 — 판정 구조는 lib/rate-limit.ts 공통. */
 export const QUESTION_RATE_POLICY: RatePolicy = {
   table: 'questions',
+  // 질문은 INSERT만 한다 — 행이 곧 쓰기라 최초 시각이 판정 시각이다.
+  timeColumn: 'created_at',
   windowSeconds: RATE_WINDOW_SECONDS,
   maxPerWindow: RATE_MAX_PER_WINDOW,
   maxPerDay: RATE_MAX_PER_DAY,

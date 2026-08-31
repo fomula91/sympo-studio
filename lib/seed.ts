@@ -9,7 +9,8 @@ import { autoSlug, SESSIONS0 } from './data';
  *
  * events를 지우면 sessions·documents·questions·survey_responses·event_logs가
  * 전부 CASCADE로 따라 지워진다(0001_init.sql). 시드는 행사 하나 + 아젠다 +
- * 예시 질문 2건 — FE-3이 폴링으로 바로 그려볼 수 있는 최소 상태다.
+ * 예시 질문 2건 + 예시 설문 응답 5건 — FE-3·FE-5가 폴링·집계로 바로 그려볼 수
+ * 있는 최소 상태다.
  */
 // 데모 행사의 원본 값. slug는 손으로 쓰지 않고 POST /api/events와 같은
 // autoSlug로 파생한다 — 값을 고치고 slug를 잊으면 다음 리셋이 생성 규칙과
@@ -62,12 +63,16 @@ export async function resetDemoData(db: D1Database): Promise<void> {
   statements.push(
     db
       .prepare(
-        `INSERT INTO survey_responses (event_id, session_id, question_key, answer, respondent) VALUES
-           (1, 1, 'session_rating', '5', 'seed-r1'),
-           (1, 1, 'session_rating', '4', 'seed-r2'),
-           (1, NULL, 'overall_satisfaction', '5', 'seed-r1'),
-           (1, NULL, 'overall_satisfaction', '4', 'seed-r2'),
-           (1, NULL, 'overall_satisfaction', '4', 'seed-r3')`,
+        // updated_at을 함께 넣는다 — 0004에서 rate limit 판정이 이 컬럼으로
+        // 옮겨갔고, NULL로 두면 시드 행만 판정에서 빠지는 특례가 생긴다.
+        // (client_hash·token_hash는 NULL이라 어차피 어떤 버킷에도 안 잡힌다.)
+        `INSERT INTO survey_responses
+           (event_id, session_id, question_key, answer, respondent, updated_at) VALUES
+           (1, 1, 'session_rating', '5', 'seed-r1', datetime('now')),
+           (1, 1, 'session_rating', '4', 'seed-r2', datetime('now')),
+           (1, NULL, 'overall_satisfaction', '5', 'seed-r1', datetime('now')),
+           (1, NULL, 'overall_satisfaction', '4', 'seed-r2', datetime('now')),
+           (1, NULL, 'overall_satisfaction', '4', 'seed-r3', datetime('now'))`,
       ),
   );
 

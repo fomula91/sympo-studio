@@ -93,7 +93,8 @@
 **무엇** — 2단 설문 응답 저장과 `GROUP BY` 집계 엔드포인트.
 **왜** — BE-3과 구조가 거의 같아 코드가 재사용된다. 설문 응답률은 리포트의 핵심 지표라 BE-5의 입력이기도 하다.
 **완료 기준** — 응답이 저장되고 집계 수치가 조회됨. 남용 통제는 BE-3과 동일 정책 적용.
-**진행** — 구현·로컬 실측 완료([[log]] 2026-08-27): `POST /api/events/[id]/survey`(배치, `x-client-token` 필수, 재제출은 upsert 덮어쓰기), `GET …/survey/summary`(분포+응답률, batch 왕복 1회). rate limit은 `lib/rate-limit.ts`로 공통화해 BE-3 정책 구조 재사용 + upsert 우회를 막는 `write_count` 하루 캡(마이그레이션 0003). 계약은 [[API-Guide-FE]]. 남은 것: wrangler 재인증(`wrangler login` — 현 토큰이 read 전용이라 7403) 후 `db:migrate:remote` → `deploy` → 프로덕션 실측.
+**진행** — 구현 + 리뷰 지적 반영 + 로컬 실측 완료([[log]] 2026-08-27·08-31): `POST /api/events/[id]/survey`(배치, `x-client-token` 필수, 재제출은 upsert 덮어쓰기), `GET …/survey/summary`(분포+응답률, batch 왕복 1회). rate limit은 `lib/rate-limit.ts`로 공통화 + `write_count` 하루 캡(0003). **PR #12 리뷰 지적 4건 반영(0004)**: 충돌 시 판정 해시 비덮어쓰기(누적 write_count의 귀속이 최신 IP로 옮겨가 세탁·과대계상 양방향으로 회계가 깨지던 것), `responseRate` 상한 1, `created_at`(최초 제출) / `updated_at`(마지막 쓰기) 분리 + rate limit 판정 컬럼을 정책(`timeColumn`)으로 뺌. 계약은 [[API-Guide-FE]]. **남은 것**: `db:migrate:remote`(0004) → `deploy` → 프로덕션 실측 → 머지.
+**남은 위험(BE-8로 이관)** — 60초 창은 여전히 **행 기준**이라 단일 행 해머링을 못 본다. `write_count`가 하루 누적이라 창에 쓸 수 없기 때문이고(창 쿼리가 그 행의 하루치를 통째로 세게 된다), 제대로 닫으려면 `(키, 창)` 단위 카운터가 필요하다 — [[0006-rate-limit-key]]의 "별도 저장소 없이 대상 테이블로 판정" 원칙을 조정해야 하는 사안이라 BE-8에서 읽기 통제와 함께 본다. 지금은 **하루 쓰기 캡(200)이 상한**이다(실측: 20문항×10회=200 후 11회째 429).
 
 ### BE-5. 이벤트 로그 적재 + OPS 집계
 **무엇** — 세션별 열람·자료 열람·설문 완료를 이벤트 로그로 적재하고 집계 엔드포인트를 제공한다.

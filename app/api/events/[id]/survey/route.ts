@@ -63,22 +63,33 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   // ON CONFLICT의 대상은 idx_survey_once(UNIQUE)와 정확히 같은 표현식이어야
   // 한다 — session_id NULL을 IFNULL로 접는 것까지 포함해서.
-  // 덮어쓸 때 created_at·해시를 갱신하고 write_count를 올린다: 재제출은 행을
-  // 늘리지 않으므로, 쓰기 누적이 하루 한도 판정(countWrites)에 잡혀야 같은
-  // 문항 반복 제출이 rate limit을 우회하지 못한다.
+  //
+  // 덮어쓸 때 write_count만 올리고 **판정 키(client_hash·token_hash)는 건드리지
+  // 않는다.** 갱신하면 그 행에 쌓인 누적 write_count의 귀속이 통째로 최신 IP로
+  // 옮겨간다 — 하루 한도 판정이 `SUM(write_count) WHERE client_hash = ?`이기
+  // 때문이다. 옛 IP는 누적분만큼 카운트가 줄고(세탁), 새 IP는 요청 한 번에
+  // 남의 누적을 상속해 무고한 429를 맞는다(과대계상). 두 방향 모두 PR #12
+  // 리뷰에서 교차 확인됐다.
+  //
+  // 귀속이 최초 기록자에 고정돼도 남용은 막힌다: 같은 행을 두드리려면 같은
+  // respondent가 필요하고 respondent는 토큰에서 파생되므로, 토큰 버킷
+  // (token_hash 기준 하루 200 쓰기)이 그대로 잡는다. 토큰을 바꾸면 respondent가
+  // 달라져 upsert가 아니라 새 행이 되고 정상 경로로 계산된다.
+  //
+  // created_at도 건드리지 않는다 — 최초 제출 시각은 BE-5의 입력이다. 대신
+  // updated_at을 갱신하고 rate limit이 그쪽을 보게 했다(0004_survey_updated_at).
   const statements = answers.map((a) =>
     db
       .prepare(
         `INSERT INTO survey_responses
-           (event_id, session_id, question_key, answer, respondent, client_hash, token_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+           (event_id, session_id, question_key, answer, respondent, client_hash,
+            token_hash, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(event_id, respondent, question_key, IFNULL(session_id, -1))
          DO UPDATE SET
            answer = excluded.answer,
-           client_hash = excluded.client_hash,
-           token_hash = excluded.token_hash,
            write_count = write_count + 1,
-           created_at = datetime('now')`,
+           updated_at = datetime('now')`,
       )
       .bind(id, a.sessionId, a.questionKey, a.answer, respondent, keys.ipHash, keys.tokenHash),
   );

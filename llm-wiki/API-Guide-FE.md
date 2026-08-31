@@ -143,7 +143,7 @@ if (!token) {
 {
   "capacity": 120,          // 운영자가 넣은 예상 인원 (null 가능)
   "respondents": 3,         // 문항 무관, 이벤트 전체 응답자 수
-  "responseRate": 0.025,    // respondents / capacity. capacity 없으면 null
+  "responseRate": 0.025,    // respondents / capacity. capacity 없으면 null, 최대 1
   "questions": [
     { "questionKey": "overall_satisfaction", "sessionId": null, "respondents": 3,
       "answers": [ { "answer": "4", "count": 2 }, { "answer": "5", "count": 1 } ] } // count 내림차순
@@ -152,6 +152,8 @@ if (!token) {
 ```
 
 - 문항별 `respondents`는 그 문항에 답한 사람 수다(중복 응답은 서버가 접으므로 왜곡 없음).
+- **`responseRate`는 1을 넘지 않는다.** `capacity`는 실측이 아니라 운영자가 손으로 넣는 예상 인원이라 응답자 수가 그것을 넘을 수 있어(예상 3명·응답 50명), 서버에서 잘라 내보낸다 — 막대를 그리다 화면을 뚫지 않게. 분모가 잘못됐다는 사실이 필요하면 `respondents`와 `capacity`를 직접 비교하면 된다.
+- 재제출은 응답을 덮어쓰되 **최초 제출 시각은 보존**한다(`created_at` 불변, `updated_at`만 갱신). 집계에는 드러나지 않지만 BE-5의 입력이다.
 
 ## 운영자 콘솔 — `/api/events` (BE-1)
 

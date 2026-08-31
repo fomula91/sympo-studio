@@ -73,7 +73,15 @@ export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
     respondents,
     // 분모(capacity)는 운영자가 넣는 예상 인원이라 없을 수 있다 — 그때 0으로
     // 나눠 NaN을 흘리는 대신 null로 "계산 불가"를 명시한다.
-    responseRate: event.capacity ? Math.round((respondents / event.capacity) * 1000) / 1000 : null,
+    //
+    // 1을 넘지 않게 자른다. capacity는 실측이 아니라 운영자가 손으로 넣는
+    // 예상 인원이라 응답자 수가 그것을 넘을 수 있고(예상 3명·응답 50명 → 1667%),
+    // 리포트(FE-5)가 이 값으로 막대를 그리면 화면을 뚫는다. 잘라도 정보는
+    // 잃지 않는다 — respondents와 capacity가 응답에 그대로 있어, 분모가 잘못됐다는
+    // 사실은 그 둘을 비교하면 드러난다.
+    responseRate: event.capacity
+      ? Math.min(1, Math.round((respondents / event.capacity) * 1000) / 1000)
+      : null,
     questions,
   });
 });
