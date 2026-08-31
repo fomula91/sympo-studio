@@ -55,6 +55,22 @@ export interface SessionRow {
   created_at: string;
 }
 
+export interface DocumentRow {
+  id: number;
+  event_id: number;
+  session_id: number | null;
+  display_name: string;
+  r2_key: string | null;
+  content_type: string | null;
+  size_bytes: number | null;
+  page_count: number | null;
+  tag: string | null;
+  status: string;
+  sort_order: number;
+  uploaded_at: string | null;
+  created_at: string;
+}
+
 /** API 응답 형태. SQLite의 0/1을 boolean으로 되돌린다. */
 export interface EventDTO {
   id: number;
@@ -117,6 +133,29 @@ export function toSessionDTO(row: SessionRow) {
     title: row.title,
     speaker: row.speaker,
     kind: row.kind,
+  };
+}
+
+/**
+ * 자료 DTO.
+ *
+ * r2_key는 DB 경계를 넘기지 않는다 — 파일 접근은 서명 URL로만 내주고(BE-6),
+ * 키가 새면 그 통제가 무의미해진다. 운영자 화면에 필요한 것은 키 자체가 아니라
+ * "파일이 붙어 있는가"뿐이라 hasFile로 접는다.
+ */
+export function toDocumentDTO(row: DocumentRow) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    displayName: row.display_name,
+    tag: row.tag,
+    status: row.status,
+    order: row.sort_order,
+    hasFile: row.r2_key !== null,
+    contentType: row.content_type,
+    sizeBytes: row.size_bytes,
+    pageCount: row.page_count,
+    uploadedAt: row.uploaded_at,
   };
 }
 
