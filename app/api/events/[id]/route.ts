@@ -4,36 +4,48 @@ import {
   eventId,
   getDb,
   json,
+  toDocumentDTO,
   toEventDTO,
   toSessionDTO,
   withRoute,
+  type DocumentRow,
   type EventRow,
   type IdCtx,
   type SessionRow,
 } from '@/lib/db';
 
 /**
- * GET /api/events/[id] — 이벤트 단건 + 아젠다
+ * GET /api/events/[id] — 이벤트 단건 + 아젠다 + 자료
  *
  * 세션을 함께 돌려주는 것이 요점이다. 지금 콘솔은 어떤 카드를 열어도 같은
  * 아젠다를 편집하는데(FE-1), 그 결함을 고치려면 이벤트마다 자기 세션 목록을
  * 받아올 수 있어야 한다.
+ *
+ * 자료도 같은 응답에 싣는다(BE-14) — 에디터가 아젠다와 자료를 같은 화면에서
+ * 편집하므로, 나눠 두면 화면 하나를 그리는 데 요청이 둘이 된다. PUT 쪽은
+ * 반대로 나뉘어 있다: 아젠다 저장이 자료까지 통째로 덮어쓰면 한쪽 화면의
+ * 저장이 다른 쪽의 편집을 지운다.
+ *
+ * 세 쿼리를 batch로 묶어 왕복 1회. Promise.all은 왕복이 3회다.
  */
 export const GET = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
 
-  const [event, sessions] = await Promise.all([
-    db.prepare('SELECT * FROM events WHERE id = ?').bind(id).first<EventRow>(),
-    db
-      .prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id')
-      .bind(id)
-      .all<SessionRow>(),
+  const [eventRes, sessionRes, documentRes] = await db.batch([
+    db.prepare('SELECT * FROM events WHERE id = ?').bind(id),
+    db.prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id').bind(id),
+    db.prepare('SELECT * FROM documents WHERE event_id = ? ORDER BY sort_order, id').bind(id),
   ]);
 
+  const event = eventRes.results[0] as EventRow | undefined;
   if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
-  return json({ ...toEventDTO(event), sessions: sessions.results.map(toSessionDTO) });
+  return json({
+    ...toEventDTO(event),
+    sessions: (sessionRes.results as unknown as SessionRow[]).map(toSessionDTO),
+    documents: (documentRes.results as unknown as DocumentRow[]).map(toDocumentDTO),
+  });
 });
 
 /** PATCH가 받는 필드 → 컬럼 매핑. 여기 없는 키는 조용히 무시된다. */
