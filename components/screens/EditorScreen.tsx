@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
+import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
 import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
@@ -370,6 +371,21 @@ function DocsSection() {
 }
 
 function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+  const [generating, setGenerating] = useState(false);
+  const [certError, setCertError] = useState<string | null>(null);
+
+  async function handlePreviewCertificate() {
+    setGenerating(true);
+    setCertError(null);
+    try {
+      await generateCertificate({ eventTitle: ev.title, venue: ev.venue, date: ev.date });
+    } catch {
+      setCertError('수료증을 생성하지 못했습니다.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={sectionTitle}>참여</h2>
@@ -420,6 +436,37 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
           );
         })}
       </div>
+
+      {ev.engage.cert ? (
+        <div
+          style={{
+            marginTop: 20,
+            padding: 16,
+            border: `1px solid ${UI.line}`,
+            borderRadius: 12,
+            background: UI.surface,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 650, marginBottom: 4 }}>수료증 미리보기</div>
+          <p style={{ fontSize: 12, color: UI.muted, marginBottom: 12, lineHeight: 1.5 }}>
+            참가자가 설문을 완료했을 때 받는 PDF와 같은 양식입니다. 참가자 화면은 아직 이 흐름에 연결되지
+            않았습니다 — 여기서는 운영자가 결과물을 미리 볼 수 있게 직접 다운로드합니다.
+          </p>
+          <button
+            className="hv-bg965"
+            onClick={handlePreviewCertificate}
+            disabled={generating}
+            style={{ ...ghostBtn, opacity: generating ? 0.6 : 1, cursor: generating ? 'not-allowed' : 'pointer' }}
+          >
+            {generating ? '생성 중…' : '수료증 다운로드'}
+          </button>
+          {certError ? (
+            <div role="alert" style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginTop: 8 }}>
+              {certError}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
