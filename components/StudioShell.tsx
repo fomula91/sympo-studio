@@ -1,11 +1,12 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { LogoMark } from '@/components/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
-import { autoSlug, defaultEventDetail, NAV, SESSIONS0 } from '@/lib/data';
+import { autoSlug, defaultEventDetail, NAV, uniqueSlug } from '@/lib/data';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
@@ -14,9 +15,14 @@ const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, presets, patch, patchEvent } = useStudio();
+  const { s, ev, presets, patch, resetSessions } = useStudio();
   const router = useRouter();
   const pathname = usePathname();
+
+  // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
+  useEffect(() => {
+    patch({ viewerOpen: false });
+  }, [pathname, patch]);
 
   const inEditor = pathname.startsWith('/events/');
   const screenKind: ScreenKind = s.viewerOpen
@@ -104,17 +110,20 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                   : n.id === 'editor'
                     ? inEditor && s.section !== 'theme'
                     : pathname === `/${n.id}`;
+          const blocked = n.id === 'viewer' && !canPublish;
           return (
             <button
               key={n.id}
               className="hv-bg955"
               onClick={() => goTo(n.id as 'console' | 'editor' | 'theme' | 'report' | 'viewer')}
+              title={blocked ? '대비비 미달로 공개할 수 없음' : undefined}
               style={{
                 width: 68,
                 height: 60,
                 borderRadius: 13,
                 border: 'none',
-                cursor: 'pointer',
+                cursor: blocked ? 'not-allowed' : 'pointer',
+                opacity: blocked ? 0.4 : 1,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -218,7 +227,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               <button
                 className="hv-bg965"
                 onClick={() => {
-                  patchEvent({ sessions: SESSIONS0.slice() });
+                  resetSessions();
                   patch({ saved: '되돌렸습니다' });
                 }}
                 style={ghostBtn}
@@ -258,16 +267,19 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                   const detail = defaultEventDetail();
                   patch((st) => ({
                     events: [
-                      ...st.events,
                       {
                         id,
                         brand: '',
                         status: '초안',
                         dateCode: detail.date.replace(/-/g, '').slice(2),
-                        slug: autoSlug(detail.title, detail.venue, detail.date),
+                        slug: uniqueSlug(
+                          autoSlug(detail.title, detail.venue, detail.date),
+                          st.events.map((e) => e.slug),
+                        ),
                         docs: 0,
                         ...detail,
                       },
+                      ...st.events,
                     ],
                     editingId: id,
                     section: 'basic',
