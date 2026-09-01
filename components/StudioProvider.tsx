@@ -1,9 +1,9 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { seedEvents } from '@/lib/data';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { autoSlug, seedEvents } from '@/lib/data';
 import { PRESETS } from '@/lib/theme';
-import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, Preset, StudioState } from '@/lib/types';
+import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, Preset, Session, StudioState } from '@/lib/types';
 
 const SEEDED_EVENTS = seedEvents();
 
@@ -31,12 +31,21 @@ interface StudioContextValue {
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  resetSessions: () => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
 
 export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [s, setS] = useState<StudioState>(INITIAL);
+  // 이벤트별 "되돌리기" 기준선 — 편집을 시작한 시점의 아젠다 스냅샷(공용 데모 시드가 아니다).
+  const baselineRef = useRef<Map<number, Session[]>>(new Map());
+
+  useEffect(() => {
+    if (s.editingId == null || baselineRef.current.has(s.editingId)) return;
+    const found = s.events.find((e) => e.id === s.editingId);
+    if (found) baselineRef.current.set(s.editingId, found.sessions);
+  }, [s.editingId, s.events]);
 
   const patch: PatchFn = useCallback((p) => {
     setS((prev) => {
@@ -52,14 +61,34 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const delta: PatchEvent = typeof p === 'function' ? p(prev.events[idx]) : p;
       if (!delta) return prev;
       const events = prev.events.slice();
-      events[idx] = { ...events[idx], ...delta };
+      const merged = { ...events[idx], ...delta };
+      if (delta.title !== undefined || delta.venue !== undefined || delta.date !== undefined) {
+        merged.dateCode = merged.date.replace(/-/g, '').slice(2);
+        merged.slug = autoSlug(merged.title, merged.venue, merged.date);
+      }
+      events[idx] = merged;
+      return { ...prev, events };
+    });
+  }, []);
+
+  const resetSessions = useCallback(() => {
+    setS((prev) => {
+      if (prev.editingId == null) return prev;
+      const baseline = baselineRef.current.get(prev.editingId);
+      const idx = prev.events.findIndex((e) => e.id === prev.editingId);
+      if (!baseline || idx < 0) return prev;
+      const events = prev.events.slice();
+      events[idx] = { ...events[idx], sessions: baseline.slice() };
       return { ...prev, events };
     });
   }, []);
 
   const ev = s.events.find((e) => e.id === s.editingId) ?? s.events[0];
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
-  const value = useMemo(() => ({ s, ev, presets, patch, patchEvent }), [s, ev, presets, patch, patchEvent]);
+  const value = useMemo(
+    () => ({ s, ev, presets, patch, patchEvent, resetSessions }),
+    [s, ev, presets, patch, patchEvent, resetSessions],
+  );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
 }
