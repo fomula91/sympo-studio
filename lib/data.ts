@@ -72,6 +72,21 @@ export function autoSlug(title: string, venue: string, date: string): string {
   return `${head}-${venueSlug(venue)}-${date.replace(/-/g, '').slice(2)}`;
 }
 
+/** base가 이미 쓰이고 있으면 -2, -3 ...을 붙여 회차별 고유 slug를 보장한다 — 서버의 ensureUniqueSlug와 같은 규칙. */
+export function uniqueSlug(base: string, existing: string[]): string {
+  const clean = base || 'event';
+  for (let n = 1; n < 100; n++) {
+    const candidate = n === 1 ? clean : `${clean}-${n}`;
+    if (!existing.includes(candidate)) return candidate;
+  }
+  return `${clean}-${Date.now()}`;
+}
+
+function todayLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export const SECTIONS: { id: Section; label: string; meta: string }[] = [
   { id: 'basic', label: '기본 정보', meta: '5' },
   { id: 'agenda', label: '아젠다', meta: '' },
@@ -130,7 +145,7 @@ export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' 
   return {
     title: '새 이벤트',
     venue: '',
-    date: new Date().toISOString().slice(0, 10),
+    date: todayLocalDate(),
     host: '',
     cap: '',
     engage: { qa: true, survey: true, chat: false, cert: true },
