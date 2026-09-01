@@ -1,6 +1,7 @@
 'use client';
 
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
+import QaPanel from '@/components/QaPanel';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, EventInfo, KvPattern, Session } from '@/lib/types';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -12,6 +13,7 @@ interface MicrositeProps {
   sessions: Session[];
   icons: string[];
   event: EventInfo;
+  eventId: number;
   kv?: string;
   kvPattern?: KvPattern;
   density?: Density;
@@ -28,12 +30,14 @@ export default function Microsite({
   sessions,
   icons,
   event: ev,
+  eventId,
   kv = '',
   kvPattern = 'stripe',
   density = '기본',
   wide = false,
 }: MicrositeProps) {
   const online = useOnlineStatus();
+  const [qaOpen, setQaOpen] = useState(false);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
 
@@ -333,27 +337,33 @@ export default function Microsite({
             오프라인 상태 — 연결되면 다시 시도하세요
           </div>
         ) : null}
-        {ev.engage.qa !== false && (
-          <div
-            aria-disabled={!online}
-            style={{
-              height: 54,
-              borderRadius: 14,
-              background: t.brand,
-              color: t.onBrand,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 14.5,
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              cursor: online ? 'pointer' : 'not-allowed',
-              opacity: online ? 1 : 0.45,
-              marginBottom: 10,
-            }}
-          >
-            질문 남기기
-          </div>
-        )}
+        {ev.engage.qa !== false &&
+          (qaOpen ? (
+            <QaPanel theme={t} online={online} eventId={eventId} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setQaOpen(true)}
+              disabled={!online}
+              style={{
+                width: '100%',
+                height: 54,
+                borderRadius: 14,
+                border: 'none',
+                background: t.brand,
+                color: t.onBrand,
+                fontFamily: 'inherit',
+                fontSize: 14.5,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                cursor: online ? 'pointer' : 'not-allowed',
+                opacity: online ? 1 : 0.45,
+                marginBottom: 10,
+              }}
+            >
+              질문 남기기
+            </button>
+          ))}
         {ev.engage.survey !== false && (
           <div
             aria-disabled={!online}

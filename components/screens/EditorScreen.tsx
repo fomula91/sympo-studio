@@ -1095,6 +1095,9 @@ export default function EditorScreen({
                 sessions={ev.sessions}
                 icons={icons}
                 event={micrositeEvent}
+                // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
+                // D1에 대응하는 실제 id가 없어 Q&A는 데모 이벤트(id=1) 기준으로 보여준다.
+                eventId={1}
                 kv={ev.keyVisual}
                 kvPattern={ev.kvPattern}
                 density={ev.density}
