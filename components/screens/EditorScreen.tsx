@@ -80,13 +80,14 @@ function AgendaSection({
       if (!row) return;
       const to = parseInt(row.getAttribute('data-idx') ?? '', 10);
       if (isNaN(to) || to === cur) return;
+      const from = cur;
+      cur = to;
       patchEvent((curEv) => {
         const arr = curEv.sessions.slice();
-        const [it] = arr.splice(cur, 1);
+        const [it] = arr.splice(from, 1);
         arr.splice(to, 0, it);
         return { sessions: arr };
       });
-      cur = to;
       patch({ dragIdx: to, saved: '변경 저장 중…' });
     };
     const up = () => {
