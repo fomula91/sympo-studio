@@ -1,5 +1,7 @@
-import { wcagContrast } from 'culori';
+import { toGamut, wcagContrast } from 'culori';
 import type { IconSetId, KvPattern, Mode, Preset } from './types';
+
+const toSrgb = toGamut('rgb', 'oklch');
 
 export const PRESETS: Preset[] = [
   { id: 'slate', label: '슬레이트 뉴트럴', h: 255, c: 0.028 },
@@ -93,7 +95,7 @@ export function contrastRows(theme: Theme, mode: Mode): ContrastRow[] {
     },
   ];
   return defs.map((r) => {
-    const v = wcagContrast(r.a, r.b);
+    const v = wcagContrast(toSrgb(r.a), toSrgb(r.b));
     return { label: r.label, ratio: `${v.toFixed(2)}:1`, pass: v >= r.min };
   });
 }
