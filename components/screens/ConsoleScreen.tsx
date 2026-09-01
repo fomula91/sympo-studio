@@ -12,10 +12,10 @@ export function filterEvents(s: StudioState) {
   let list = s.events.filter(
     (e) =>
       (s.status === '전체' || e.status === s.status) &&
-      (!q || (e.brand + e.venue + e.slug + e.dateCode).toLowerCase().includes(q)),
+      (!q || (e.title + e.brand + e.venue + e.slug + e.dateCode).toLowerCase().includes(q)),
   );
   if (s.sort === '행사일') list = list.toSorted((a, b) => a.dateCode.localeCompare(b.dateCode));
-  if (s.sort === '이름') list = list.toSorted((a, b) => a.brand.localeCompare(b.brand));
+  if (s.sort === '이름') list = list.toSorted((a, b) => a.title.localeCompare(b.title));
   return list;
 }
 
