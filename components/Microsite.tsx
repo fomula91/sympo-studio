@@ -13,7 +13,10 @@ interface MicrositeProps {
   sessions: Session[];
   icons: string[];
   event: EventInfo;
-  eventId: number;
+  /** 참가자 공개 페이지(`/[slug]`)에서만 넘긴다 — 실제 D1 이벤트에 Q&A GET·POST를 보낼 때 쓰는 id. */
+  eventId?: number;
+  /** 스튜디오 에디터·뷰어 미리보기에서 true — Q&A 입력·폴링을 렌더하지 않아 목업 편집 중에 실제 행사 데이터를 건드리지 않는다. */
+  preview?: boolean;
   kv?: string;
   kvPattern?: KvPattern;
   density?: Density;
@@ -31,6 +34,7 @@ export default function Microsite({
   icons,
   event: ev,
   eventId,
+  preview = false,
   kv = '',
   kvPattern = 'stripe',
   density = '기본',
@@ -338,7 +342,27 @@ export default function Microsite({
           </div>
         ) : null}
         {ev.engage.qa !== false &&
-          (qaOpen ? (
+          (preview ? (
+            <div
+              aria-disabled
+              style={{
+                height: 54,
+                borderRadius: 14,
+                background: 'transparent',
+                border: `1px solid ${t.line}`,
+                color: t.muted,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                marginBottom: 10,
+                cursor: 'not-allowed',
+              }}
+            >
+              질문 남기기 (미리보기 — 참가자 페이지에서만 동작)
+            </div>
+          ) : qaOpen && eventId != null ? (
             <QaPanel theme={t} online={online} eventId={eventId} />
           ) : (
             <button

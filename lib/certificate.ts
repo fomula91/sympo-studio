@@ -1,6 +1,6 @@
 // pdf-lib로 브라우저에서 수료증 PDF를 생성·다운로드하는 유틸 (FE-4, 서버 PDF 생성은 무료 티어에서 막혀 클라이언트 생성이 전제)
 import fontkit from '@pdf-lib/fontkit';
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, rgb, type PDFFont } from 'pdf-lib';
 
 export interface CertificateInfo {
   eventTitle: string;
@@ -11,9 +11,41 @@ export interface CertificateInfo {
 
 const PAGE_WIDTH = 842; // A4 가로(landscape), pt
 const PAGE_HEIGHT = 595;
+const MAX_LINE_WIDTH = PAGE_WIDTH - 160; // 좌우 여백을 넉넉히 둔다
+const RESERVED_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 
-function centerX(text: string, size: number, font: Awaited<ReturnType<PDFDocument['embedFont']>>): number {
-  return PAGE_WIDTH / 2 - font.widthOfTextAtSize(text, size) / 2;
+/** 지정한 너비 안에 들어올 때까지 폰트 크기를 줄이고, 그래도 안 들어오면 말줄임표로 자른다. */
+function fitLine(text: string, desiredSize: number, minSize: number, font: PDFFont): { text: string; size: number } {
+  let size = desiredSize;
+  while (size > minSize && font.widthOfTextAtSize(text, size) > MAX_LINE_WIDTH) size -= 1;
+  if (font.widthOfTextAtSize(text, size) <= MAX_LINE_WIDTH) return { text, size };
+
+  let truncated = text;
+  while (truncated.length > 1 && font.widthOfTextAtSize(`${truncated}…`, size) > MAX_LINE_WIDTH) {
+    truncated = truncated.slice(0, -1);
+  }
+  return { text: `${truncated}…`, size };
+}
+
+function drawFittedLine(
+  page: Awaited<ReturnType<PDFDocument['addPage']>>,
+  rawText: string,
+  y: number,
+  desiredSize: number,
+  minSize: number,
+  font: PDFFont,
+  color: ReturnType<typeof rgb>,
+): void {
+  const { text, size } = fitLine(rawText, desiredSize, minSize, font);
+  const x = PAGE_WIDTH / 2 - font.widthOfTextAtSize(text, size) / 2;
+  page.drawText(text, { x, y, size, font, color });
+}
+
+/** Windows 파일 시스템 예약 문자(\ / : * ? " < > |)를 지우고 길이를 제한한다. */
+function sanitizeFilenamePart(name: string): string {
+  const cleaned = name.replace(RESERVED_FILENAME_CHARS, '').trim();
+  const base = cleaned || 'event';
+  return base.length > 60 ? base.slice(0, 60) : base;
 }
 
 export async function generateCertificate(info: CertificateInfo): Promise<void> {
@@ -38,30 +70,19 @@ export async function generateCertificate(info: CertificateInfo): Promise<void> 
     borderWidth: 1.5,
   });
 
-  const title = '수료증';
-  page.drawText(title, { x: centerX(title, 40, font), y: 430, size: 40, font, color: brand });
-
-  const name = `${info.participantName?.trim() || '참가자'} 님`;
-  page.drawText(name, { x: centerX(name, 24, font), y: 350, size: 24, font, color: ink });
-
-  const bodyLine1 = `위 사람은 ${info.date} ${info.venue}에서 열린`;
-  page.drawText(bodyLine1, { x: centerX(bodyLine1, 14, font), y: 300, size: 14, font, color: ink });
-
-  const eventLine = `"${info.eventTitle}"`;
-  page.drawText(eventLine, { x: centerX(eventLine, 16, font), y: 274, size: 16, font, color: brand });
-
-  const bodyLine2 = '에 참여하여 설문을 완료했음을 증명합니다.';
-  page.drawText(bodyLine2, { x: centerX(bodyLine2, 14, font), y: 248, size: 14, font, color: ink });
-
-  const footer = 'SYMPO STUDIO';
-  page.drawText(footer, { x: centerX(footer, 11, font), y: 60, size: 11, font, color: rgb(0.55, 0.55, 0.58) });
+  drawFittedLine(page, '수료증', 430, 40, 28, font, brand);
+  drawFittedLine(page, `${info.participantName?.trim() || '참가자'} 님`, 350, 24, 14, font, ink);
+  drawFittedLine(page, `위 사람은 ${info.date} ${info.venue}에서 열린`, 300, 14, 9, font, ink);
+  drawFittedLine(page, `"${info.eventTitle}"`, 274, 16, 10, font, brand);
+  drawFittedLine(page, '에 참여하여 설문을 완료했음을 증명합니다.', 248, 14, 9, font, ink);
+  drawFittedLine(page, 'SYMPO STUDIO', 60, 11, 8, font, rgb(0.55, 0.55, 0.58));
 
   const pdfBytes = await pdfDoc.save();
   const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `수료증-${info.eventTitle}.pdf`;
+  a.download = `수료증-${sanitizeFilenamePart(info.eventTitle)}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

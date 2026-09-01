@@ -21,6 +21,7 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
   const [qaDisabled, setQaDisabled] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
+  const lastPostAt = useRef(0);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -32,10 +33,20 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
     const load = async () => {
       if (inFlight.current) return; // 이전 폴링이 아직 안 끝났으면 겹치지 않게 건너뛴다
       inFlight.current = true;
+      const startedAt = Date.now();
       try {
         const qs = await fetchQuestions(eventId);
         if (!cancelled) {
-          setQuestions(qs);
+          setQuestions((current) => {
+            // 이 GET이 시작된 뒤에 POST가 성공했다면, 이 응답은 그 POST 이전 스냅샷이라
+            // 방금 등록한 질문이 안 실려 있을 수 있다 — 통째로 덮어쓰지 않고 이미 목록에
+            // 있던(막 등록한) 항목을 id 기준으로 보존한다.
+            if (lastPostAt.current > startedAt && current) {
+              const extra = current.filter((q) => !qs.some((existing) => existing.id === q.id));
+              return extra.length > 0 ? [...qs, ...extra] : qs;
+            }
+            return qs;
+          });
           setLoadError(null);
         }
       } catch (e) {
@@ -63,6 +74,7 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
     try {
       const question = await postQuestion(eventId, trimmed);
       setDraft('');
+      lastPostAt.current = Date.now();
       // 다음 폴링(최대 4초)까지 기다리지 않고 목록에 바로 반영 — 같은 질문이 폴링으로 다시 와도 id로 중복 제거
       setQuestions((current) => {
         const list = current ?? [];

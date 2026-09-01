@@ -24,8 +24,9 @@ export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: 
     icons,
     event: micrositeEvent,
     // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
-    // D1에 대응하는 실제 id가 없어 Q&A는 데모 이벤트(id=1) 기준으로 보여준다.
-    eventId: 1,
+    // D1에 대응하는 실제 id가 없다. preview로 Q&A 입력·폴링을 꺼서 실제 행사 데이터에
+    // 쓰기가 일어나지 않게 한다(Codex 리뷰 2026-09-02 P1).
+    preview: true,
     kv: ev.keyVisual,
     kvPattern: ev.kvPattern,
     density: ev.density,
