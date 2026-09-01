@@ -460,7 +460,9 @@ function ThemeSection({
   const draftPreset: Preset | null = draft ? { id: 'draft', label: draft.label, h: draft.h, c: draft.c } : null;
   const draftTheme = draftPreset ? derive(draftPreset, ev.mode) : null;
   const draftRows = draftPreset ? contrastRows(draftTheme!, ev.mode) : [];
-  const draftPass = draftPreset ? contrastAllPass(draftPreset, ev.mode) : false;
+  const draftPass = draftPreset
+    ? contrastAllPass(draftPreset, 'light') && contrastAllPass(draftPreset, 'dark')
+    : false;
 
   const saveDraft = () => {
     if (!draft || !draftPass) return;
@@ -624,7 +626,9 @@ function ThemeSection({
           </div>
           {!draftPass ? (
             <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 14 }}>
-              대비비 미달 — 채도를 낮추면 통과할 수 있습니다.
+              {draftRows.every((r) => r.pass)
+                ? `대비비 미달 — ${ev.mode === 'light' ? '다크' : '라이트'} 모드로 전환하면 기준 미달이라 저장할 수 없습니다.`
+                : '대비비 미달 — 채도를 낮추면 통과할 수 있습니다.'}
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: 8 }}>
