@@ -806,7 +806,10 @@ function ThemeSection({
         ))}
         <button
           className="hv-bg965"
-          onClick={() => patchEvent({ keyVisual: '', kvPattern: 'none' })}
+          onClick={() => {
+            patchEvent({ keyVisual: '', kvPattern: 'none' });
+            patch({ saved: '키 비주얼 비워짐' });
+          }}
           style={{
             height: 44,
             padding: '0 14px',
