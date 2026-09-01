@@ -9,7 +9,7 @@
 **FE는 서로 독립**이라 순서 없이 아무거나 착수할 수 있다(단, 대부분 대응하는 BE에 의존한다 — 각 과제의 `무엇`에 명시).
 **BE는 번호가 곧 의존 순서**다. 근거는 [[0001-backend-for-working-demo]], [[0002-cloudflare-free-tier-stack]].
 
-현황(2026-08-31): **FE-1·2·7·8·9는 [PR #9](https://github.com/fomula91/sympo-studio/pull/9), BE-4는 [PR #12](https://github.com/fomula91/sympo-studio/pull/12)로 리뷰 대기 중** — 양쪽 다 머지 전 수정 권고가 남아 있다. 지금 새로 착수 가능한 FE: **FE-3**(BE 준비 완료 — [[API-Guide-FE]]가 계약), FE-4의 수료증 부분. BE 다음 추천은 **BE-12**(인증 기반) — 운영자 CRUD가 인가 검사도 rate limit도 없이 열려 있고, BE-10이 그 위에 무인증 엔드포인트를 하나 더 얹기 전에 놓아야 한다([[0007-sso-and-account-model]]). 읽기 비용 쪽이 급하면 BE-8을 먼저.
+현황(2026-09-01): **BE-4(PR #12)·BE-14는 main에 머지 완료.** 남은 건 **FE-1·2·7·8·9 — [PR #9](https://github.com/fomula91/sympo-studio/pull/9)** 하나뿐 — 리뷰 확정 지적 12건 전부 로컬에서 수정·검증 완료, 아직 push 전. FE-3(Q&A 연결)은 별도로 착수 중(WIP, 아직 커밋 전) — Codex 리뷰([[Reviews/2026-09-01-codex-fe-qa]])로 이벤트 id가 `PUBLIC_EVENT_ID=1`에 고정된 구조적 문제가 확인됨(스튜디오 mock `EventItem.id`와 D1 실제 id가 아직 연결된 적이 없어 단순 prop 전달로 못 고침 — 참가자 공개 라우트를 새로 만들거나 FE-15 계정 연결을 기다려야 함). BE 다음 추천은 **BE-12**(인증 기반) — 운영자 CRUD가 인가 검사도 rate limit도 없이 열려 있고, BE-10이 그 위에 무인증 엔드포인트를 하나 더 얹기 전에 놓아야 한다([[0007-sso-and-account-model]]). 읽기 비용 쪽이 급하면 BE-8을 먼저.
 
 문제 정의의 정본은 [[field-experience]]다. 과제의 `왜`를 쓸 때 **거기 없는 내용을 근거로 삼지 않는다** — 기존 README가 그렇게 무너졌다([[0004-problem-redefinition]]).
 
