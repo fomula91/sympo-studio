@@ -42,6 +42,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const baselineRef = useRef<Map<number, Session[]>>(new Map());
 
   useEffect(() => {
+    // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
+    const validIds = new Set(s.events.map((e) => e.id));
+    for (const id of baselineRef.current.keys()) {
+      if (!validIds.has(id)) baselineRef.current.delete(id);
+    }
     if (s.editingId == null || baselineRef.current.has(s.editingId)) return;
     const found = s.events.find((e) => e.id === s.editingId);
     if (found) baselineRef.current.set(s.editingId, found.sessions);

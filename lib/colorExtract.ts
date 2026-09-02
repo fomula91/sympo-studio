@@ -28,8 +28,14 @@ export async function extractPresetColor(file: File): Promise<{ h: number; c: nu
   canvas.height = SAMPLE_SIZE;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('이 브라우저에서는 이미지 분석을 쓸 수 없습니다.');
-  ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
-  const { data } = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+  let data: Uint8ClampedArray;
+  try {
+    ctx.drawImage(img, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE);
+    ({ data } = ctx.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE));
+  } catch {
+    // 외부 리소스를 참조하는 SVG 등으로 캔버스가 오염되면 getImageData가 SecurityError를 던진다.
+    throw new Error('이미지를 분석할 수 없습니다. 다른 이미지로 시도해주세요.');
+  }
 
   // 로고·제품 이미지는 흰 배경 위에 브랜드색이 일부만 차지하는 경우가 흔해서,
   // 전체 평균을 쓰면 배경에 묻힌다 — 양자화한 버킷 중 가장 큰(무채색 제외) 것을 고른다.

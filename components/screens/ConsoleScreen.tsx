@@ -109,9 +109,11 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
         {list.map((e) => {
           const on = s.sel.includes(e.id);
           return (
-            <div
+            <button
               key={e.id}
+              type="button"
               className="hv-border78"
+              aria-pressed={s.bulk ? on : undefined}
               onClick={() => {
                 if (s.bulk) {
                   patch((st) => ({
@@ -123,12 +125,17 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 }
               }}
               style={{
+                display: 'block',
+                width: '100%',
                 background: UI.surface,
                 borderRadius: 16,
                 padding: 18,
                 cursor: 'pointer',
                 border: `1px solid ${on ? UI.brand : UI.line}`,
                 boxShadow: on ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'left',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -210,7 +217,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                   {s.bulk ? (on ? '선택됨' : '탭하여 선택') : '편집 →'}
                 </div>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>

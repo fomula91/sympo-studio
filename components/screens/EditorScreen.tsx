@@ -71,6 +71,8 @@ function AgendaSection({
   patch: PatchFn;
   patchEvent: PatchEventFn;
 }) {
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
+
   const startDrag = (idx: number) => (e: React.PointerEvent) => {
     e.preventDefault();
     let cur = idx;
@@ -100,6 +102,30 @@ function AgendaSection({
     window.addEventListener('pointerup', up);
   };
 
+  // 포인터 드래그의 키보드 대안 — 핸들에 포커스 후 위/아래 화살표로 한 칸씩 이동한다.
+  const moveByKeyboard = (from: number, to: number) => {
+    if (to < 0 || to >= ev.sessions.length || to === from) return;
+    const moved = ev.sessions[from];
+    patchEvent((curEv) => {
+      const arr = curEv.sessions.slice();
+      const [it] = arr.splice(from, 1);
+      arr.splice(to, 0, it);
+      return { sessions: arr };
+    });
+    patch({ saved: '방금 저장됨' });
+    setMoveAnnouncement(`${moved.title}을(를) ${ev.sessions.length}개 중 ${to + 1}번째로 이동했습니다.`);
+  };
+
+  const handleHandleKeyDown = (idx: number) => (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveByKeyboard(idx, idx - 1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveByKeyboard(idx, idx + 1);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 640 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 6 }}>
@@ -119,7 +145,20 @@ function AgendaSection({
           라이브러리에서 가져오기
         </button>
       </div>
-      <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꿉니다.</p>
+      <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꾸거나, 핸들에 포커스한 뒤 위/아래 화살표로 바꿉니다.</p>
+      <div
+        aria-live="polite"
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          overflow: 'hidden',
+          clip: 'rect(0 0 0 0)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {moveAnnouncement}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ev.sessions.map((x, i) => (
@@ -138,9 +177,12 @@ function AgendaSection({
               boxShadow: s.dragIdx === i ? '0 10px 24px -12px oklch(0.4 0.02 250 / 0.4)' : undefined,
             }}
           >
-            <div
+            <button
+              type="button"
               className="hv-ink"
               onPointerDown={startDrag(i)}
+              onKeyDown={handleHandleKeyDown(i)}
+              aria-label={`${x.title} 순서 변경 — 현재 ${ev.sessions.length}개 중 ${i + 1}번째. 화살표 위/아래로 이동`}
               style={{
                 width: 44,
                 height: 56,
@@ -152,10 +194,13 @@ function AgendaSection({
                 color: 'oklch(0.7 0.006 250)',
                 fontSize: 15,
                 letterSpacing: 1,
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
               }}
             >
               ⠿
-            </div>
+            </button>
             <div
               style={{
                 width: 74,

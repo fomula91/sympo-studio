@@ -5,7 +5,7 @@ import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Microsite from '@/components/Microsite';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { Density, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
+import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
 import { UI } from '@/lib/ui';
 
 interface PublicEvent {
@@ -26,6 +26,7 @@ interface PublicEvent {
   };
   engage: { qa: boolean; survey: boolean; chat: boolean; cert: boolean };
   sessions: { id: number; time: string; title: string; speaker: string; kind: string }[];
+  documents: { id: number; sessionId: number | null; name: string; tag: string | null; status: string; pages: number | null; sizeBytes: number | null }[];
 }
 
 type LoadState =
@@ -76,6 +77,10 @@ export default function PublicEventPage() {
   }
 
   const { data } = state;
+  // D1의 brand_presets는 origin='extracted' 커스텀 프리셋도 저장하지만, 이 응답의 presetId는
+  // 문자열 참조뿐이라 여기서 resolve할 수 없다 — BE-7이 hue/chroma/label을 함께 내려줘야
+  // 정확히 재현된다(BE-17). 지금은 스튜디오가 실제 CRUD API에 연결돼 있지 않아(전부 클라이언트
+  // 상태) 이 경로로 실제 프리셋이 저장될 일이 아직 없다 — 빌트인 프리셋 폴백은 안전하다.
   const preset = PRESETS.find((p) => p.id === data.theme.presetId) ?? PRESETS[0];
   const mode: Mode = data.theme.mode === 'dark' ? 'dark' : 'light';
   const iconSet: IconSetId = ICON_SET_IDS.includes(data.theme.iconSet as IconSetId)
@@ -93,6 +98,12 @@ export default function PublicEventPage() {
     speaker: s.speaker,
     kind: s.kind,
   }));
+  const documents: DocumentInfo[] = data.documents.map((d) => ({
+    id: d.id,
+    name: d.name,
+    status: d.status,
+    pages: d.pages,
+  }));
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -101,6 +112,7 @@ export default function PublicEventPage() {
         sessions={sessions}
         icons={ICONSETS[iconSet].glyphs}
         eventId={data.id}
+        documents={documents}
         event={{
           title: data.title,
           venue: data.venue ?? '',

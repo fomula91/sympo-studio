@@ -63,6 +63,14 @@ export interface EventInfo {
   brandLabel?: string;
 }
 
+/** 참가자 공개 페이지가 GET /api/public/[slug]에서 받는 자료 하나. */
+export interface DocumentInfo {
+  id: number;
+  name: string;
+  status: string; // 'pending'이면 아직 준비 중(FE-6 업로드 전)
+  pages: number | null;
+}
+
 export interface StudioState {
   viewerOpen: boolean;
   section: Section;
