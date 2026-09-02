@@ -224,6 +224,6 @@ export async function eventId(ctx: IdCtx): Promise<number> {
   return n;
 }
 
-export function json(data: unknown, status = 200) {
-  return Response.json(data, { status });
+export function json(data: unknown, status = 200, headers?: HeadersInit) {
+  return Response.json(data, { status, headers });
 }
