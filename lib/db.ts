@@ -19,6 +19,15 @@ export async function getDb(): Promise<D1Database> {
   return db;
 }
 
+/**
+ * 워커 환경 전체(바인딩 + 시크릿). D1만 필요하면 getDb를 쓴다.
+ * R2 바인딩(DOCS)과 서명 비밀값(DOC_URL_SECRET)을 함께 쓰는 자료 경로용이다.
+ */
+export async function getEnv(): Promise<CloudflareEnv> {
+  const { env } = await getCloudflareContext({ async: true });
+  return env;
+}
+
 /** events 테이블의 행. 컬럼명은 스키마와 1:1이다. */
 export interface EventRow {
   id: number;
