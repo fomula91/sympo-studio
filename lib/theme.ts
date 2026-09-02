@@ -1,11 +1,7 @@
-import type { IconSetId, KvPattern, Mode } from './types';
+import { toGamut, wcagContrast } from 'culori';
+import type { IconSetId, KvPattern, Mode, Preset } from './types';
 
-export interface Preset {
-  id: string;
-  label: string;
-  h: number;
-  c: number;
-}
+const toSrgb = toGamut('rgb', 'oklch');
 
 export const PRESETS: Preset[] = [
   { id: 'slate', label: '슬레이트 뉴트럴', h: 255, c: 0.028 },
@@ -34,19 +30,6 @@ export interface Theme {
   onBrand: string;
   soft: string;
   L: { bg: number; surface: number; ink: number; muted: number; brand: number; onBrand: number };
-}
-
-// 근사 상대휘도: OKLCH 명도 L을 감마 보정된 휘도로 취급
-export function lum(L: number): number {
-  return Math.pow(Math.max(0, Math.min(1, L)), 3);
-}
-
-export function ratio(L1: number, L2: number): number {
-  const a = lum(L1);
-  const b = lum(L2);
-  const hi = Math.max(a, b);
-  const lo = Math.min(a, b);
-  return (hi + 0.05) / (lo + 0.05);
 }
 
 export function derive(preset: Preset, mode: Mode): Theme {
@@ -98,20 +81,25 @@ export interface ContrastRow {
 }
 
 export function contrastRows(theme: Theme, mode: Mode): ContrastRow[] {
+  const heroFactor = mode === 'dark' ? 0.58 : 0.68;
   const defs = [
-    { label: '본문 텍스트 / 표면', a: theme.L.ink, b: theme.L.surface, min: 4.5 },
-    { label: '보조 텍스트 / 표면', a: theme.L.muted, b: theme.L.surface, min: 4.5 },
-    { label: '브랜드 위 텍스트', a: theme.L.onBrand, b: theme.L.brand, min: 4.5 },
-    { label: '브랜드 / 배경', a: theme.L.brand, b: theme.L.bg, min: 3 },
+    { label: '본문 텍스트 / 표면', a: theme.ink, b: theme.surface, min: 4.5 },
+    { label: '보조 텍스트 / 표면', a: theme.muted, b: theme.surface, min: 4.5 },
+    { label: '브랜드 위 텍스트', a: theme.onBrand, b: theme.brand, min: 4.5 },
+    { label: '브랜드 / 배경', a: theme.brand, b: theme.bg, min: 3 },
     {
       label: '히어로 텍스트 / 키 비주얼',
-      a: 0.985,
-      b: theme.L.brand * (mode === 'dark' ? 0.58 : 0.68),
+      a: `oklch(0.985 0 ${theme.h})`,
+      b: `oklch(${(theme.L.brand * heroFactor).toFixed(3)} ${theme.c} ${theme.h})`,
       min: 4.5,
     },
   ];
   return defs.map((r) => {
-    const v = ratio(r.a, r.b);
+    const v = wcagContrast(toSrgb(r.a), toSrgb(r.b));
     return { label: r.label, ratio: `${v.toFixed(2)}:1`, pass: v >= r.min };
   });
+}
+
+export function contrastAllPass(preset: Preset, mode: Mode): boolean {
+  return contrastRows(derive(preset, mode), mode).every((r) => r.pass);
 }

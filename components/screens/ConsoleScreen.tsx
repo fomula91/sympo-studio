@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { STATUS } from '@/lib/data';
 import type { PatchFn, SortKey, StudioState } from '@/lib/types';
 import { MONO, pillStyle, seg, UI } from '@/lib/ui';
@@ -11,14 +12,15 @@ export function filterEvents(s: StudioState) {
   let list = s.events.filter(
     (e) =>
       (s.status === '전체' || e.status === s.status) &&
-      (!q || (e.brand + e.venue + e.slug + e.dateCode).toLowerCase().includes(q)),
+      (!q || (e.title + e.brand + e.venue + e.slug + e.dateCode).toLowerCase().includes(q)),
   );
   if (s.sort === '행사일') list = list.toSorted((a, b) => a.dateCode.localeCompare(b.dateCode));
-  if (s.sort === '이름') list = list.toSorted((a, b) => a.brand.localeCompare(b.brand));
+  if (s.sort === '이름') list = list.toSorted((a, b) => a.title.localeCompare(b.title));
   return list;
 }
 
 export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: PatchFn }) {
+  const router = useRouter();
   const list = filterEvents(s);
 
   return (
@@ -107,30 +109,33 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
         {list.map((e) => {
           const on = s.sel.includes(e.id);
           return (
-            <div
+            <button
               key={e.id}
+              type="button"
               className="hv-border78"
+              aria-pressed={s.bulk ? on : undefined}
               onClick={() => {
                 if (s.bulk) {
                   patch((st) => ({
                     sel: on ? st.sel.filter((x) => x !== e.id) : [...st.sel, e.id],
                   }));
                 } else {
-                  patch({
-                    screen: 'editor',
-                    section: 'agenda',
-                    title: `${e.brand} 심포지엄`,
-                    venue: e.venue,
-                  });
+                  patch({ editingId: e.id, section: 'agenda' });
+                  router.push(`/events/${e.id}/edit`);
                 }
               }}
               style={{
+                display: 'block',
+                width: '100%',
                 background: UI.surface,
                 borderRadius: 16,
                 padding: 18,
                 cursor: 'pointer',
                 border: `1px solid ${on ? UI.brand : UI.line}`,
                 boxShadow: on ? '0 0 0 3px oklch(0.475 0.11 205 / 0.09)' : undefined,
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'left',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
@@ -176,7 +181,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                       textWrap: 'pretty',
                     }}
                   >
-                    {e.brand} 심포지엄
+                    {e.title}
                   </div>
                   <div style={{ fontSize: 13, color: UI.muted, lineHeight: 1.5 }}>{e.venue}</div>
                   <div
@@ -205,14 +210,14 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 }}
               >
                 <div style={{ fontSize: 12, color: UI.muted }}>
-                  세션 {e.sessions} · 자료 {e.docs}
+                  세션 {e.sessions.length} · 자료 {e.docs}
                 </div>
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : UI.muted2 }}>
                   {s.bulk ? (on ? '선택됨' : '탭하여 선택') : '편집 →'}
                 </div>
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
