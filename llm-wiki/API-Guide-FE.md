@@ -171,6 +171,42 @@ if (!token) {
 - **`responseRate`는 1을 넘지 않는다.** `capacity`는 실측이 아니라 운영자가 손으로 넣는 예상 인원이라 응답자 수가 그것을 넘을 수 있어(예상 3명·응답 50명), 서버에서 잘라 내보낸다 — 막대를 그리다 화면을 뚫지 않게. 분모가 잘못됐다는 사실이 필요하면 `respondents`와 `capacity`를 직접 비교하면 된다.
 - 재제출은 응답을 덮어쓰되 **최초 제출 시각은 보존**한다(`created_at` 불변, `updated_at`만 갱신). 집계에는 드러나지 않지만 BE-5의 입력이다.
 
+## 강의자료 파일 — R2 (BE-6)
+
+### 업로드 — `PUT /api/events/[id]/documents/[docId]/upload`
+
+**자료 행이 먼저 있어야 한다**(BE-14의 `PUT …/documents`로 만든다). 이 라우트는 그 행에 파일을 붙일 뿐 새 행을 만들지 않는다 — 자료는 파일보다 먼저 존재하고 그동안 참가자 화면이 "준비 중"(`status: 'pending'`)을 그리는 것이 이 제품의 전제이기 때문이다(연자 지각으로 자료가 행사 중에 올라온다).
+
+본문은 **파일 바이트 그대로**(multipart 아님), `Content-Type: application/pdf`.
+
+```js
+await fetch(`/api/events/${eventId}/documents/${docId}/upload`, {
+  method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: file,
+});
+```
+
+| | 제약 |
+|---|---|
+| 형식 | `application/pdf`만 |
+| 크기 | **20MB 이하** |
+| 성공 | `201 { id, status: 'ready', sizeBytes }` |
+
+같은 자료에 다시 올리면 **교체**된다(옛 파일은 지워지고 URL도 바뀐다).
+
+### 열람 — 서명 URL
+
+`GET /api/public/[slug]` 응답의 각 자료에 **`url`이 함께 온다.** 별도 발급 요청이 필요 없다.
+
+```jsonc
+{ "id": 4, "name": "…", "status": "ready", "sizeBytes": 192,
+  "url": "/api/files/events/1/4-0cc3c04f.pdf?exp=…&sig=…" }
+```
+
+- 파일이 없으면(`status: 'pending'`) **`url`은 `null`** — "준비 중"으로 그린다
+- **10분 뒤 만료된다.** 목록을 오래 열어 뒀다면 다시 받아 새 URL을 쓴다
+- 서명이 틀렸든 만료됐든 키가 없든 **전부 404**다(사유를 구분해 주지 않는다)
+- 응답은 `Cache-Control: private` — 서명 URL이 곧 접근 권한이라 공유 캐시에 남으면 안 된다
+
 ## 이벤트 로그 · 운영 지표 — `/api/events/[id]/{logs,ops}` (BE-5)
 
 ### 적재 — `POST /api/events/[id]/logs`
