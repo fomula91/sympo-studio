@@ -49,8 +49,16 @@ export default function LiveReportPage() {
         setState({ status: 'error', message: e instanceof Error ? e.message : '불러오지 못했습니다.' });
       }
     })();
+    // 현장 백스테이지 등 네트워크가 잠깐 끊긴 상태에서 열었을 수 있다 — 복구되면
+    // 수동 재시도 없이 자동으로 다시 받아온다([[Reviews]] app/[slug]/page.tsx와 같은 이유).
+    const onOnline = () => {
+      setState({ status: 'loading' });
+      setRetryTick((n) => n + 1);
+    };
+    window.addEventListener('online', onOnline);
     return () => {
       cancelled = true;
+      window.removeEventListener('online', onOnline);
     };
   }, [slug, retryTick]);
 
@@ -84,6 +92,10 @@ export default function LiveReportPage() {
     const visitors = row?.visitors ?? 0;
     return { id: s.id, label: `${s.time ?? ''}  ${s.title}`.trim(), visitors, pct: pct(visitors) };
   });
+  // capacity 미설정이면 %를 낼 수 없다 — 대신 이 이벤트의 세션 중 최다 방문 대비 상대 막대로
+  // 그린다(라벨의 실제 방문자 수와 막대 길이가 서로 다른 척도로 어긋나지 않게).
+  const maxBarVisitors = Math.max(1, ...bars.map((b) => b.visitors));
+  const barWidth = (b: (typeof bars)[number]) => b.pct ?? Math.round((b.visitors / maxBarVisitors) * 100);
 
   const stats = [
     { label: '방문자', value: `${ops.visitors}명` },
@@ -161,7 +173,7 @@ export default function LiveReportPage() {
                   <div
                     style={{
                       height: '100%',
-                      width: `${b.pct ?? Math.min(100, b.visitors * 20)}%`,
+                      width: `${barWidth(b)}%`,
                       borderRadius: 99,
                       background: UI.brand,
                     }}
