@@ -16,6 +16,7 @@
 ## Reviews
 - [[Reviews/2026-09-01-codex-fe-qa]] — Codex 프론트엔드 리뷰: Q&A 연결
 - [[Reviews/2026-09-02-codex-branch-review]] — Codex 브랜치 리뷰: Q&A·미리보기·수료증 PDF
+- [[Reviews/2026-09-02-pr9-final-review]] — PR #9 최종 리뷰: Codex CLI × Claude 교차 검증(오프라인 복구·폴링 정지 등)
 
 ## Decisions (ADR)
 - [[0001-backend-for-working-demo]] — 정적 전용을 버리고 실제 동작하는 백엔드를 붙인다

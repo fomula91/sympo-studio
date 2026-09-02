@@ -45,7 +45,10 @@ function drawFittedLine(
 function sanitizeFilenamePart(name: string): string {
   const cleaned = name.replace(RESERVED_FILENAME_CHARS, '').trim();
   const base = cleaned || 'event';
-  return base.length > 60 ? base.slice(0, 60) : base;
+  // .slice(0, 60)은 UTF-16 코드 유닛 기준이라 서로게이트 쌍(이모지 등)을 반으로
+  // 잘라 깨진 문자를 남길 수 있다 — 코드 포인트 단위로 스프레드해 자른다.
+  const codePoints = Array.from(base);
+  return codePoints.length > 60 ? codePoints.slice(0, 60).join('') : base;
 }
 
 export async function generateCertificate(info: CertificateInfo): Promise<void> {

@@ -21,7 +21,9 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
   const [qaDisabled, setQaDisabled] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const inFlight = useRef(false);
-  const lastPostAt = useRef(0);
+  // 로컬에서 막 등록했지만 아직 서버 GET 응답에서 확인 안 된 질문들 — 확인되기 전까지
+  // 폴링이 통째로 덮어써도 사라지지 않게 보존한다(여러 폴링 주기에 걸쳐도 안전).
+  const pendingRef = useRef<Question[]>([]);
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -31,22 +33,14 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
     if (!online) return;
     let cancelled = false;
     const load = async () => {
-      if (inFlight.current) return; // 이전 폴링이 아직 안 끝났으면 겹치지 않게 건너뛴다
+      // 탭이 백그라운드면 쉰다 — 참가자가 탭을 열어두기만 해도 계속 돌면 D1 읽기 티어를 갉아먹는다.
+      if (document.hidden || inFlight.current) return;
       inFlight.current = true;
-      const startedAt = Date.now();
       try {
         const qs = await fetchQuestions(eventId);
         if (!cancelled) {
-          setQuestions((current) => {
-            // 이 GET이 시작된 뒤에 POST가 성공했다면, 이 응답은 그 POST 이전 스냅샷이라
-            // 방금 등록한 질문이 안 실려 있을 수 있다 — 통째로 덮어쓰지 않고 이미 목록에
-            // 있던(막 등록한) 항목을 id 기준으로 보존한다.
-            if (lastPostAt.current > startedAt && current) {
-              const extra = current.filter((q) => !qs.some((existing) => existing.id === q.id));
-              return extra.length > 0 ? [...qs, ...extra] : qs;
-            }
-            return qs;
-          });
+          pendingRef.current = pendingRef.current.filter((p) => !qs.some((existing) => existing.id === p.id));
+          setQuestions(pendingRef.current.length > 0 ? [...qs, ...pendingRef.current] : qs);
           setLoadError(null);
         }
       } catch (e) {
@@ -57,9 +51,14 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
     };
     load();
     const id = setInterval(load, 4000);
+    const onVisible = () => {
+      if (!document.hidden) load(); // 다시 보이면 바로 한 번 갱신
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [online, eventId]);
 
@@ -74,7 +73,7 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
     try {
       const question = await postQuestion(eventId, trimmed);
       setDraft('');
-      lastPostAt.current = Date.now();
+      pendingRef.current = [...pendingRef.current, question];
       // 다음 폴링(최대 4초)까지 기다리지 않고 목록에 바로 반영 — 같은 질문이 폴링으로 다시 와도 id로 중복 제거
       setQuestions((current) => {
         const list = current ?? [];
@@ -84,8 +83,11 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
       if (e instanceof ApiClientError) {
         setSubmitError(e.message);
         if (e.status === 429) {
+          // 하루 한도 문구는 60초 뒤에 다시 눌러도 똑같이 막힌다 — 그 경우엔 자동으로 풀어주지 않는다
+          // (거짓 희망을 주지 않는다). 60초 창 한도만 자동으로 풀어준다.
+          const isDailyLimit = e.message.includes('오늘');
           setCooldown(true);
-          setTimeout(() => setCooldown(false), 60000);
+          if (!isDailyLimit) setTimeout(() => setCooldown(false), 60000);
         }
         if (e.status === 403) setQaDisabled(true);
       } else {
@@ -128,7 +130,24 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
       <div style={{ fontSize: 11.5, color: t.muted }}>질문을 남기면 잠시 후 아래 목록에 표시됩니다.</div>
 
       {qaDisabled ? (
-        <div style={{ fontSize: 13, color: t.muted }}>Q&A가 비활성화된 이벤트입니다.</div>
+        <div style={{ fontSize: 13, color: t.muted, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>Q&A가 비활성화된 이벤트입니다.</span>
+          <button
+            type="button"
+            onClick={() => setQaDisabled(false)}
+            style={{
+              fontSize: 12,
+              textDecoration: 'underline',
+              background: 'none',
+              border: 'none',
+              color: t.brand,
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            다시 시도
+          </button>
+        </div>
       ) : (
         <>
           <textarea

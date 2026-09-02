@@ -282,6 +282,7 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
             <input
               className="inp"
               value={ev[f.k]}
+              maxLength={200}
               onChange={(e) => {
                 patchEvent({ [f.k]: e.target.value });
                 patch({ saved: '변경 저장 중…' });
@@ -826,6 +827,7 @@ function ThemeSection({
           patch({ dragOver: false });
           const f = e.dataTransfer?.files?.[0];
           if (f && f.type.startsWith('image')) {
+            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: URL.createObjectURL(f) });
             patch({ saved: '키 비주얼 교체됨' });
           }
@@ -878,6 +880,7 @@ function ThemeSection({
           <button
             key={p.k}
             onClick={() => {
+              if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
               patchEvent({ kvPattern: p.k, keyVisual: '' });
               patch({ saved: '키 비주얼 교체됨' });
             }}
@@ -899,6 +902,7 @@ function ThemeSection({
         <button
           className="hv-bg965"
           onClick={() => {
+            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: '', kvPattern: 'none' });
             patch({ saved: '키 비주얼 비워짐' });
           }}

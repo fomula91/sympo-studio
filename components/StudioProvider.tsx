@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { autoSlug, seedEvents } from '@/lib/data';
+import { autoSlug, seedEvents, uniqueSlug } from '@/lib/data';
 import { PRESETS } from '@/lib/theme';
 import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, Preset, Session, StudioState } from '@/lib/types';
 
@@ -69,7 +69,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       const merged = { ...events[idx], ...delta };
       if (delta.title !== undefined || delta.venue !== undefined || delta.date !== undefined) {
         merged.dateCode = merged.date.replace(/-/g, '').slice(2);
-        merged.slug = autoSlug(merged.title, merged.venue, merged.date);
+        const base = autoSlug(merged.title, merged.venue, merged.date);
+        // 다른 이벤트와 slug가 겹치면 새 이벤트 생성 때와 같은 규칙으로 접미사를 붙인다.
+        const otherSlugs = prev.events.filter((e) => e.id !== merged.id).map((e) => e.slug);
+        merged.slug = uniqueSlug(base, otherSlugs);
       }
       events[idx] = merged;
       return { ...prev, events };

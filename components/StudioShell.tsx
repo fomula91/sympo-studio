@@ -224,16 +224,18 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                 <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.green }} />
                 {s.saved}
               </div>
-              <button
-                className="hv-bg965"
-                onClick={() => {
-                  resetSessions();
-                  patch({ saved: '되돌렸습니다' });
-                }}
-                style={ghostBtn}
-              >
-                되돌리기
-              </button>
+              {s.section === 'agenda' ? (
+                <button
+                  className="hv-bg965"
+                  onClick={() => {
+                    resetSessions();
+                    patch({ saved: '되돌렸습니다' });
+                  }}
+                  style={ghostBtn}
+                >
+                  아젠다 되돌리기
+                </button>
+              ) : null}
               {!canPublish ? (
                 <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)' }}>대비비 미달로 공개할 수 없음</div>
               ) : null}
