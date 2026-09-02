@@ -1,5 +1,14 @@
 import type { NextRequest } from 'next/server';
-import { BadRequest, eventId, getDb, json, withRoute, type EventRow, type IdCtx } from '@/lib/db';
+import {
+  assertPublicEvent,
+  BadRequest,
+  eventId,
+  getDb,
+  json,
+  withRoute,
+  type EventRow,
+  type IdCtx,
+} from '@/lib/db';
 import { assertRateLimit, rateKeys, sha16, TOKEN_PATTERN } from '@/lib/rate-limit';
 import { SURVEY_RATE_POLICY, validateSurveyBody } from '@/lib/survey';
 
@@ -23,11 +32,13 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const id = await eventId(ctx);
 
   const event = await db
-    .prepare('SELECT id, engage_survey FROM events WHERE id = ?')
+    .prepare('SELECT id, status, engage_survey FROM events WHERE id = ?')
     .bind(id)
-    .first<Pick<EventRow, 'id' | 'engage_survey'>>();
-  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-  if (!event.engage_survey) return json({ error: '이 행사는 설문을 받지 않습니다.' }, 403);
+    .first<Pick<EventRow, 'id' | 'status' | 'engage_survey'>>();
+  // 비공개 상태는 없는 이벤트와 같은 404다(BE-16). 상태 게이트가 engage 토글보다
+  // 먼저 — 비공개 행사는 403으로도 존재를 알려주면 안 된다.
+  assertPublicEvent(event);
+  if (!event!.engage_survey) return json({ error: '이 행사는 설문을 받지 않습니다.' }, 403);
 
   const raw = (await request.json().catch(() => {
     throw new BadRequest('요청 본문이 JSON이 아닙니다.');

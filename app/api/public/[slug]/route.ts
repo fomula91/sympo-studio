@@ -8,6 +8,7 @@ import {
   withRoute,
   type EventRow,
   type SessionRow,
+  PUBLIC_STATUSES,
 } from '@/lib/db';
 
 /**
@@ -15,8 +16,6 @@ import {
  * "비공개입니다" 같은 별도 응답을 만들지 않는다 — 존재 여부 자체를 흘리지
  * 않는 것이 요점이다(없는 slug와 구분 불가).
  */
-const PUBLIC_STATUSES = new Set(['공개예정', '진행중', '완료']);
-
 type SlugCtx = { params: Promise<{ slug: string }> };
 
 /** documents 테이블에서 참가자 화면이 쓰는 컬럼만. r2_key는 경계를 넘지 않는다(서명 URL은 BE-6). */
