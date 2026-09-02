@@ -171,6 +171,46 @@ if (!token) {
 - **`responseRate`는 1을 넘지 않는다.** `capacity`는 실측이 아니라 운영자가 손으로 넣는 예상 인원이라 응답자 수가 그것을 넘을 수 있어(예상 3명·응답 50명), 서버에서 잘라 내보낸다 — 막대를 그리다 화면을 뚫지 않게. 분모가 잘못됐다는 사실이 필요하면 `respondents`와 `capacity`를 직접 비교하면 된다.
 - 재제출은 응답을 덮어쓰되 **최초 제출 시각은 보존**한다(`created_at` 불변, `updated_at`만 갱신). 집계에는 드러나지 않지만 BE-5의 입력이다.
 
+## 이벤트 로그 · 운영 지표 — `/api/events/[id]/{logs,ops}` (BE-5)
+
+### 적재 — `POST /api/events/[id]/logs`
+
+참가자 화면이 열람 흔적을 **모아서** 보낸다. 건별로 보내지 말 것 — 아젠다를 훑으면 세션·자료 열람이 순식간에 쌓여, D1 쓰기보다 요청 수가 먼저 부담이 된다.
+
+```jsonc
+{ "logs": [
+  { "kind": "page_view" },
+  { "kind": "session_view", "sessionId": 3 },
+  { "kind": "doc_view", "documentId": 2 },
+  { "kind": "survey_complete" }
+] }
+```
+
+| | 제약 |
+|---|---|
+| `kind` | `page_view`·`session_view`·`doc_view`·`survey_complete` |
+| `sessionId` | `session_view`에 **필수** |
+| `documentId` | `doc_view`에 **필수** |
+| 배열 길이 | 30개 이하 |
+| rate limit | 60초 60행 / 하루 300행 (Q&A보다 넉넉하다 — 정상 사용이 원래 많다) |
+
+`x-client-token`을 실으면 **같은 사람의 열람이 하나로 세어진다**. 없어도 401/400이 아니라 그냥 저장되지만 `visitors` 집계에서 빠진다 — 로그는 참여 기능이 아니라 계측이라 토큰이 없다고 화면을 막지 않는다.
+
+### 집계 — `GET /api/events/[id]/ops`
+
+리포트(FE-5)의 입력. `visitors`(몇 명)와 `hits`(몇 번)를 함께 준다 — 두 수가 크게 벌어지면 토큰 없이 도는 클라이언트가 많다는 신호다.
+
+```jsonc
+{
+  "capacity": 120, "visitors": 2, "pageViews": 3, "surveyCompleted": 1,
+  "attendanceRate": 0.017,          // visitors / capacity, 최대 1. capacity 없으면 null
+  "sessions":  [ { "sessionId": 1, "visitors": 2, "hits": 2 } ],
+  "documents": [ { "documentId": 1, "visitors": 2, "hits": 2 } ]
+}
+```
+
+**로그는 30일 뒤 삭제된다**(자정 Cron). 그보다 오래된 지표는 남지 않는다.
+
 ## 운영자 콘솔 — `/api/events` (BE-1)
 
 참가자 화면에는 쓰지 않는다(초안까지 다 보인다). 콘솔·에디터 전용.
