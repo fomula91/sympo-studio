@@ -1,5 +1,14 @@
 import type { NextRequest } from 'next/server';
-import { BadRequest, eventId, getDb, json, withRoute, type EventRow, type IdCtx } from '@/lib/db';
+import {
+  assertPublicEvent,
+  BadRequest,
+  eventId,
+  getDb,
+  json,
+  withRoute,
+  type EventRow,
+  type IdCtx,
+} from '@/lib/db';
 import {
   QUESTION_RATE_POLICY,
   toQuestionDTO,
@@ -74,11 +83,17 @@ export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     : db.prepare(listSql).bind(id);
 
   const [eventRes, listRes] = await db.batch([
-    db.prepare('SELECT id FROM events WHERE id = ?').bind(id),
+    db.prepare('SELECT id, status FROM events WHERE id = ?').bind(id),
     listStmt,
   ]);
 
-  if (!eventRes.results[0]) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  // 비공개 상태는 없는 이벤트와 같은 404다(BE-16).
+  //
+  // engage_qa가 꺼져 있어도 목록은 계속 준다 — 토글은 "새 질문을 받는가"이지
+  // "이미 받은 질문을 감추는가"가 아니다. 행사 중 Q&A를 닫았다고 참가자가 보던
+  // 목록이 사라지면 그게 더 이상하고, 개별 질문을 내리는 것은 모더레이션
+  // (status='hidden', BE-10)의 일이다.
+  assertPublicEvent(eventRes.results[0] as { status?: string });
 
   const rows = listRes.results as unknown as QuestionDTOInput[];
   const questions = rows
@@ -135,13 +150,15 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const keys = await rateKeys(request);
 
   const [eventRes, rateRes] = await db.batch([
-    db.prepare('SELECT id, engage_qa FROM events WHERE id = ?').bind(id),
+    db.prepare('SELECT id, status, engage_qa FROM events WHERE id = ?').bind(id),
     rateLimitStatement(db, keys, QUESTION_RATE_POLICY),
   ]);
 
-  const event = eventRes.results[0] as Pick<EventRow, 'id' | 'engage_qa'> | undefined;
-  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-  if (!event.engage_qa) return json({ error: '이 행사는 Q&A를 받지 않습니다.' }, 403);
+  const event = eventRes.results[0] as Pick<EventRow, 'id' | 'status' | 'engage_qa'> | undefined;
+  // 상태 게이트가 engage 토글보다 먼저다(BE-16) — 비공개 행사는 "Q&A를 받지
+  // 않습니다"(403)로도 존재를 알려주면 안 된다.
+  assertPublicEvent(event);
+  if (!event!.engage_qa) return json({ error: '이 행사는 Q&A를 받지 않습니다.' }, 403);
 
   evaluateRateLimit(rateRes.results[0] as never, QUESTION_RATE_POLICY);
 
