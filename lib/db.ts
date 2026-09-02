@@ -177,6 +177,27 @@ export async function ensureUniqueSlug(db: D1Database, base: string): Promise<st
   throw new Error(`slug 후보를 100회 시도했으나 모두 충돌했습니다: ${clean}`);
 }
 
+/**
+ * 참가자에게 노출해도 되는 이벤트 상태 (BE-7에서 시작, BE-16에서 승격).
+ *
+ * BE-7이 공개 조회에만 적용하던 판정을 여기로 올린 이유: **참가자가 쓰는 경로가
+ * 그것 하나가 아니었다.** Q&A·설문 라우트는 engage 토글만 보고 상태를 안 봐서,
+ * 운영자가 행사를 '보관'으로 바꿔도 열린 페이지에서 계속 D1에 기록할 수 있었다
+ * (PR #9 교차 리뷰에서 Codex 발견). engage 토글은 "이 행사가 참여를 받는가"이지
+ * "이 행사가 공개 상태인가"가 아니다 — 둘을 같은 것으로 취급한 것이 원인이었다.
+ */
+export const PUBLIC_STATUSES = new Set(['공개예정', '진행중', '완료']);
+
+/**
+ * 참가자 경로의 이벤트 게이트. 비공개면 **없는 이벤트와 같은 404**를 던진다 —
+ * "비공개입니다"로 구분해 주면 존재 여부가 새기 때문이다(BE-7과 같은 규칙).
+ */
+export function assertPublicEvent(event: { status?: string } | undefined | null): void {
+  if (!event || !event.status || !PUBLIC_STATUSES.has(event.status)) {
+    throw new ApiError('이벤트를 찾을 수 없습니다.', 404);
+  }
+}
+
 /** HTTP 상태를 아는 예외의 공통 부모. withRoute가 status 그대로 응답을 만든다. */
 export class ApiError extends Error {
   constructor(
@@ -224,6 +245,6 @@ export async function eventId(ctx: IdCtx): Promise<number> {
   return n;
 }
 
-export function json(data: unknown, status = 200) {
-  return Response.json(data, { status });
+export function json(data: unknown, status = 200, headers?: HeadersInit) {
+  return Response.json(data, { status, headers });
 }

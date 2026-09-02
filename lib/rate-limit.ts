@@ -81,7 +81,7 @@ export class RateLimited extends ApiError {
  * 임의 값이 들어오는 경로를 타입에서 막는다.
  */
 export interface RatePolicy {
-  table: 'questions' | 'survey_responses';
+  table: 'questions' | 'survey_responses' | 'event_logs';
   /**
    * 판정이 보는 시각 컬럼. 상수 유니온만 허용한다 — SQL에 문자열로 삽입된다.
    *
@@ -125,67 +125,94 @@ export interface RatePolicy {
  * 동시성 창은 감수한다 — 초과분 한두 건이 새는 것은 남용 통제의 목적(무료 티어
  * 소진 방지)에 영향이 없다.
  */
-export async function assertRateLimit(
+/**
+ * rate limit 판정 쿼리 하나를 만들어 준다(실행하지 않는다).
+ *
+ * 라우트가 이 statement를 이벤트 조회와 같은 batch에 넣어 **요청당 D1 왕복을
+ * 1회로** 묶을 수 있게 분리했다(BE-8). 실행까지 한 번에 하려면 assertRateLimit을
+ * 쓴다 — 두 경로가 같은 SQL을 쓰도록 여기 한 곳에서만 만든다.
+ */
+export function rateLimitStatement(
   db: D1Database,
   keys: RateKeys,
   policy: RatePolicy,
-  cost = 1,
-): Promise<void> {
+): D1PreparedStatement {
   const windowBind = `-${policy.windowSeconds} seconds`;
-  const { table, timeColumn, messages } = policy;
-  // 하루 한도의 단위: 행 1개(기본) 또는 그 행의 누적 쓰기 수(countWrites).
+  const { table, timeColumn } = policy;
   const unit = policy.countWrites ? 'write_count' : '1';
 
   if (!keys.tokenHash) {
-    const row = await db
+    return db
       .prepare(
         `SELECT
            SUM(${unit}) AS day_count,
-           SUM(${timeColumn} >= datetime('now', ?)) AS recent_count
+           SUM(${timeColumn} >= datetime('now', ?)) AS recent_count,
+           NULL AS ip_day, NULL AS ip_recent
          FROM ${table}
          WHERE client_hash = ? AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
       )
-      .bind(windowBind, keys.ipHash)
-      .first<{ day_count: number | null; recent_count: number | null }>();
-
-    if ((row?.recent_count ?? 0) + cost > policy.maxPerWindow) {
-      throw new RateLimited(messages.window);
-    }
-    if ((row?.day_count ?? 0) + cost > policy.maxPerDay) {
-      throw new RateLimited(messages.day);
-    }
-    return;
+      .bind(windowBind, keys.ipHash);
   }
 
-  const row = await db
+  return db
     .prepare(
       `SELECT
-         SUM(CASE WHEN token_hash = ?1 THEN ${unit} ELSE 0 END) AS browser_day,
-         SUM(token_hash = ?1 AND ${timeColumn} >= datetime('now', ?3)) AS browser_recent,
+         SUM(CASE WHEN token_hash = ?1 THEN ${unit} ELSE 0 END) AS day_count,
+         SUM(token_hash = ?1 AND ${timeColumn} >= datetime('now', ?3)) AS recent_count,
          SUM(CASE WHEN client_hash = ?2 THEN ${unit} ELSE 0 END) AS ip_day,
          SUM(client_hash = ?2 AND ${timeColumn} >= datetime('now', ?3)) AS ip_recent
        FROM ${table}
        WHERE (token_hash = ?1 OR client_hash = ?2)
          AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
     )
-    .bind(keys.tokenHash, keys.ipHash, windowBind)
-    .first<{
-      browser_day: number | null;
-      browser_recent: number | null;
-      ip_day: number | null;
-      ip_recent: number | null;
-    }>();
+    .bind(keys.tokenHash, keys.ipHash, windowBind);
+}
 
-  if ((row?.browser_recent ?? 0) + cost > policy.maxPerWindow) {
-    throw new RateLimited(messages.window);
-  }
-  if ((row?.browser_day ?? 0) + cost > policy.maxPerDay) {
-    throw new RateLimited(messages.day);
-  }
-  if ((row?.ip_recent ?? 0) + cost > policy.ipMaxPerWindow) {
-    throw new RateLimited(messages.ipWindow);
-  }
-  if ((row?.ip_day ?? 0) + cost > policy.ipMaxPerDay) {
-    throw new RateLimited(messages.ipDay);
-  }
+interface RateCountRow {
+  day_count: number | null;
+  recent_count: number | null;
+  ip_day: number | null;
+  ip_recent: number | null;
+}
+
+/**
+ * rateLimitStatement의 결과 행을 정책과 대조해 초과면 RateLimited를 던진다.
+ *
+ * 토큰이 없으면 ip_day/ip_recent가 NULL이다 — 그때 버킷은 IP 단독 하나뿐이라
+ * day_count/recent_count가 이미 그 IP의 값이고, 총량 상한을 또 세면 같은 수를
+ * 두 한도에 이중으로 적용하게 된다.
+ */
+export function evaluateRateLimit(row: RateCountRow | null, policy: RatePolicy, cost = 1): void {
+  const { messages } = policy;
+  if ((row?.recent_count ?? 0) + cost > policy.maxPerWindow) throw new RateLimited(messages.window);
+  if ((row?.day_count ?? 0) + cost > policy.maxPerDay) throw new RateLimited(messages.day);
+  if (row?.ip_recent == null) return; // 토큰 없음 = IP 단독 버킷, 위에서 이미 판정됨
+  if (row.ip_recent + cost > policy.ipMaxPerWindow) throw new RateLimited(messages.ipWindow);
+  if ((row.ip_day ?? 0) + cost > policy.ipMaxPerDay) throw new RateLimited(messages.ipDay);
+}
+
+/**
+ * 두 층의 한도를 모두 검사한다. 넘었으면 RateLimited를 던진다(ADR 0006).
+ *
+ *   - 토큰 있음: 브라우저 버킷(token_hash) + IP 총량(client_hash)
+ *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash) — 생략이 우회가 되지 않게
+ *     한도는 브라우저 버킷과 같다.
+ *
+ * cost는 이 요청이 만들 행 수다 — 설문은 요청 1건이 문항 수만큼 행을 만들므로
+ * "지금까지 쓴 행 + 이번 행"이 한도를 넘는지로 판정해야 배치 하나가 한도를
+ * 통째로 뛰어넘지 못한다. 질문은 1이다.
+ *
+ * "하루"의 경계를 쿼리 자체에 둔다(KST 하루 시작) — 해시의 날짜 소금만 믿으면
+ * 키 설계가 바뀔 때 COUNT가 조용히 전체 기간 카운트가 된다. 검사와 삽입 사이의
+ * 동시성 창은 감수한다 — 초과분 한두 건이 새는 것은 남용 통제의 목적(무료 티어
+ * 소진 방지)에 영향이 없다.
+ */
+export async function assertRateLimit(
+  db: D1Database,
+  keys: RateKeys,
+  policy: RatePolicy,
+  cost = 1,
+): Promise<void> {
+  const row = await rateLimitStatement(db, keys, policy).first<RateCountRow>();
+  evaluateRateLimit(row, policy, cost);
 }

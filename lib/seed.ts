@@ -76,5 +76,31 @@ export async function resetDemoData(db: D1Database): Promise<void> {
       ),
   );
 
+  // 예시 이벤트 로그 — 리포트(FE-5)가 빈 화면이 아니라 그려볼 수 있는 최소 상태.
+  // visitor는 실제 적재와 같은 형태(16자 해시)로 지어낸 값이고, client_hash·
+  // token_hash는 NULL이라 rate limit 판정에 섞이지 않는다.
+  const seedVisitors = ['seedvisitor00001', 'seedvisitor00002', 'seedvisitor00003'];
+  for (const v of seedVisitors) {
+    statements.push(
+      db
+        .prepare(`INSERT INTO event_logs (event_id, kind, visitor) VALUES (1, 'page_view', ?)`)
+        .bind(v),
+    );
+    for (const sessionId of [1, 2, 3]) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO event_logs (event_id, kind, session_id, visitor) VALUES (1, 'session_view', ?, ?)`,
+          )
+          .bind(sessionId, v),
+      );
+    }
+  }
+  statements.push(
+    db
+      .prepare(`INSERT INTO event_logs (event_id, kind, visitor) VALUES (1, 'survey_complete', ?)`)
+      .bind(seedVisitors[0]),
+  );
+
   await db.batch(statements);
 }

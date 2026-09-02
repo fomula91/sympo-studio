@@ -4,6 +4,7 @@
 - 대상: `chore/claude-local-role-notes`(PR #9) vs `origin/main`
 - 구성: ① 이 세션이 직접 돌린 Codex CLI(`codex review --base origin/main`) ② 이 세션이 직접 돌린 Claude 멀티에이전트 `/code-review` ③ 팀원이 별도로 돌린 Codex(GPT-5.4) × Claude 교차 리뷰(신규 작업분 대상)
 - 관련 문서: [[Reviews/2026-09-01-codex-fe-qa]], [[Reviews/2026-09-02-codex-branch-review]] — 이번 리뷰는 그 위에서 새로 나온 것만 다룬다(딥링크 `notFound()`, `toGamut` 감이 클램핑, 게이트 버튼 `disabled`+사유, 미리보기 `preview` prop, 수료증 `fitLine` 등 이전 라운드 지적은 이미 코드로 닫힌 것을 팀원이 재확인함)
+- **정정(2026-09-02, main 병합 시)**: 아래 X1이 이 브랜치에 등록했던 BE-18은 `origin/main`의 BE-16(참가자 쓰기 라우트 공개 상태 검사)이 동일 건을 이미 고쳐 배포한 것으로 확인돼 폐기(결번). 이 세션의 원래 BE-16(잔여 지적 4건)·BE-17(추출 프리셋)은 main의 BE-16·BE-17과 번호가 겹쳐 각각 **BE-19**·**BE-20**으로 재번호했다. 아래 본문은 리뷰 당시 번호 그대로 남긴다 — 최신 번호는 [[Next-Tasks]] 참조
 
 ## 실행 메모
 
