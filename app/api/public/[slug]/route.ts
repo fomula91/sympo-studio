@@ -1,4 +1,5 @@
 import type { NextRequest } from 'next/server';
+import { getUrlSecret, signDocumentUrl } from '@/lib/r2';
 import {
   BadRequest,
   getDb,
@@ -8,6 +9,7 @@ import {
   withRoute,
   type EventRow,
   type SessionRow,
+  getEnv,
   PUBLIC_STATUSES,
 } from '@/lib/db';
 
@@ -18,7 +20,12 @@ import {
  */
 type SlugCtx = { params: Promise<{ slug: string }> };
 
-/** documents 테이블에서 참가자 화면이 쓰는 컬럼만. r2_key는 경계를 넘지 않는다(서명 URL은 BE-6). */
+/**
+ * documents 테이블에서 참가자 화면이 쓰는 컬럼만.
+ *
+ * **`r2_key`는 응답 경계를 넘지 않는다** — 대신 서명 URL(BE-6)로 바꿔 내보낸다.
+ * 키가 새면 만료 없는 영구 링크가 되어 서명의 의미가 사라진다.
+ */
 interface PublicDocumentRow {
   id: number;
   session_id: number | null;
@@ -27,9 +34,10 @@ interface PublicDocumentRow {
   status: string;
   page_count: number | null;
   size_bytes: number | null;
+  r2_key: string | null;
 }
 
-function toDocumentDTO(row: PublicDocumentRow) {
+async function toDocumentDTO(row: PublicDocumentRow, secret: string) {
   return {
     id: row.id,
     sessionId: row.session_id,
@@ -38,6 +46,9 @@ function toDocumentDTO(row: PublicDocumentRow) {
     status: row.status, // 'pending'이면 참가자 화면이 "준비 중"으로 그린다(FE-6)
     pages: row.page_count,
     sizeBytes: row.size_bytes,
+    // 파일이 붙은 자료만 받을 수 있는 주소를 갖는다. 목록 응답에 실어 주므로
+    // 참가자는 별도 발급 요청 없이 바로 열 수 있고, 링크는 10분 뒤 죽는다.
+    url: row.r2_key ? await signDocumentUrl(secret, row.r2_key) : null,
   };
 }
 
@@ -59,6 +70,7 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
   if (!slug || slug.length > 200) throw new BadRequest('slug가 올바르지 않습니다.');
 
   const db = await getDb();
+  const secret = getUrlSecret(await getEnv());
 
   const event = await db
     .prepare('SELECT * FROM events WHERE slug = ?')
@@ -76,7 +88,8 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
       .all<SessionRow>(),
     db
       .prepare(
-        `SELECT id, session_id, display_name, tag, status, page_count, size_bytes
+        `SELECT id, session_id, display_name, tag, status, page_count, size_bytes,
+                r2_key
          FROM documents WHERE event_id = ? ORDER BY sort_order, id`,
       )
       .bind(event.id)
@@ -87,7 +100,9 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
     {
       ...toEventDTO(event),
       sessions: sessions.results.map(toSessionDTO),
-      documents: documents.results.map(toDocumentDTO),
+      documents: await Promise.all(
+        (documents.results as unknown as PublicDocumentRow[]).map((r) => toDocumentDTO(r, secret)),
+      ),
     },
     { headers: { 'Cache-Control': 'public, max-age=10' } },
   );

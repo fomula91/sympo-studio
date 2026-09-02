@@ -14,6 +14,15 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "r2_buckets": [
+    {
+      "binding": "DOCS",
+      // 강의자료 원본 저장소 (BE-6). 서버는 저장·전달만 하고 파싱·변환은 하지
+      // 않는다 — 무료 티어가 인색한 자원은 저장 공간이 아니라 CPU 시간이라서다
+      // (ADR 0002). PDF 렌더링은 클라이언트 PDF.js 몫(FE-6).
+      "bucket_name": "sympo-studio-docs"
+    }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
