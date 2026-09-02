@@ -81,7 +81,7 @@ export class RateLimited extends ApiError {
  * 임의 값이 들어오는 경로를 타입에서 막는다.
  */
 export interface RatePolicy {
-  table: 'questions' | 'survey_responses';
+  table: 'questions' | 'survey_responses' | 'event_logs';
   /**
    * 판정이 보는 시각 컬럼. 상수 유니온만 허용한다 — SQL에 문자열로 삽입된다.
    *

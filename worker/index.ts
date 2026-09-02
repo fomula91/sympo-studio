@@ -4,6 +4,7 @@
 // `opennextjs-cloudflare build` 이후에만 존재한다(로컬 개발 next dev와는 무관).
 
 import handler from '../.open-next/worker.js';
+import { purgeOldLogs } from '../lib/retention';
 import { resetDemoData } from '../lib/seed';
 
 export default {
@@ -15,7 +16,12 @@ export default {
   // 공개 데모의 하루치 입력을 비우고 시드 상태로 되돌린다(BE-3).
   // waitUntil로 흘리지 않고 await한다 — 실패가 reject로 전파돼야
   // Cron 실행 지표와 wrangler tail에 남는다(waitUntil은 실패를 삼킨다).
+  // 30일 지난 이벤트 로그 정리(BE-5)를 함께 돌린다. 지금은 시드 리셋이
+  // 로그까지 CASCADE로 쓸어가지만, 계정이 생기면(BE-12) 사용자 이벤트의 로그는
+  // 살아남으므로 이 정리만이 유일한 상한이 된다 — 리셋에 기대지 않는다.
+  // 순서는 정리가 먼저다: 리셋이 실패해도 로그 상한은 지켜진다.
   async scheduled(_event, env) {
+    await purgeOldLogs(env.DB);
     await resetDemoData(env.DB);
   },
 } satisfies ExportedHandler<CloudflareEnv>;
