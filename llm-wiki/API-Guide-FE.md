@@ -2,6 +2,26 @@
 
 FE 과제(FE-3 Q&A 연결, FE-2 `/[slug]` 라우트, FE-5 리포트 등)가 서버에 붙을 때 보는 정본. 엔드포인트가 추가·변경되면 **이 문서를 같은 커밋에서 갱신**한다.
 
+## 엔드포인트 한눈에
+
+라우트가 13개로 늘어 아래 표를 먼저 둔다. **누가 쓰는가**가 핵심 구분이다 — 참가자 경로는 공개 상태(공개예정·진행중·완료)에서만 동작하고, 운영자 경로는 **아직 인증이 없어 누구나 호출할 수 있다**(BE-12·13에서 잠근다).
+
+| 경로 | 메서드 | 쓰는 쪽 | 무엇 |
+|---|---|---|---|
+| `/api/public/[slug]` | GET | 참가자 | 이벤트+아젠다+자료(서명 URL 포함)+테마+engage. **참가자 화면의 유일한 진입점** |
+| `/api/events/[id]/questions` | GET · POST | 참가자 | Q&A 목록(캐시·`?since`·ETag) / 등록 |
+| `/api/events/[id]/survey` | POST | 참가자 | 설문 응답 배치 제출 |
+| `/api/events/[id]/logs` | POST | 참가자 | **열람 로그 배치 적재** (FE-20) |
+| `/api/files/[...key]` | GET | 참가자 | 서명 URL로 자료 받기 (직접 조립하지 말 것 — 공개 응답의 `url`을 쓴다) |
+| `/api/events` | GET · POST | 운영자 | 이벤트 목록 / 생성 |
+| `/api/events/[id]` | GET · PATCH · DELETE | 운영자 | 단건(+아젠다+자료) / 부분 수정 / 삭제 |
+| `/api/events/[id]/sessions` | PUT | 운영자 | 아젠다 목록 저장(diff) |
+| `/api/events/[id]/documents` | PUT | 운영자 | 자료 목록(메타) 저장(diff) |
+| `/api/events/[id]/documents/[docId]/upload` | PUT | 운영자 | 자료 파일 업로드(PDF·20MB) |
+| `/api/events/[id]/questions/[qid]` | PATCH | 운영자 | 질문 숨김/복구 |
+| `/api/events/[id]/survey/summary` | GET | 운영자 | 설문 집계 |
+| `/api/events/[id]/ops` | GET | 운영자 | 운영 지표 집계 |
+
 ## Base URL
 
 | 환경 | URL | 비고 |
