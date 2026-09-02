@@ -81,3 +81,19 @@ export async function postQuestion(eventId: number, body: string): Promise<Quest
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
   return (await res.json()) as Question;
 }
+
+export interface EventOps {
+  capacity: number | null;
+  visitors: number;
+  pageViews: number;
+  surveyCompleted: number;
+  attendanceRate: number | null;
+  sessions: { sessionId: number; visitors: number; hits: number }[];
+  documents: { documentId: number; visitors: number; hits: number }[];
+}
+
+export async function fetchEventOps(eventId: number): Promise<EventOps> {
+  const res = await fetchWithTimeout(`/api/events/${eventId}/ops`);
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  return (await res.json()) as EventOps;
+}
