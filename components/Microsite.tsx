@@ -1,6 +1,10 @@
-import type { CSSProperties } from 'react';
+'use client';
+
+import { useState, type CSSProperties } from 'react';
+import QaPanel from '@/components/QaPanel';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
-import type { Density, EventInfo, KvPattern, Session } from '@/lib/types';
+import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
+import { useOnlineStatus } from '@/lib/useOnlineStatus';
 
 const MONO = 'ui-monospace, monospace';
 
@@ -9,15 +13,22 @@ interface MicrositeProps {
   sessions: Session[];
   icons: string[];
   event: EventInfo;
+  /** 참가자 공개 페이지(`/[slug]`)에서만 넘긴다 — 실제 D1 이벤트에 Q&A GET·POST를 보낼 때 쓰는 id. */
+  eventId?: number;
+  /** 스튜디오 에디터·뷰어 미리보기에서 true — Q&A 입력·폴링을 렌더하지 않아 목업 편집 중에 실제 행사 데이터를 건드리지 않는다. */
+  preview?: boolean;
+  /** 참가자 공개 페이지에서만 넘긴다 — 없으면(스튜디오 미리보기) 대표 예시 2건을 보여준다. */
+  documents?: DocumentInfo[];
   kv?: string;
   kvPattern?: KvPattern;
   density?: Density;
   wide?: boolean;
 }
 
-const FILES = [
-  { name: 'Early Intervention Strategies with ATELOVAN', meta: '24p' },
-  { name: 'Long-Term Adherence: RWE Review', meta: '18p' },
+// 참가자 공개 페이지가 documents를 안 넘길 때(스튜디오 미리보기)만 쓰는 대표 예시.
+const DEMO_DOCUMENTS: DocumentInfo[] = [
+  { id: -1, name: 'Early Intervention Strategies with ATELOVAN', status: 'ready', pages: 24 },
+  { id: -2, name: 'Long-Term Adherence: RWE Review', status: 'ready', pages: 18 },
 ];
 
 export default function Microsite({
@@ -25,11 +36,17 @@ export default function Microsite({
   sessions,
   icons,
   event: ev,
+  eventId,
+  preview = false,
+  documents,
   kv = '',
   kvPattern = 'stripe',
   density = '기본',
   wide = false,
 }: MicrositeProps) {
+  const online = useOnlineStatus();
+  const [qaOpen, setQaOpen] = useState(false);
+  const docs = documents ?? DEMO_DOCUMENTS;
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
 
@@ -55,7 +72,7 @@ export default function Microsite({
         overflow: 'auto',
         background: t.bg,
         color: t.ink,
-        fontFamily: "Pretendard, 'Helvetica Neue', Helvetica, sans-serif",
+        fontFamily: "var(--font-pretendard), 'Helvetica Neue', Helvetica, sans-serif",
         letterSpacing: '-0.01em',
       }}
     >
@@ -264,77 +281,132 @@ export default function Microsite({
 
         <div style={sectionLabel}>자료</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
-          {FILES.map((f) => (
-            <div
-              key={f.name}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 12,
-                background: t.surface,
-                border: `1px solid ${t.line}`,
-                borderRadius: 13,
-                padding: '12px 13px',
-                cursor: 'pointer',
-              }}
-            >
-              <div
-                style={{
-                  width: 34,
-                  height: 40,
-                  flex: '0 0 34px',
-                  borderRadius: 7,
-                  background: t.soft,
-                  color: t.brand,
-                  display: 'grid',
-                  placeItems: 'center',
-                  fontFamily: MONO,
-                  fontSize: 8,
-                  fontWeight: 800,
-                }}
-              >
-                PDF
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
+          {docs.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: t.muted }}>등록된 자료가 없습니다.</div>
+          ) : (
+            docs.map((f) => {
+              const pending = f.status === 'pending';
+              return (
                 <div
+                  key={f.id}
+                  aria-disabled={pending}
                   style={{
-                    fontSize: 13.5,
-                    fontWeight: 650,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.35,
-                    color: t.ink,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: t.surface,
+                    border: `1px solid ${t.line}`,
+                    borderRadius: 13,
+                    padding: '12px 13px',
+                    cursor: pending ? 'not-allowed' : 'pointer',
+                    opacity: pending ? 0.6 : 1,
                   }}
                 >
-                  {f.name}
+                  <div
+                    style={{
+                      width: 34,
+                      height: 40,
+                      flex: '0 0 34px',
+                      borderRadius: 7,
+                      background: t.soft,
+                      color: t.brand,
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontFamily: MONO,
+                      fontSize: 8,
+                      fontWeight: 800,
+                    }}
+                  >
+                    PDF
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 650,
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.35,
+                        color: t.ink,
+                      }}
+                    >
+                      {f.name}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>
+                      {pending ? '준비 중' : `${f.pages ?? '?'}p · 앱 내 열람`}
+                    </div>
+                  </div>
+                  <div style={{ color: t.muted, fontSize: 14 }}>→</div>
                 </div>
-                <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>{f.meta} · 앱 내 열람</div>
-              </div>
-              <div style={{ color: t.muted, fontSize: 14 }}>→</div>
-            </div>
-          ))}
+              );
+            })
+          )}
         </div>
 
-        {ev.engage.qa !== false && (
+        {!preview && !online && (ev.engage.qa !== false || ev.engage.survey !== false) ? (
           <div
             style={{
-              height: 54,
-              borderRadius: 14,
-              background: t.brand,
-              color: t.onBrand,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 14.5,
-              fontWeight: 700,
-              letterSpacing: '-0.02em',
-              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12.5,
+              color: t.muted,
               marginBottom: 10,
             }}
           >
-            질문 남기기
+            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+            오프라인 상태 — 연결되면 다시 시도하세요
           </div>
-        )}
+        ) : null}
+        {ev.engage.qa !== false &&
+          (preview ? (
+            <div
+              aria-disabled
+              style={{
+                height: 54,
+                borderRadius: 14,
+                background: 'transparent',
+                border: `1px solid ${t.line}`,
+                color: t.muted,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                marginBottom: 10,
+                cursor: 'not-allowed',
+              }}
+            >
+              질문 남기기 (미리보기 — 참가자 페이지에서만 동작)
+            </div>
+          ) : qaOpen && eventId != null ? (
+            <QaPanel theme={t} online={online} eventId={eventId} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setQaOpen(true)}
+              disabled={!online}
+              style={{
+                width: '100%',
+                height: 54,
+                borderRadius: 14,
+                border: 'none',
+                background: t.brand,
+                color: t.onBrand,
+                fontFamily: 'inherit',
+                fontSize: 14.5,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                cursor: online ? 'pointer' : 'not-allowed',
+                opacity: online ? 1 : 0.45,
+                marginBottom: 10,
+              }}
+            >
+              질문 남기기
+            </button>
+          ))}
         {ev.engage.survey !== false && (
           <div
+            aria-disabled={!online}
             style={{
               height: 54,
               borderRadius: 14,
@@ -346,7 +418,8 @@ export default function Microsite({
               fontSize: 14,
               fontWeight: 650,
               letterSpacing: '-0.02em',
-              cursor: 'pointer',
+              cursor: online ? 'pointer' : 'not-allowed',
+              opacity: online ? 1 : 0.45,
             }}
           >
             설문 참여 · 2분

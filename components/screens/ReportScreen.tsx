@@ -1,11 +1,11 @@
 'use client';
 
 import { METRICS, OPS } from '@/lib/data';
-import type { StudioState } from '@/lib/types';
+import type { EventItem } from '@/lib/types';
 import { MONO, UI } from '@/lib/ui';
 
-export default function ReportScreen({ s }: { s: StudioState }) {
-  const bars = s.sessions.map((x, i) => ({
+export default function ReportScreen({ ev }: { ev: EventItem }) {
+  const bars = ev.sessions.map((x, i) => ({
     id: x.id,
     label: `${x.time}  ${x.title}`,
     pct: 92 - i * 7 - (i % 2) * 4,

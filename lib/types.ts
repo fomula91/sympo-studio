@@ -1,4 +1,10 @@
-export type Screen = 'console' | 'editor' | 'viewer' | 'report';
+export interface Preset {
+  id: string;
+  label: string;
+  h: number;
+  c: number;
+}
+
 export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
 export type Mode = 'light' | 'dark';
 export type IconSetId = 'geo' | 'solid' | 'number';
@@ -7,14 +13,28 @@ export type KvPattern = 'stripe' | 'grid' | 'flat' | 'none';
 export type SortKey = '최신' | '행사일' | '이름';
 export type Device = 'mobile' | 'tablet';
 
-export interface EventItem {
+export interface EventDetail {
+  title: string;
+  venue: string;
+  date: string;
+  host: string;
+  cap: string;
+  engage: Engage;
+  presetId: string;
+  mode: Mode;
+  iconSet: IconSetId;
+  density: Density;
+  keyVisual: string;
+  kvPattern: KvPattern;
+  sessions: Session[];
+}
+
+export interface EventItem extends EventDetail {
   id: number;
   brand: string;
-  venue: string;
   status: string;
   dateCode: string;
   slug: string;
-  sessions: number;
   docs: number;
 }
 
@@ -43,8 +63,16 @@ export interface EventInfo {
   brandLabel?: string;
 }
 
+/** 참가자 공개 페이지가 GET /api/public/[slug]에서 받는 자료 하나. */
+export interface DocumentInfo {
+  id: number;
+  name: string;
+  status: string; // 'pending'이면 아직 준비 중(FE-6 업로드 전)
+  pages: number | null;
+}
+
 export interface StudioState {
-  screen: Screen;
+  viewerOpen: boolean;
   section: Section;
   query: string;
   status: string;
@@ -52,25 +80,17 @@ export interface StudioState {
   bulk: boolean;
   sel: number[];
   events: EventItem[];
-  sessions: Session[];
-  presetId: string;
-  mode: Mode;
-  iconSet: IconSetId;
-  density: Density;
-  keyVisual: string;
-  kvPattern: KvPattern;
+  editingId: number | null;
+  customPresets: Preset[];
   dragOver: boolean;
   dragIdx: number;
   device: Device;
-  title: string;
-  venue: string;
-  date: string;
-  cap: string;
-  host: string;
-  engage: Engage;
   saved: string;
   paneW: number;
 }
 
 export type Patch = Partial<StudioState> | null;
 export type PatchFn = (p: Patch | ((s: StudioState) => Patch)) => void;
+
+export type PatchEvent = Partial<EventDetail> | null;
+export type PatchEventFn = (p: PatchEvent | ((ev: EventItem) => PatchEvent)) => void;

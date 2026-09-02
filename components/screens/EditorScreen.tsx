@@ -1,11 +1,41 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
+import { generateCertificate } from '@/lib/certificate';
+import { extractPresetColor } from '@/lib/colorExtract';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { Density, Device, IconSetId, KvPattern, Mode, PatchFn, StudioState } from '@/lib/types';
-import { ghostBtn, MONO, monoLabel, seg, UI } from '@/lib/ui';
+import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
+import type {
+  Density,
+  Device,
+  EventItem,
+  IconSetId,
+  KvPattern,
+  Mode,
+  PatchEventFn,
+  PatchFn,
+  Preset,
+  StudioState,
+} from '@/lib/types';
+import { ghostBtn, MONO, monoLabel, primaryBtn, seg, UI } from '@/lib/ui';
+
+function slugifyLabel(label: string): string {
+  const base = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return base || 'preset';
+}
+
+function uniquePresetId(label: string, existing: Preset[]): string {
+  const base = slugifyLabel(label);
+  if (!existing.some((p) => p.id === base)) return base;
+  let n = 2;
+  while (existing.some((p) => p.id === `${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
 
 const MODES: { k: Mode; label: string }[] = [
   { k: 'light', label: '라이트' },
@@ -30,22 +60,38 @@ const sectionDesc = {
   lineHeight: 1.6,
 } as const;
 
-function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function AgendaSection({
+  s,
+  ev,
+  patch,
+  patchEvent,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+}) {
+  const [moveAnnouncement, setMoveAnnouncement] = useState('');
+
   const startDrag = (idx: number) => (e: React.PointerEvent) => {
     e.preventDefault();
+    let cur = idx;
     patch({ dragIdx: idx });
-    const move = (ev: PointerEvent) => {
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const move = (pe: PointerEvent) => {
+      const el = document.elementFromPoint(pe.clientX, pe.clientY);
       const row = el?.closest?.('[data-idx]');
       if (!row) return;
       const to = parseInt(row.getAttribute('data-idx') ?? '', 10);
-      patch((st) => {
-        if (st.dragIdx < 0 || to === st.dragIdx || isNaN(to)) return null;
-        const arr = st.sessions.slice();
-        const [it] = arr.splice(st.dragIdx, 1);
+      if (isNaN(to) || to === cur) return;
+      const from = cur;
+      cur = to;
+      patchEvent((curEv) => {
+        const arr = curEv.sessions.slice();
+        const [it] = arr.splice(from, 1);
         arr.splice(to, 0, it);
-        return { sessions: arr, dragIdx: to, saved: '변경 저장 중…' };
+        return { sessions: arr };
       });
+      patch({ dragIdx: to, saved: '변경 저장 중…' });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -56,6 +102,30 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
     window.addEventListener('pointerup', up);
   };
 
+  // 포인터 드래그의 키보드 대안 — 핸들에 포커스 후 위/아래 화살표로 한 칸씩 이동한다.
+  const moveByKeyboard = (from: number, to: number) => {
+    if (to < 0 || to >= ev.sessions.length || to === from) return;
+    const moved = ev.sessions[from];
+    patchEvent((curEv) => {
+      const arr = curEv.sessions.slice();
+      const [it] = arr.splice(from, 1);
+      arr.splice(to, 0, it);
+      return { sessions: arr };
+    });
+    patch({ saved: '방금 저장됨' });
+    setMoveAnnouncement(`${moved.title}을(를) ${ev.sessions.length}개 중 ${to + 1}번째로 이동했습니다.`);
+  };
+
+  const handleHandleKeyDown = (idx: number) => (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveByKeyboard(idx, idx - 1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveByKeyboard(idx, idx + 1);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 640 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 6 }}>
@@ -63,21 +133,35 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
         <div style={{ flex: 1 }} />
         <button
           className="hv-bg965"
-          onClick={() =>
-            patch((st) => {
-              const pick = SESSION_LIB[st.sessions.length % SESSION_LIB.length];
-              return { sessions: [...st.sessions, { id: Date.now(), ...pick }], saved: '방금 저장됨' };
-            })
-          }
+          onClick={() => {
+            patchEvent((curEv) => {
+              const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
+              return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
+            });
+            patch({ saved: '방금 저장됨' });
+          }}
           style={{ ...ghostBtn, fontWeight: 600 }}
         >
           라이브러리에서 가져오기
         </button>
       </div>
-      <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꿉니다.</p>
+      <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꾸거나, 핸들에 포커스한 뒤 위/아래 화살표로 바꿉니다.</p>
+      <div
+        aria-live="polite"
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          overflow: 'hidden',
+          clip: 'rect(0 0 0 0)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {moveAnnouncement}
+      </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {s.sessions.map((x, i) => (
+        {ev.sessions.map((x, i) => (
           <div
             key={x.id}
             data-idx={i}
@@ -93,9 +177,12 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
               boxShadow: s.dragIdx === i ? '0 10px 24px -12px oklch(0.4 0.02 250 / 0.4)' : undefined,
             }}
           >
-            <div
+            <button
+              type="button"
               className="hv-ink"
               onPointerDown={startDrag(i)}
+              onKeyDown={handleHandleKeyDown(i)}
+              aria-label={`${x.title} 순서 변경 — 현재 ${ev.sessions.length}개 중 ${i + 1}번째. 화살표 위/아래로 이동`}
               style={{
                 width: 44,
                 height: 56,
@@ -107,10 +194,13 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
                 color: 'oklch(0.7 0.006 250)',
                 fontSize: 15,
                 letterSpacing: 1,
+                border: 'none',
+                background: 'transparent',
+                padding: 0,
               }}
             >
               ⠿
-            </div>
+            </button>
             <div
               style={{
                 width: 74,
@@ -143,9 +233,10 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             </div>
             <button
               className="hv-x"
-              onClick={() =>
-                patch((st) => ({ sessions: st.sessions.filter((_, j) => j !== i), saved: '방금 저장됨' }))
-              }
+              onClick={() => {
+                patchEvent((curEv) => ({ sessions: curEv.sessions.filter((_, j) => j !== i) }));
+                patch({ saved: '방금 저장됨' });
+              }}
               style={{
                 width: 44,
                 height: 44,
@@ -167,7 +258,7 @@ function AgendaSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
   );
 }
 
-function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={sectionTitle}>기본 정보</h2>
@@ -190,8 +281,12 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             </div>
             <input
               className="inp"
-              value={s[f.k]}
-              onChange={(e) => patch({ [f.k]: e.target.value, saved: '변경 저장 중…' })}
+              value={ev[f.k]}
+              maxLength={200}
+              onChange={(e) => {
+                patchEvent({ [f.k]: e.target.value });
+                patch({ saved: '변경 저장 중…' });
+              }}
               style={{
                 width: '100%',
                 height: 52,
@@ -212,7 +307,7 @@ function BasicSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
             생성될 URL
           </div>
           <div style={{ fontFamily: MONO, fontSize: 13, color: UI.ink2, wordBreak: 'break-all' }}>
-            sympo.studio/{autoSlug(s.title, s.venue, s.date)}
+            sympo.studio/{autoSlug(ev.title, ev.venue, ev.date)}
           </div>
           <div
             style={{
@@ -321,21 +416,37 @@ function DocsSection() {
   );
 }
 
-function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
+function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+  const [generating, setGenerating] = useState(false);
+  const [certError, setCertError] = useState<string | null>(null);
+
+  async function handlePreviewCertificate() {
+    setGenerating(true);
+    setCertError(null);
+    try {
+      await generateCertificate({ eventTitle: ev.title, venue: ev.venue, date: ev.date });
+    } catch {
+      setCertError('수료증을 생성하지 못했습니다.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 600 }}>
       <h2 style={sectionTitle}>참여</h2>
       <p style={sectionDesc}>Q&A와 설문을 외부 링크·QR 이미지 대신 페이지 안에서 완결시킵니다.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ENGAGE_DEFS.map((t) => {
-          const on = s.engage[t.k];
+          const on = ev.engage[t.k];
           return (
             <button
               key={t.k}
               className="hv-border80"
-              onClick={() =>
-                patch((st) => ({ engage: { ...st.engage, [t.k]: !st.engage[t.k] }, saved: '방금 저장됨' }))
-              }
+              onClick={() => {
+                patchEvent((curEv) => ({ engage: { ...curEv.engage, [t.k]: !curEv.engage[t.k] } }));
+                patch({ saved: '방금 저장됨' });
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -371,15 +482,90 @@ function EngageSection({ s, patch }: { s: StudioState; patch: PatchFn }) {
           );
         })}
       </div>
+
+      {ev.engage.cert ? (
+        <div
+          style={{
+            marginTop: 20,
+            padding: 16,
+            border: `1px solid ${UI.line}`,
+            borderRadius: 12,
+            background: UI.surface,
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 650, marginBottom: 4 }}>수료증 미리보기</div>
+          <p style={{ fontSize: 12, color: UI.muted, marginBottom: 12, lineHeight: 1.5 }}>
+            참가자가 설문을 완료했을 때 받는 PDF와 같은 양식입니다. 참가자 화면은 아직 이 흐름에 연결되지
+            않았습니다 — 여기서는 운영자가 결과물을 미리 볼 수 있게 직접 다운로드합니다.
+          </p>
+          <button
+            className="hv-bg965"
+            onClick={handlePreviewCertificate}
+            disabled={generating}
+            style={{ ...ghostBtn, opacity: generating ? 0.6 : 1, cursor: generating ? 'not-allowed' : 'pointer' }}
+          >
+            {generating ? '생성 중…' : '수료증 다운로드'}
+          </button>
+          {certError ? (
+            <div role="alert" style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginTop: 8 }}>
+              {certError}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: PatchFn; showContrast: boolean }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const cRows = contrastRows(theme, s.mode);
-  const allPass = cRows.every((r) => r.pass);
+function ThemeSection({
+  s,
+  ev,
+  presets,
+  patch,
+  patchEvent,
+  showContrast,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  presets: Preset[];
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  showContrast: boolean;
+}) {
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
+  const theme = derive(preset, ev.mode);
+  const cRows = contrastRows(theme, ev.mode);
+  const allPass = contrastAllPass(preset, ev.mode);
+
+  const [draft, setDraft] = useState<{ h: number; extractedC: number; c: number; label: string } | null>(null);
+  const [extractError, setExtractError] = useState('');
+
+  const handleFile = async (file: File) => {
+    setExtractError('');
+    try {
+      const { h, c } = await extractPresetColor(file);
+      setDraft({ h, extractedC: c, c, label: file.name.replace(/\.[^.]+$/, '') });
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : '색을 추출하지 못했습니다.');
+    }
+  };
+
+  const draftPreset: Preset | null = draft ? { id: 'draft', label: draft.label, h: draft.h, c: draft.c } : null;
+  const draftTheme = draftPreset ? derive(draftPreset, ev.mode) : null;
+  const draftRows = draftPreset ? contrastRows(draftTheme!, ev.mode) : [];
+  const draftPass = draftPreset
+    ? contrastAllPass(draftPreset, 'light') && contrastAllPass(draftPreset, 'dark')
+    : false;
+
+  const saveDraft = () => {
+    if (!draft || !draftPass) return;
+    const id = uniquePresetId(draft.label, presets);
+    const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
+    patch({ customPresets: [...s.customPresets, newPreset] });
+    patchEvent({ presetId: id });
+    patch({ saved: '테마 반영됨' });
+    setDraft(null);
+  };
 
   return (
     <div style={{ maxWidth: 660 }}>
@@ -397,15 +583,18 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           marginBottom: 28,
         }}
       >
-        {PRESETS.map((p) => {
-          const t = derive(p, s.mode);
-          const on = s.presetId === p.id;
+        {presets.map((p) => {
+          const t = derive(p, ev.mode);
+          const on = ev.presetId === p.id;
           const sw = { width: 14, height: 28, borderRadius: 4 } as const;
           return (
             <button
               key={p.id}
               className="hv-border78"
-              onClick={() => patch({ presetId: p.id, saved: '테마 반영됨' })}
+              onClick={() => {
+                patchEvent({ presetId: p.id });
+                patch({ saved: '테마 반영됨' });
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -431,7 +620,124 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             </button>
           );
         })}
+        <label
+          className="hv-border78"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            height: 60,
+            borderRadius: 13,
+            cursor: 'pointer',
+            border: '1.5px dashed var(--hover-border)',
+            background: UI.surface,
+            fontSize: 12.5,
+            fontWeight: 650,
+            color: UI.muted2,
+          }}
+        >
+          + 이미지에서 추출
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) handleFile(f);
+            }}
+          />
+        </label>
       </div>
+
+      {extractError ? (
+        <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 20 }}>{extractError}</div>
+      ) : null}
+
+      {draft && draftTheme ? (
+        <div
+          style={{
+            border: `1px solid ${UI.line}`,
+            borderRadius: 14,
+            background: UI.surface,
+            padding: 16,
+            marginBottom: 28,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 5 }}>
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.brand }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.soft }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.ink }} />
+            </div>
+            <input
+              className="inp"
+              value={draft.label}
+              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+              placeholder="프리셋 이름"
+              style={{
+                flex: 1,
+                height: 40,
+                borderRadius: 8,
+                border: `1px solid ${UI.line}`,
+                padding: '0 12px',
+                fontSize: 13,
+                color: UI.ink,
+                background: UI.surface,
+              }}
+            />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: UI.muted, marginBottom: 6 }}>채도 {draft.c.toFixed(3)}</div>
+            <input
+              type="range"
+              min={0}
+              max={draft.extractedC}
+              step={0.005}
+              value={draft.c}
+              onChange={(e) => setDraft({ ...draft, c: Number(e.target.value) })}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+            {draftRows.map((r) => (
+              <div
+                key={r.label}
+                style={{
+                  fontSize: 10.5,
+                  fontFamily: MONO,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  background: r.pass ? 'oklch(0.955 0.03 145)' : 'oklch(0.955 0.04 28)',
+                  color: r.pass ? 'oklch(0.42 0.1 145)' : 'oklch(0.5 0.15 28)',
+                }}
+              >
+                {r.label.split(' ')[0]} {r.ratio}
+              </div>
+            ))}
+          </div>
+          {!draftPass ? (
+            <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 14 }}>
+              {draftRows.every((r) => r.pass)
+                ? `대비비 미달 — ${ev.mode === 'light' ? '다크' : '라이트'} 모드로 전환하면 기준 미달이라 저장할 수 없습니다.`
+                : '대비비 미달 — 채도를 낮추면 통과할 수 있습니다.'}
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={saveDraft}
+              disabled={!draftPass}
+              style={{ ...primaryBtn, opacity: draftPass ? 1 : 0.4, cursor: draftPass ? 'pointer' : 'not-allowed' }}
+            >
+              프리셋으로 저장
+            </button>
+            <button onClick={() => setDraft(null)} style={ghostBtn}>
+              취소
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
@@ -447,7 +753,14 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             }}
           >
             {MODES.map((m) => (
-              <button key={m.k} onClick={() => patch({ mode: m.k, saved: '테마 반영됨' })} style={seg(s.mode === m.k)}>
+              <button
+                key={m.k}
+                onClick={() => {
+                  patchEvent({ mode: m.k });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.mode === m.k)}
+              >
                 {m.label}
               </button>
             ))}
@@ -468,8 +781,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             {(Object.keys(ICONSETS) as IconSetId[]).map((k) => (
               <button
                 key={k}
-                onClick={() => patch({ iconSet: k, saved: '테마 반영됨' })}
-                style={seg(s.iconSet === k)}
+                onClick={() => {
+                  patchEvent({ iconSet: k });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.iconSet === k)}
               >
                 {ICONSETS[k].label}
               </button>
@@ -491,8 +807,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
             {DENSITIES.map((d) => (
               <button
                 key={d}
-                onClick={() => patch({ density: d, saved: '테마 반영됨' })}
-                style={seg(s.density === d)}
+                onClick={() => {
+                  patchEvent({ density: d });
+                  patch({ saved: '테마 반영됨' });
+                }}
+                style={seg(ev.density === d)}
               >
                 {d}
               </button>
@@ -508,7 +827,9 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           patch({ dragOver: false });
           const f = e.dataTransfer?.files?.[0];
           if (f && f.type.startsWith('image')) {
-            patch({ keyVisual: URL.createObjectURL(f), saved: '키 비주얼 교체됨' });
+            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+            patchEvent({ keyVisual: URL.createObjectURL(f) });
+            patch({ saved: '키 비주얼 교체됨' });
           }
         }}
         onDragOver={(e) => {
@@ -526,7 +847,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
           border: `1.5px dashed ${s.dragOver ? UI.ink2 : 'var(--hover-border)'}`,
         }}
       >
-        {s.keyVisual ? (
+        {ev.keyVisual ? (
           <div
             role="img"
             aria-label="키 비주얼"
@@ -534,7 +855,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               width: '100%',
               height: '100%',
               borderRadius: 13,
-              background: `url("${s.keyVisual}") center/cover no-repeat`,
+              background: `url("${ev.keyVisual}") center/cover no-repeat`,
             }}
           />
         ) : (
@@ -558,7 +879,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
         {KV_CHOICES.map((p) => (
           <button
             key={p.k}
-            onClick={() => patch({ kvPattern: p.k, keyVisual: '', saved: '키 비주얼 교체됨' })}
+            onClick={() => {
+              if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+              patchEvent({ kvPattern: p.k, keyVisual: '' });
+              patch({ saved: '키 비주얼 교체됨' });
+            }}
             style={{
               height: 44,
               padding: '0 14px',
@@ -567,7 +892,7 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
               fontSize: 12,
               fontWeight: 650,
               background: UI.surface,
-              border: `1px solid ${s.kvPattern === p.k && !s.keyVisual ? UI.ink : 'var(--line)'}`,
+              border: `1px solid ${ev.kvPattern === p.k && !ev.keyVisual ? UI.ink : 'var(--line)'}`,
               color: UI.ink2,
             }}
           >
@@ -576,7 +901,11 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
         ))}
         <button
           className="hv-bg965"
-          onClick={() => patch({ keyVisual: '', kvPattern: 'none' })}
+          onClick={() => {
+            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+            patchEvent({ keyVisual: '', kvPattern: 'none' });
+            patch({ saved: '키 비주얼 비워짐' });
+          }}
           style={{
             height: 44,
             padding: '0 14px',
@@ -675,17 +1004,29 @@ function ThemeSection({ s, patch, showContrast }: { s: StudioState; patch: Patch
   );
 }
 
-export default function EditorScreen({ s, patch }: { s: StudioState; patch: PatchFn }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const icons = ICONSETS[s.iconSet].glyphs;
-  const ev = {
-    title: s.title,
-    venue: s.venue,
-    date: s.date,
-    host: s.host,
-    cap: s.cap,
-    engage: s.engage,
+export default function EditorScreen({
+  s,
+  ev,
+  presets,
+  patch,
+  patchEvent,
+}: {
+  s: StudioState;
+  ev: EventItem;
+  presets: Preset[];
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+}) {
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
+  const theme = derive(preset, ev.mode);
+  const icons = ICONSETS[ev.iconSet].glyphs;
+  const micrositeEvent = {
+    title: ev.title,
+    venue: ev.venue,
+    date: ev.date,
+    host: ev.host,
+    cap: ev.cap,
+    engage: ev.engage,
     brandLabel: preset.label,
   };
 
@@ -727,7 +1068,7 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
         <div style={{ ...monoLabel, color: UI.faint, padding: '6px 10px 10px' }}>SECTIONS</div>
         {SECTIONS.map((x) => {
           const meta =
-            x.id === 'agenda' ? String(s.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
+            x.id === 'agenda' ? String(ev.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
           return (
             <button
               key={x.id}
@@ -762,11 +1103,13 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
       </div>
 
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
-        {s.section === 'agenda' ? <AgendaSection s={s} patch={patch} /> : null}
-        {s.section === 'theme' ? <ThemeSection s={s} patch={patch} showContrast /> : null}
-        {s.section === 'basic' ? <BasicSection s={s} patch={patch} /> : null}
+        {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'theme' ? (
+          <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
+        ) : null}
+        {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'docs' ? <DocsSection /> : null}
-        {s.section === 'engage' ? <EngageSection s={s} patch={patch} /> : null}
+        {s.section === 'engage' ? <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
       </div>
 
       <div
@@ -848,12 +1191,16 @@ export default function EditorScreen({ s, patch }: { s: StudioState; patch: Patc
             <div style={{ width: kvW, height: kvH, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               <Microsite
                 theme={theme}
-                sessions={s.sessions}
+                sessions={ev.sessions}
                 icons={icons}
-                event={ev}
-                kv={s.keyVisual}
-                kvPattern={s.kvPattern}
-                density={s.density}
+                event={micrositeEvent}
+                // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
+                // D1에 대응하는 실제 id가 없다. preview로 Q&A 입력·폴링을 꺼서 실제 행사 데이터에
+                // 쓰기가 일어나지 않게 한다(Codex 리뷰 2026-09-02 P1).
+                preview
+                kv={ev.keyVisual}
+                kvPattern={ev.kvPattern}
+                density={ev.density}
               />
             </div>
           </div>

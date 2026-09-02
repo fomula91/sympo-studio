@@ -1,31 +1,35 @@
 'use client';
 
 import Microsite from '@/components/Microsite';
-import { derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { StudioState } from '@/lib/types';
+import { derive, ICONSETS } from '@/lib/theme';
+import type { EventItem, Preset } from '@/lib/types';
 import { monoLabel, UI } from '@/lib/ui';
 
-export default function ViewerScreen({ s }: { s: StudioState }) {
-  const preset = PRESETS.find((p) => p.id === s.presetId) || PRESETS[0];
-  const theme = derive(preset, s.mode);
-  const icons = ICONSETS[s.iconSet].glyphs;
-  const ev = {
-    title: s.title,
-    venue: s.venue,
-    date: s.date,
-    host: s.host,
-    cap: s.cap,
-    engage: s.engage,
+export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: Preset[] }) {
+  const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
+  const theme = derive(preset, ev.mode);
+  const icons = ICONSETS[ev.iconSet].glyphs;
+  const micrositeEvent = {
+    title: ev.title,
+    venue: ev.venue,
+    date: ev.date,
+    host: ev.host,
+    cap: ev.cap,
+    engage: ev.engage,
     brandLabel: preset.label,
   };
   const micrositeProps = {
     theme,
-    sessions: s.sessions,
+    sessions: ev.sessions,
     icons,
-    event: ev,
-    kv: s.keyVisual,
-    kvPattern: s.kvPattern,
-    density: s.density,
+    event: micrositeEvent,
+    // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
+    // D1에 대응하는 실제 id가 없다. preview로 Q&A 입력·폴링을 꺼서 실제 행사 데이터에
+    // 쓰기가 일어나지 않게 한다(Codex 리뷰 2026-09-02 P1).
+    preview: true,
+    kv: ev.keyVisual,
+    kvPattern: ev.kvPattern,
+    density: ev.density,
   };
 
   return (

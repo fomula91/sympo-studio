@@ -1,5 +1,7 @@
 import type { EventItem, Section, Session } from './types';
 
+const THEME_PRESET_CYCLE = ['aurora', 'prime', 'vertex', 'amber', 'slate'];
+
 // 아래 브랜드·인물·기관·제품명은 전부 가상입니다. 실존 캠페인/의료인/의약품과 무관합니다.
 export const BRANDS = ['MERIDIAN', 'AURORA', 'PRIME', 'VERTEX', 'HALO', 'HERO'];
 
@@ -70,6 +72,21 @@ export function autoSlug(title: string, venue: string, date: string): string {
   return `${head}-${venueSlug(venue)}-${date.replace(/-/g, '').slice(2)}`;
 }
 
+/** base가 이미 쓰이고 있으면 -2, -3 ...을 붙여 회차별 고유 slug를 보장한다 — 서버의 ensureUniqueSlug와 같은 규칙. */
+export function uniqueSlug(base: string, existing: string[]): string {
+  const clean = base || 'event';
+  for (let n = 1; n < 100; n++) {
+    const candidate = n === 1 ? clean : `${clean}-${n}`;
+    if (!existing.includes(candidate)) return candidate;
+  }
+  return `${clean}-${Date.now()}`;
+}
+
+function todayLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export const SECTIONS: { id: Section; label: string; meta: string }[] = [
   { id: 'basic', label: '기본 정보', meta: '5' },
   { id: 'agenda', label: '아젠다', meta: '' },
@@ -106,11 +123,40 @@ export function seedEvents(): EventItem[] {
       status: st,
       dateCode: code,
       slug: `${brand.toLowerCase()}-${venueSlug(venue)}-${code}`,
-      sessions: 5 + (i % 4),
       docs: 2 + (i % 5),
+      title: `${brand} 심포지엄`,
+      date: `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`,
+      host: '좌장 서정우',
+      cap: '120',
+      engage: { qa: true, survey: true, chat: false, cert: true },
+      presetId: THEME_PRESET_CYCLE[i % THEME_PRESET_CYCLE.length],
+      mode: 'light',
+      iconSet: 'geo',
+      density: '기본',
+      keyVisual: '',
+      kvPattern: 'stripe',
+      sessions: SESSIONS0.slice(),
     });
   }
   return events;
+}
+
+export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' | 'dateCode' | 'slug' | 'docs'> {
+  return {
+    title: '새 이벤트',
+    venue: '',
+    date: todayLocalDate(),
+    host: '',
+    cap: '',
+    engage: { qa: true, survey: true, chat: false, cert: true },
+    presetId: 'aurora',
+    mode: 'light',
+    iconSet: 'geo',
+    density: '기본',
+    keyVisual: '',
+    kvPattern: 'stripe',
+    sessions: [],
+  };
 }
 
 export const DOCS = [
