@@ -2,9 +2,9 @@
 
 // 참가자용 공개 마이크로사이트 — GET /api/public/[slug]에서 실제 이벤트를 받아 렌더한다
 import { notFound, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
-import { fetchWithTimeout } from '@/lib/api';
+import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
 import { UI } from '@/lib/ui';
@@ -70,6 +70,14 @@ export default function PublicEventPage() {
   const { slug } = useParams<{ slug: string }>();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [retryTick, setRetryTick] = useState(0);
+  const pageViewSent = useRef(false);
+
+  useEffect(() => {
+    if (state.status === 'ready' && !pageViewSent.current) {
+      pageViewSent.current = true;
+      sendEventLogs(state.data.id, [{ kind: 'page_view' }]);
+    }
+  }, [state]);
 
   useEffect(() => {
     let cancelled = false;

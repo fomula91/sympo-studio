@@ -97,3 +97,21 @@ export async function fetchEventOps(eventId: number): Promise<EventOps> {
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
   return (await res.json()) as EventOps;
 }
+
+export interface EventLogEntry {
+  kind: 'page_view' | 'session_view' | 'doc_view' | 'survey_complete';
+  sessionId?: number;
+  documentId?: number;
+}
+
+// 계측이지 참여 기능이 아니다 — 전송 실패가 화면 동작을 막지 않도록 결과를 기다리지 않고 조용히 무시한다(FE-20).
+export function sendEventLogs(eventId: number, logs: EventLogEntry[]): void {
+  if (logs.length === 0) return;
+  fetchWithTimeout(`/api/events/${eventId}/logs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
+    body: JSON.stringify({ logs }),
+  }).catch(() => {
+    // 계측 실패는 조용히 무시 — 화면 동작에 영향을 주지 않는다.
+  });
+}

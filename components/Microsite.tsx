@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
+import { sendEventLogs } from '@/lib/api';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -47,6 +48,42 @@ export default function Microsite({
   const online = useOnlineStatus();
   const [qaOpen, setQaOpen] = useState(false);
   const docs = documents ?? DEMO_DOCUMENTS;
+  const agendaRef = useRef<HTMLOListElement>(null);
+
+  // 아젠다 카드가 화면에 노출될 때 session_view를 배치로 보낸다(FE-20) — 스튜디오 미리보기(preview)에서는 보내지 않는다.
+  useEffect(() => {
+    if (preview || eventId == null) return;
+    const container = agendaRef.current;
+    if (!container) return;
+    const seen = new Set<number>();
+    let pending: number[] = [];
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      const ids = pending;
+      pending = [];
+      if (ids.length > 0) sendEventLogs(eventId, ids.map((sessionId) => ({ kind: 'session_view' as const, sessionId })));
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const id = Number((entry.target as HTMLElement).dataset.sessionId);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          pending.push(id);
+          observer.unobserve(entry.target);
+        }
+        if (pending.length > 0 && !timer) timer = setTimeout(flush, 1500);
+      },
+      { threshold: 0.5 },
+    );
+    container.querySelectorAll<HTMLElement>('[data-session-id]').forEach((el) => observer.observe(el));
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+    };
+  }, [eventId, preview, sessions]);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
 
@@ -210,6 +247,7 @@ export default function Microsite({
       >
         <div style={sectionLabel}>아젠다</div>
         <ol
+          ref={agendaRef}
           style={{
             listStyle: 'none',
             margin: '0 0 24px',
@@ -222,6 +260,7 @@ export default function Microsite({
           {sessions.map((s) => (
             <li
               key={s.id}
+              data-session-id={s.id}
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',
