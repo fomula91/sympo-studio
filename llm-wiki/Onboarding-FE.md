@@ -74,6 +74,8 @@ npm run dev      # UI 동작은 브라우저로 직접 확인 (자동 테스트 
 
 실패하면 원인부터 가른다. `Type error:`나 `✖ N problems`는 코드 문제, `command not found`·`Cannot find module`은 환경 문제(`npm install`), `EADDRINUSE`는 기존 dev 서버를 끄면 된다. **환경 문제를 코드로 고치려 들지 말 것.**
 
+**참가자 공개 페이지(`/[slug]`, `/api/public/[slug]`)를 `npm run dev`로 확인하려면 로컬 시크릿이 필요하다.** 저장소 루트에 `.dev.vars`(gitignore됨, 각자 로컬에 생성)를 만들고 `DOC_URL_SECRET=아무-로컬-전용-문자열`을 넣는다 — 없으면 `lib/r2.ts`의 `getUrlSecret`이 던지는 에러로 해당 라우트가 전부 500이 난다(참가자 화면 자체가 이 API를 호출하므로 첫 화면부터 막힌다).
+
 자동 테스트가 없는 것은 알려진 한계다. FE-7이 Vitest 도입의 첫 지점이 된다.
 
 ## 6. 알아두면 좋은 것
