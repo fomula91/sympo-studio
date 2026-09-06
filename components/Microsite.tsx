@@ -55,7 +55,11 @@ export default function Microsite({
   const seenSessionsRef = useRef<Set<number>>(new Set());
 
   // 아젠다 카드가 화면에 노출될 때 session_view를 배치로 보낸다(FE-20) — 스튜디오 미리보기(preview)에서는 보내지 않는다.
+  // 값은 이 화면에서만 검증된 선택이다 — FE-6·FE-4가 같은 패턴으로 doc_view·survey_complete를 추가할 때
+  // 그대로 맞출지 다르게 갈지 판단하고 넘어갈 것.
   useEffect(() => {
+    const SESSION_VIEW_DEBOUNCE_MS = 1500;
+    const SESSION_VIEW_THRESHOLD = 0.5;
     if (preview || eventId == null) return;
     const container = agendaRef.current;
     if (!container) return;
@@ -78,14 +82,23 @@ export default function Microsite({
           pending.push(id);
           observer.unobserve(entry.target);
         }
-        if (pending.length > 0 && !timer) timer = setTimeout(flush, 1500);
+        if (pending.length > 0 && !timer) timer = setTimeout(flush, SESSION_VIEW_DEBOUNCE_MS);
       },
-      { threshold: 0.5 },
+      { threshold: SESSION_VIEW_THRESHOLD },
     );
-    container.querySelectorAll<HTMLElement>('[data-session-id]').forEach((el) => observer.observe(el));
+    // 이미 seen인 요소는 다시 관찰하지 않는다 — sessions 참조가 바뀌어 effect가 재실행돼도
+    // 화면에 그대로 떠 있는 항목을 또 감지해 옵저버에 올리지 않게.
+    container
+      .querySelectorAll<HTMLElement>('[data-session-id]')
+      .forEach((el) => {
+        if (!seen.has(Number(el.dataset.sessionId))) observer.observe(el);
+      });
     return () => {
       observer.disconnect();
       if (timer) clearTimeout(timer);
+      // 디바운스 중 effect가 재실행되면(예: sessions 재조회) seen에는 이미 기록됐지만
+      // 아직 전송 안 된 pending이 남는다 — 유실 없이 지금 바로 흘려보낸다.
+      if (pending.length > 0) flush();
     };
   }, [eventId, preview, sessions]);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;

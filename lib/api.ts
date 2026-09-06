@@ -116,6 +116,7 @@ export function sendEventLogs(eventId: number, logs: EventLogEntry[]): void {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
       body: JSON.stringify({ logs: chunk }),
+      keepalive: true, // 페이지 이탈 직전에 쏜 요청이 브라우저에 의해 취소되지 않게
     }).catch(() => {
       // 계측 실패는 조용히 무시 — 화면 동작에 영향을 주지 않는다.
     });
