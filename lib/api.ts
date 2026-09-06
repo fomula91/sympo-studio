@@ -98,11 +98,14 @@ export async function fetchEventOps(eventId: number): Promise<EventOps> {
   return (await res.json()) as EventOps;
 }
 
-export interface EventLogEntry {
-  kind: 'page_view' | 'session_view' | 'doc_view' | 'survey_complete';
-  sessionId?: number;
-  documentId?: number;
-}
+// kind별로 필요한 필드가 달라 유니온으로 강제한다 — sessionId?: number 식으로 전부 옵셔널이면
+// doc_view에 documentId를 빼먹어도 컴파일은 통과하고 서버 400(lib/logs.ts validateLogsBody)으로만
+// 드러나는데, sendEventLogs가 실패를 조용히 삼켜 개발 중에도 안 보인다.
+export type EventLogEntry =
+  | { kind: 'page_view' }
+  | { kind: 'session_view'; sessionId: number }
+  | { kind: 'doc_view'; documentId: number }
+  | { kind: 'survey_complete' };
 
 // lib/logs.ts의 MAX_LOGS_PER_REQUEST와 같은 값 — 서버가 이 개수를 넘는 요청을 통째로 400 거부하므로
 // 클라이언트에서 먼저 잘라 보낸다(안 자르면 30개를 넘기는 순간 배치 전체가 조용히 유실된다).
