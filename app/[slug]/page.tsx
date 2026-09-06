@@ -4,6 +4,7 @@
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Microsite from '@/components/Microsite';
+import { fetchWithTimeout } from '@/lib/api';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
 import { UI } from '@/lib/ui';
@@ -74,7 +75,7 @@ export default function PublicEventPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch(`/api/public/${slug}`, { cache: 'no-store' });
+        const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
         if (cancelled) return;
         if (res.status === 404) {
           setState({ status: 'not-found' });
