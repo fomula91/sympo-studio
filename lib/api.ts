@@ -49,7 +49,7 @@ async function readError(res: Response): Promise<string> {
   }
 }
 
-async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+export async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {

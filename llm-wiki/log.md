@@ -10,6 +10,9 @@
 > `[FE]` 프론트엔드 코드 · `[BE]` 백엔드·인프라 코드 · `[PROJ]` 위키·문서·설정 등 코드 외 작업.
 > 한 항목이 FE와 BE를 모두 건드렸다면 **항목을 쪼갠다** — 태그를 두 개 붙이지 않는다.
 
+## 2026-09-06
+- **[FE] PR #20 협업자 리뷰 반영 — 공개 리포트 fetch에 타임아웃 추가**: fomula91이 PR #20에 리뷰 2건 남김. P1(로그 적재 코드 부재로 `/ops`가 시드만 그림)은 과제 분할 문제로 판단해 **FE-20**으로 이미 분리·등록(PR #21 머지 완료) — FE-5 종료는 FE-20이 붙은 뒤로 유예하기로 합의, 이번 PR 수정 대상 아님. P2(`app/[slug]/report/page.tsx:36`가 `fetchWithTimeout` 없이 맨 `fetch`를 써서 요청이 pending으로 매달리면 로딩 화면에 갇히고 재시도 버튼도 없음, PR #9 교차 리뷰 C2와 같은 부류)를 반영 — `lib/api.ts`의 `fetchWithTimeout`을 export해 해당 호출에 적용. 같은 패턴인 `app/[slug]/page.tsx:77`(리뷰에서 "함께 정리하면 좋겠다"고 언급된 참가자 마이크로사이트, localStorage 캐시 폴백이 있어 완전 실패는 아니었음)도 함께 교체. `npm run lint`·`test`(12건)·`build` 통과.
+
 ## 2026-09-03
 - **[FE] FE-5(PR #20) 교차 리뷰 반영 — Codex CLI 지적 없음, Claude `/code-review` 2건 수정 ([[Reviews/2026-09-03-fe5-cross-review]])**: PR #20 오픈 직후 Codex CLI(`codex-auto-review`)와 로컬 `/code-review`를 병렬로 돌림. Codex는 지적 없음(타입·계약·범위 전부 일치). Claude는 2건 — ① 참가자 페이지(`app/[slug]/page.tsx`)가 교차 리뷰로 갖추게 된 오프라인 자동 복구(`online` 이벤트 재요청)가 이 리포트 페이지엔 없었음(행사장 와이파이 불안정 시나리오가 실제로 있어 타당) — `online` 리스너 추가, 다만 이 페이지는 폴링이 아니라 1회 로드라 `localStorage` 캐시까지는 옮기지 않고 자동 재시도만 추가. ② `capacity` 미설정 시 세션 막대 너비를 임의 계수(`visitors*20`)로 그려 방문자 5명·6명이 둘 다 100% clamp로 보이는데 옆 라벨은 실제 수치를 보여줘 척도가 어긋남 — 이 이벤트 세션 중 최다 방문자를 100%로 놓는 상대 막대로 교체해 막대·라벨이 같은 척도를 쓰게 함. `npm run lint`·`test`(12건)·`build` 통과.
 

@@ -7,7 +7,7 @@
 // 누구나 열 수 있다(BE-12 이후 잠글 사안, [[Next-Tasks]] BE-19 참고).
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { type EventOps, fetchEventOps } from '@/lib/api';
+import { type EventOps, fetchEventOps, fetchWithTimeout } from '@/lib/api';
 import { MONO, UI } from '@/lib/ui';
 
 interface ReportEvent {
@@ -33,7 +33,7 @@ export default function LiveReportPage() {
     let cancelled = false;
     (async () => {
       try {
-        const evRes = await fetch(`/api/public/${slug}`, { cache: 'no-store' });
+        const evRes = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
         if (cancelled) return;
         if (evRes.status === 404) {
           setState({ status: 'not-found' });
