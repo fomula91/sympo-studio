@@ -75,7 +75,11 @@ export default function PublicEventPage() {
   useEffect(() => {
     if (state.status === 'ready' && !pageViewSent.current) {
       pageViewSent.current = true;
-      sendEventLogs(state.data.id, [{ kind: 'page_view' }]);
+      // 오프라인 등으로 실패하면 표시를 되돌린다 — 아래 두 번째 effect의 online 리스너가
+      // 재조회하면 state가 새 참조가 되어 이 effect가 다시 돌고, 그때 재시도된다(FE-21).
+      sendEventLogs(state.data.id, [{ kind: 'page_view' }]).then((ok) => {
+        if (!ok) pageViewSent.current = false;
+      });
     }
   }, [state]);
 

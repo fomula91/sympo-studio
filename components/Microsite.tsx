@@ -70,7 +70,11 @@ export default function Microsite({
       timer = null;
       const ids = pending;
       pending = [];
-      if (ids.length > 0) sendEventLogs(eventId, ids.map((sessionId) => ({ kind: 'session_view' as const, sessionId })));
+      if (ids.length === 0) return;
+      sendEventLogs(eventId, ids.map((sessionId) => ({ kind: 'session_view' as const, sessionId }))).then((ok) => {
+        // 실패분은 seen에서 빼서, sessions 재조회로 effect가 다시 돌 때(FE-9 재연결) 다시 관찰되게 한다(FE-21).
+        if (!ok) for (const id of ids) seen.delete(id);
+      });
     };
     const observer = new IntersectionObserver(
       (entries) => {

@@ -111,17 +111,23 @@ export type EventLogEntry =
 // 클라이언트에서 먼저 잘라 보낸다(안 자르면 30개를 넘기는 순간 배치 전체가 조용히 유실된다).
 const MAX_LOGS_PER_REQUEST = 30;
 
-// 계측이지 참여 기능이 아니다 — 전송 실패가 화면 동작을 막지 않도록 결과를 기다리지 않고 조용히 무시한다(FE-20).
-export function sendEventLogs(eventId: number, logs: EventLogEntry[]): void {
+// 계측이지 참여 기능이 아니다 — 실패해도 화면 동작을 막지 않는다. 대신 호출자가 "보냈음" 표시를
+// 되돌려 FE-9의 재연결 재조회 때 다시 시도할 수 있도록 성공 여부는 알려준다(FE-20/FE-21).
+export async function sendEventLogs(eventId: number, logs: EventLogEntry[]): Promise<boolean> {
+  let allOk = true;
   for (let i = 0; i < logs.length; i += MAX_LOGS_PER_REQUEST) {
     const chunk = logs.slice(i, i + MAX_LOGS_PER_REQUEST);
-    fetchWithTimeout(`/api/events/${eventId}/logs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
-      body: JSON.stringify({ logs: chunk }),
-      keepalive: true, // 페이지 이탈 직전에 쏜 요청이 브라우저에 의해 취소되지 않게
-    }).catch(() => {
-      // 계측 실패는 조용히 무시 — 화면 동작에 영향을 주지 않는다.
-    });
+    try {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
+        body: JSON.stringify({ logs: chunk }),
+        keepalive: true, // 페이지 이탈 직전에 쏜 요청이 브라우저에 의해 취소되지 않게
+      });
+      if (!res.ok) allOk = false;
+    } catch {
+      allOk = false;
+    }
   }
+  return allOk;
 }
