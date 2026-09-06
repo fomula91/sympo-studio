@@ -49,13 +49,17 @@ export default function Microsite({
   const [qaOpen, setQaOpen] = useState(false);
   const docs = documents ?? DEMO_DOCUMENTS;
   const agendaRef = useRef<HTMLOListElement>(null);
+  // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
+  // seen을 effect 안에 두면 그때마다 초기화돼 이미 본 세션을 다시 화면에 노출된 것으로 오인해
+  // session_view를 중복 전송한다 — ref로 렌더 사이에 유지한다.
+  const seenSessionsRef = useRef<Set<number>>(new Set());
 
   // 아젠다 카드가 화면에 노출될 때 session_view를 배치로 보낸다(FE-20) — 스튜디오 미리보기(preview)에서는 보내지 않는다.
   useEffect(() => {
     if (preview || eventId == null) return;
     const container = agendaRef.current;
     if (!container) return;
-    const seen = new Set<number>();
+    const seen = seenSessionsRef.current;
     let pending: number[] = [];
     let timer: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {

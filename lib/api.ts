@@ -104,14 +104,20 @@ export interface EventLogEntry {
   documentId?: number;
 }
 
+// lib/logs.ts의 MAX_LOGS_PER_REQUEST와 같은 값 — 서버가 이 개수를 넘는 요청을 통째로 400 거부하므로
+// 클라이언트에서 먼저 잘라 보낸다(안 자르면 30개를 넘기는 순간 배치 전체가 조용히 유실된다).
+const MAX_LOGS_PER_REQUEST = 30;
+
 // 계측이지 참여 기능이 아니다 — 전송 실패가 화면 동작을 막지 않도록 결과를 기다리지 않고 조용히 무시한다(FE-20).
 export function sendEventLogs(eventId: number, logs: EventLogEntry[]): void {
-  if (logs.length === 0) return;
-  fetchWithTimeout(`/api/events/${eventId}/logs`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
-    body: JSON.stringify({ logs }),
-  }).catch(() => {
-    // 계측 실패는 조용히 무시 — 화면 동작에 영향을 주지 않는다.
-  });
+  for (let i = 0; i < logs.length; i += MAX_LOGS_PER_REQUEST) {
+    const chunk = logs.slice(i, i + MAX_LOGS_PER_REQUEST);
+    fetchWithTimeout(`/api/events/${eventId}/logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
+      body: JSON.stringify({ logs: chunk }),
+    }).catch(() => {
+      // 계측 실패는 조용히 무시 — 화면 동작에 영향을 주지 않는다.
+    });
+  }
 }
