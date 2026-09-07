@@ -42,6 +42,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 첫 렌더(들)에 URL과 다른 이전 값이 잠깐 보인다(하드 리로드 시 헤더·게이트 오표시, PR #9 리뷰).
   const params = useParams<{ id?: string }>();
   const urlEventId = params.id ? Number(params.id) : null;
+  // `/console`·`/report`는 URL에 이벤트 id가 없다 — 그런 라우트에서도 "마지막으로 편집하던
+  // 이벤트"를 계속 보여줘야 하므로 별도로 기억해둔다. effect가 아니라 렌더 중 비교로 갱신하는
+  // 이유는 URL이 바뀐 바로 그 렌더에서 동기적으로 값을 맞춰야(위 주석과 같은 이유) 하기 때문이다
+  // — effect였다면 editor 라우트 진입 첫 프레임에 다시 구값이 보인다(교차 리뷰 발견 회귀).
+  const [selectedId, setSelectedId] = useState<number | null>(urlEventId ?? SEEDED_EVENTS[0]?.id ?? null);
+  const [syncedUrlEventId, setSyncedUrlEventId] = useState(urlEventId);
+  if (urlEventId !== syncedUrlEventId) {
+    setSyncedUrlEventId(urlEventId);
+    if (urlEventId != null) setSelectedId(urlEventId);
+  }
+  const effectiveId = urlEventId ?? selectedId;
   // 이벤트별 "되돌리기" 기준선 — 편집을 시작한 시점의 아젠다 스냅샷(공용 데모 시드가 아니다).
   const baselineRef = useRef<Map<number, Session[]>>(new Map());
 
@@ -51,10 +62,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     for (const id of baselineRef.current.keys()) {
       if (!validIds.has(id)) baselineRef.current.delete(id);
     }
-    if (urlEventId == null || baselineRef.current.has(urlEventId)) return;
-    const found = s.events.find((e) => e.id === urlEventId);
-    if (found) baselineRef.current.set(urlEventId, found.sessions);
-  }, [urlEventId, s.events]);
+    if (effectiveId == null || baselineRef.current.has(effectiveId)) return;
+    const found = s.events.find((e) => e.id === effectiveId);
+    if (found) baselineRef.current.set(effectiveId, found.sessions);
+  }, [effectiveId, s.events]);
 
   const patch: PatchFn = useCallback((p) => {
     setS((prev) => {
@@ -66,7 +77,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
       setS((prev) => {
-        const idx = prev.events.findIndex((e) => e.id === urlEventId);
+        const idx = prev.events.findIndex((e) => e.id === effectiveId);
         if (idx < 0) return prev;
         const delta: PatchEvent = typeof p === 'function' ? p(prev.events[idx]) : p;
         if (!delta) return prev;
@@ -83,22 +94,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, events };
       });
     },
-    [urlEventId],
+    [effectiveId],
   );
 
   const resetSessions = useCallback(() => {
     setS((prev) => {
-      if (urlEventId == null) return prev;
-      const baseline = baselineRef.current.get(urlEventId);
-      const idx = prev.events.findIndex((e) => e.id === urlEventId);
+      if (effectiveId == null) return prev;
+      const baseline = baselineRef.current.get(effectiveId);
+      const idx = prev.events.findIndex((e) => e.id === effectiveId);
       if (!baseline || idx < 0) return prev;
       const events = prev.events.slice();
       events[idx] = { ...events[idx], sessions: baseline.slice() };
       return { ...prev, events };
     });
-  }, [urlEventId]);
+  }, [effectiveId]);
 
-  const ev = s.events.find((e) => e.id === urlEventId) ?? s.events[0];
+  const ev = s.events.find((e) => e.id === effectiveId) ?? s.events[0];
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
   const value = useMemo(
     () => ({ s, ev, presets, patch, patchEvent, resetSessions }),
