@@ -13,6 +13,7 @@ FE 과제(FE-3 Q&A 연결, FE-2 `/[slug]` 라우트, FE-5 리포트 등)가 서�
 | `/api/events/[id]/survey` | POST | 참가자 | 설문 응답 배치 제출 |
 | `/api/events/[id]/logs` | POST | 참가자 | **열람 로그 배치 적재** (FE-20) |
 | `/api/files/[...key]` | GET | 참가자 | 서명 URL로 자료 받기 (직접 조립하지 말 것 — 공개 응답의 `url`을 쓴다) |
+| `/api/presets` | GET · POST | 운영자 | 브랜드 프리셋 목록 / 저장(업서트) |
 | `/api/events` | GET · POST | 운영자 | 이벤트 목록 / 생성 |
 | `/api/events/[id]` | GET · PATCH · DELETE | 운영자 | 단건(+아젠다+자료) / 부분 수정 / 삭제 |
 | `/api/events/[id]/sessions` | PUT | 운영자 | 아젠다 목록 저장(diff) |
@@ -231,6 +232,35 @@ await fetch(`/api/events/${eventId}/documents/${docId}/upload`, {
 - **10분 뒤 만료된다.** 목록을 오래 열어 뒀다면 다시 받아 새 URL을 쓴다
 - 서명이 틀렸든 만료됐든 키가 없든 **전부 404**다(사유를 구분해 주지 않는다)
 - 응답은 `Cache-Control: private` — 서명 URL이 곧 접근 권한이라 공유 캐시에 남으면 안 된다
+
+## 브랜드 프리셋 — `/api/presets` (BE-20)
+
+빌트인 5종과 FE-8이 추출한 커스텀 프리셋이 **같은 테이블에 살고 `origin`으로만 갈립니다**. 프리셋은 "미리 준비된 목록"이 아니라 **쌓이는 것**이어야 한다는 게 이 설계의 요점입니다 — 실무에서 넘어오는 건 색상 값이 아니라 이미지니까요.
+
+| 메서드 | 용도 |
+|---|---|
+| GET | 전체 목록. 응답 `{ presets: [{ id, label, h, c, origin }] }` — `h`·`c`는 `derive()`가 그대로 받는 이름 |
+| POST | 저장(업서트). `{ id, label, hue, chroma, origin?, sourceKey? }` |
+
+제약: `id`는 소문자·숫자·하이픈 40자 이내 · `label` 1~60자 · `hue` 0≤h<360 · `chroma` 0≤c≤0.4 · `origin`은 `builtin|extracted`(생략 시 `extracted`).
+
+**같은 id를 다시 올리면 덮어씁니다** — 추출은 이미지가 조금만 달라도 값이 흔들리는데, 회차마다 새 id를 만들면 목록이 같은 브랜드로 가득 찹니다.
+
+**`events.preset_id`는 이 테이블의 FK입니다.** 저장하지 않은 프리셋 id로 `PATCH /api/events/[id]`를 하면 **400**("없는 프리셋입니다")이 납니다 — 먼저 `POST /api/presets`로 올리세요.
+
+### 참가자 화면에서 색을 그릴 때
+
+`GET /api/public/[slug]`의 `theme`에 **`preset`이 함께 옵니다**:
+
+```jsonc
+"theme": {
+  "presetId": "meridian-2026",
+  "preset": { "id": "meridian-2026", "label": "MERIDIAN 추출", "h": 205, "c": 0.12 },
+  "mode": "light", ...
+}
+```
+
+**`preset`이 있으면 그걸로 `derive()` 하세요.** 빌트인 `PRESETS` 배열에서 `presetId`를 찾는 방식은 **추출 프리셋을 못 찾아 기본 색으로 조용히 폴백합니다.** `preset`은 프리셋이 없는 이벤트에서 `null`입니다.
 
 ## 이벤트 로그 · 운영 지표 — `/api/events/[id]/{logs,ops}` (BE-5)
 
