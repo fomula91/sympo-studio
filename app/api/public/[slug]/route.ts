@@ -72,34 +72,63 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
   const db = await getDb();
   const secret = getUrlSecret(await getEnv());
 
-  const event = await db
-    .prepare('SELECT * FROM events WHERE slug = ?')
-    .bind(slug)
-    .first<EventRow>();
-
-  if (!event || !PUBLIC_STATUSES.has(event.status)) {
-    return json({ error: '페이지를 찾을 수 없습니다.' }, 404);
-  }
-
-  const [sessions, documents] = await Promise.all([
+  // 세 쿼리를 batch로 묶어 **요청당 D1 왕복 1회**(BE-19 ③). `Promise.all`은
+  // 동시에 보내도 왕복이 3회다 — 참가자 화면의 가장 트래픽 많은 경로라 여기서
+  // 왕복 수가 곧 무료 티어 소진 속도가 된다(`app/api/events/[id]`가 같은 이유로
+  // 이미 batch를 쓴다).
+  //
+  // 이벤트 id를 아직 모르는 상태에서 하위 조회를 같은 batch에 실어야 하므로
+  // slug 서브쿼리로 건다. 없는 slug면 서브쿼리가 NULL이 되어 하위 조회는
+  // 0행이고, 아래 공개 상태 검사가 어차피 404를 낸다.
+  const bySlug = 'event_id = (SELECT id FROM events WHERE slug = ?)';
+  const [eventRes, sessions, documents] = await db.batch([
+    // 프리셋을 LEFT JOIN으로 함께 가져온다(BE-20) — 참가자 화면이 색을 그리려면
+    // presetId 문자열만으로는 부족하고 hue·chroma가 필요하다. 빌트인 5종은
+    // 클라이언트에도 있지만 **추출 프리셋(FE-8)은 서버에만 있어**, id만 내려주면
+    // 참가자 페이지가 못 찾고 기본 프리셋으로 조용히 폴백한다. 별도 statement가
+    // 아니라 JOIN인 이유는 왕복을 늘리지 않기 위해서다.
     db
-      .prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id')
-      .bind(event.id)
-      .all<SessionRow>(),
+      .prepare(
+        `SELECT e.*, p.label AS preset_label, p.hue AS preset_hue, p.chroma AS preset_chroma
+         FROM events e LEFT JOIN brand_presets p ON p.id = e.preset_id
+         WHERE e.slug = ?`,
+      )
+      .bind(slug),
+    db.prepare(`SELECT * FROM sessions WHERE ${bySlug} ORDER BY sort_order, id`).bind(slug),
     db
       .prepare(
         `SELECT id, session_id, display_name, tag, status, page_count, size_bytes,
                 r2_key
-         FROM documents WHERE event_id = ? ORDER BY sort_order, id`,
+         FROM documents WHERE ${bySlug} ORDER BY sort_order, id`,
       )
-      .bind(event.id)
-      .all<PublicDocumentRow>(),
+      .bind(slug),
   ]);
+
+  const event = eventRes.results[0] as
+    | (EventRow & { preset_label: string | null; preset_hue: number | null; preset_chroma: number | null })
+    | undefined;
+  if (!event || !PUBLIC_STATUSES.has(event.status)) {
+    return json({ error: '페이지를 찾을 수 없습니다.' }, 404);
+  }
 
   return Response.json(
     {
       ...toEventDTO(event),
-      sessions: sessions.results.map(toSessionDTO),
+      theme: {
+        ...toEventDTO(event).theme,
+        // 값이 있으면 클라이언트는 이걸로 derive하고, null이면 presetId로 빌트인을
+        // 찾는 기존 경로를 그대로 쓴다 — 계약을 깨지 않고 얹는다.
+        preset:
+          event.preset_hue !== null && event.preset_chroma !== null
+            ? {
+                id: event.preset_id,
+                label: event.preset_label,
+                h: event.preset_hue,
+                c: event.preset_chroma,
+              }
+            : null,
+      },
+      sessions: (sessions.results as unknown as SessionRow[]).map(toSessionDTO),
       documents: await Promise.all(
         (documents.results as unknown as PublicDocumentRow[]).map((r) => toDocumentDTO(r, secret)),
       ),

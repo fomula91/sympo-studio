@@ -98,8 +98,12 @@ export const POST = withRoute(async (request: NextRequest) => {
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
   }
-  if (body.capacity !== undefined && body.capacity !== null && typeof body.capacity !== 'number') {
-    throw new BadRequest('capacity는 숫자여야 합니다.');
+  if (body.capacity !== undefined && body.capacity !== null) {
+    // 음수를 막는 것이 요점이다(BE-19 ②) — capacity는 응답률·참석률의 분모라,
+    // 음수가 들어가면 집계가 음수 비율을 내보내고 화면이 막대를 반대로 그린다.
+    if (typeof body.capacity !== 'number' || body.capacity < 0) {
+      throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
+    }
   }
 
   const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');

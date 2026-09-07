@@ -1,5 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
+  eventNotFound,
+  isMissingEventFk,
   assertPublicEvent,
   BadRequest,
   eventId,
@@ -151,7 +153,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   const [eventRes, rateRes] = await db.batch([
     db.prepare('SELECT id, status, engage_qa FROM events WHERE id = ?').bind(id),
-    rateLimitStatement(db, keys, QUESTION_RATE_POLICY),
+    rateLimitStatement(db, keys, QUESTION_RATE_POLICY, id),
   ]);
 
   const event = eventRes.results[0] as Pick<EventRow, 'id' | 'status' | 'engage_qa'> | undefined;
@@ -196,11 +198,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
       .bind(id, sessionId, body, author, keys.ipHash, keys.tokenHash)
       .first<QuestionRow>();
   } catch (e) {
-    // 자정(KST) 시드 리셋과 경합하면 위의 존재 검사 이후 이벤트가 사라질 수
-    // 있다 — 그때의 FK 위반은 결함이 아니라 "이벤트가 없어졌다"이므로 404.
-    if (e instanceof Error && e.message.includes('FOREIGN KEY constraint failed')) {
-      return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    }
+    // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
+    if (isMissingEventFk(e)) throw eventNotFound();
     throw e;
   }
 

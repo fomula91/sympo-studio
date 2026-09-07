@@ -86,8 +86,11 @@ export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
     // 리포트(FE-5)가 이 값으로 막대를 그리면 화면을 뚫는다. 잘라도 정보는
     // 잃지 않는다 — respondents와 capacity가 응답에 그대로 있어, 분모가 잘못됐다는
     // 사실은 그 둘을 비교하면 드러난다.
+    // 상한뿐 아니라 **하한도 잡는다**(BE-19 ②) — capacity는 운영자 손입력이고
+    // PATCH가 부호를 검사하지 않던 시절의 음수 값이 남아 있을 수 있다. 음수
+    // 응답률은 막대를 반대로 그리거나 계산을 통째로 무의미하게 만든다.
     responseRate: event.capacity
-      ? Math.min(1, Math.round((respondents / event.capacity) * 1000) / 1000)
+      ? Math.max(0, Math.min(1, Math.round((respondents / event.capacity) * 1000) / 1000))
       : null,
     questions,
   }, 200, { 'Cache-Control': 'public, max-age=5' });

@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import {
+  isMissingEventFk,
   BadRequest,
   eventId,
   getDb,
@@ -98,8 +99,9 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (key === 'date' && typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
     }
-    if (key === 'capacity' && value !== null && typeof value !== 'number') {
-      throw new BadRequest('capacity는 숫자여야 합니다.');
+    // 음수 금지 — 응답률·참석률의 분모다(BE-19 ②).
+    if (key === 'capacity' && value !== null && (typeof value !== 'number' || value < 0)) {
+      throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
     }
     sets.push(`${column} = ?`);
     binds.push(value ?? null);
@@ -120,10 +122,21 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   sets.push("updated_at = datetime('now')");
   binds.push(id);
 
-  const row = await db
-    .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
-    .bind(...binds)
-    .first<EventRow>();
+  let row: EventRow | null;
+  try {
+    row = await db
+      .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
+      .bind(...binds)
+      .first<EventRow>();
+  } catch (e) {
+    // preset_id는 brand_presets를 참조하는 FK다 — 없는 프리셋 id를 보내면 여기서
+    // 터진다. 사유 없는 500으로 나가면 "왜 저장이 안 되는지"를 알 수 없으므로
+    // 400으로 접는다(BE-20). 저장 경로는 POST /api/presets다.
+    if (isMissingEventFk(e) && 'presetId' in body) {
+      throw new BadRequest('없는 프리셋입니다. POST /api/presets로 먼저 저장하세요.');
+    }
+    throw e;
+  }
 
   if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
   return json(toEventDTO(row));

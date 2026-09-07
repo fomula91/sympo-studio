@@ -97,3 +97,37 @@ export async function fetchEventOps(eventId: number): Promise<EventOps> {
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
   return (await res.json()) as EventOps;
 }
+
+// kind별로 필요한 필드가 달라 유니온으로 강제한다 — sessionId?: number 식으로 전부 옵셔널이면
+// doc_view에 documentId를 빼먹어도 컴파일은 통과하고 서버 400(lib/logs.ts validateLogsBody)으로만
+// 드러나는데, sendEventLogs가 실패를 조용히 삼켜 개발 중에도 안 보인다.
+export type EventLogEntry =
+  | { kind: 'page_view' }
+  | { kind: 'session_view'; sessionId: number }
+  | { kind: 'doc_view'; documentId: number }
+  | { kind: 'survey_complete' };
+
+// lib/logs.ts의 MAX_LOGS_PER_REQUEST와 같은 값 — 서버가 이 개수를 넘는 요청을 통째로 400 거부하므로
+// 클라이언트에서 먼저 잘라 보낸다(안 자르면 30개를 넘기는 순간 배치 전체가 조용히 유실된다).
+const MAX_LOGS_PER_REQUEST = 30;
+
+// 계측이지 참여 기능이 아니다 — 실패해도 화면 동작을 막지 않는다. 대신 호출자가 "보냈음" 표시를
+// 되돌려 FE-9의 재연결 재조회 때 다시 시도할 수 있도록 성공 여부는 알려준다(FE-20/FE-21).
+export async function sendEventLogs(eventId: number, logs: EventLogEntry[]): Promise<boolean> {
+  let allOk = true;
+  for (let i = 0; i < logs.length; i += MAX_LOGS_PER_REQUEST) {
+    const chunk = logs.slice(i, i + MAX_LOGS_PER_REQUEST);
+    try {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
+        body: JSON.stringify({ logs: chunk }),
+        keepalive: true, // 페이지 이탈 직전에 쏜 요청이 브라우저에 의해 취소되지 않게
+      });
+      if (!res.ok) allOk = false;
+    } catch {
+      allOk = false;
+    }
+  }
+  return allOk;
+}

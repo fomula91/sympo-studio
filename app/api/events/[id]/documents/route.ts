@@ -1,6 +1,8 @@
 import type { NextRequest } from 'next/server';
 import { validateDocumentsBody } from '@/lib/agenda';
 import {
+  eventNotFound,
+  isMissingEventFk,
   BadRequest,
   eventId,
   getDb,
@@ -105,9 +107,8 @@ export const PUT = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   try {
     results = await db.batch(statements);
   } catch (e) {
-    if (e instanceof Error && e.message.includes('FOREIGN KEY constraint failed')) {
-      return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    }
+    // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
+    if (isMissingEventFk(e)) throw eventNotFound();
     throw e;
   }
 
