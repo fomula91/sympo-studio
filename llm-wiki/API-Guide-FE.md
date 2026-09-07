@@ -13,6 +13,9 @@ FE 과제(FE-3 Q&A 연결, FE-2 `/[slug]` 라우트, FE-5 리포트 등)가 서�
 | `/api/events/[id]/survey` | POST | 참가자 | 설문 응답 배치 제출 |
 | `/api/events/[id]/logs` | POST | 참가자 | **열람 로그 배치 적재** (FE-20) |
 | `/api/files/[...key]` | GET | 참가자 | 서명 URL로 자료 받기 (직접 조립하지 말 것 — 공개 응답의 `url`을 쓴다) |
+| `/api/auth/me` | GET | 공통 | 현재 사용자. **비로그인은 401이 아니라 `200 + null`** |
+| `/api/auth/google` | GET | 공통 | 로그인 시작(302). `?next=`로 복귀 경로(같은 출처 경로만) |
+| `/api/auth/logout` | POST | 로그인 | 로그아웃 — 쿠키와 D1 세션 행을 모두 지운다 |
 | `/api/presets` | GET · POST | 운영자 | 브랜드 프리셋 목록 / 저장(업서트) |
 | `/api/events` | GET · POST | 운영자 | 이벤트 목록 / 생성 |
 | `/api/events/[id]` | GET · PATCH · DELETE | 운영자 | 단건(+아젠다+자료) / 부분 수정 / 삭제 |
@@ -233,6 +236,27 @@ await fetch(`/api/events/${eventId}/documents/${docId}/upload`, {
 - **10분 뒤 만료된다.** 목록을 오래 열어 뒀다면 다시 받아 새 URL을 쓴다
 - 서명이 틀렸든 만료됐든 키가 없든 **전부 404**다(사유를 구분해 주지 않는다)
 - 응답은 `Cache-Control: private` — 서명 URL이 곧 접근 권한이라 공유 캐시에 남으면 안 된다
+
+## 로그인 — `/api/auth/*` (BE-12)
+
+```js
+// 현재 사용자 — 비로그인이 정상 상태다. 401이 아니라 200 + null이 온다
+const { user } = await (await fetch('/api/auth/me')).json();
+// user === null 이면 게스트
+
+// 로그인 — 리다이렉트이므로 fetch가 아니라 이동시킨다
+location.href = `/api/auth/google?next=${encodeURIComponent(location.pathname)}`;
+
+// 로그아웃
+await fetch('/api/auth/logout', { method: 'POST' });
+```
+
+- `user`는 `{ id, email, name, avatarUrl }`. **게스트를 오류로 다루지 마세요** — 비로그인은 정상 상태이고, 게스트 경로가 살아 있어야 합니다(ADR 0007)
+- `?next=`는 **같은 출처의 경로만** 받습니다(`/`로 시작, `//` 아님). 외부 URL은 무시하고 `/console`로 갑니다
+- 로그인 실패·취소는 `/console?auth=failed` 또는 `?auth=cancelled`로 돌아옵니다 — 사유를 화면에 흘리지 않습니다
+- 세션 쿠키는 httpOnly라 JS에서 읽을 수 없습니다. 로그인 여부는 `/api/auth/me`로만 판단하세요
+
+**아직 `owner_id`를 채우거나 검사하지 않습니다** — 로그인해도 이벤트 소유권은 붙지 않습니다(BE-13). 지금은 "누가 로그인했는지"까지만 압니다.
 
 ## 브랜드 프리셋 — `/api/presets` (BE-20)
 

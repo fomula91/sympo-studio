@@ -20,7 +20,13 @@ const DEMO_VENUE = '아르떼 호텔 서울';
 const DEMO_DATE = '2026-08-15';
 
 export async function resetDemoData(db: D1Database): Promise<void> {
-  const statements: D1PreparedStatement[] = [db.prepare('DELETE FROM events')];
+  // **`owner_id IS NULL`이 없으면 이 한 줄이 매일 자정 사용자 계정의 이벤트를
+  // 통째로 지운다** — events의 CASCADE를 타고 아젠다·자료·질문·설문 응답까지
+  // 함께 날아간다. owner_id를 도입한 마이그레이션(0007)과 **같은 커밋에서**
+  // 한정한 이유가 이것이다(ADR 0007). 데모 이벤트는 소유자가 없다.
+  const statements: D1PreparedStatement[] = [
+    db.prepare('DELETE FROM events WHERE owner_id IS NULL'),
+  ];
 
   statements.push(
     db
