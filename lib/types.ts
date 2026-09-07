@@ -80,7 +80,6 @@ export interface StudioState {
   bulk: boolean;
   sel: number[];
   events: EventItem[];
-  editingId: number | null;
   customPresets: Preset[];
   dragOver: boolean;
   dragIdx: number;

@@ -120,7 +120,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                     sel: on ? st.sel.filter((x) => x !== e.id) : [...st.sel, e.id],
                   }));
                 } else {
-                  patch({ editingId: e.id, section: 'agenda' });
+                  patch({ section: 'agenda' });
                   router.push(`/events/${e.id}/edit`);
                 }
               }}
