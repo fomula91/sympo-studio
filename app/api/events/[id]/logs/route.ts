@@ -11,7 +11,14 @@ import {
   type IdCtx,
 } from '@/lib/db';
 import { LOG_RATE_POLICY, validateLogsBody } from '@/lib/logs';
-import { evaluateRateLimit, rateKeys, rateLimitStatement, sha16, TOKEN_PATTERN } from '@/lib/rate-limit';
+import {
+  evaluateRateLimit,
+  rateCounterStatement,
+  rateKeys,
+  rateUsageStatements,
+  sha16,
+  TOKEN_PATTERN,
+} from '@/lib/rate-limit';
 
 /**
  * POST /api/events/[id]/logs — 이벤트 로그 적재 (BE-5)
@@ -45,11 +52,11 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   const [eventRes, rateRes] = await db.batch([
     db.prepare('SELECT id, status FROM events WHERE id = ?').bind(id),
-    rateLimitStatement(db, keys, LOG_RATE_POLICY, id),
+    rateCounterStatement(db, keys, LOG_RATE_POLICY, id),
   ]);
   // 비공개 상태는 없는 이벤트와 같은 404다(BE-16).
   assertPublicEvent(eventRes.results[0] as { status?: string });
-  evaluateRateLimit(rateRes.results[0] as never, LOG_RATE_POLICY, logs.length);
+  evaluateRateLimit(rateRes.results as never, keys, LOG_RATE_POLICY, id, logs.length);
 
   const statements = logs.map((l) =>
     db
@@ -62,7 +69,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   );
 
   try {
-    await db.batch(statements);
+    // 카운터는 쓰기 성공과 같은 트랜잭션에서 올린다(ADR 0008).
+    await db.batch([...statements, ...rateUsageStatements(db, keys, LOG_RATE_POLICY, id, logs.length)]);
   } catch (e) {
     // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
     if (isMissingEventFk(e)) throw eventNotFound();

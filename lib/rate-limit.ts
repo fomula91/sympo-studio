@@ -1,8 +1,16 @@
 import { ApiError } from './db';
 
-// rate limit — 별도 저장소 없이 판정 대상 테이블 자체로 센다(BE-3에서 시작해
-// BE-4가 재사용). KV를 붙이지 않는 이유는 무료 티어에서 바인딩 하나를 아끼는
-// 것보다 "쓴 만큼만 센다"가 단순해서다.
+// rate limit — 판정은 `rate_counters`의 (키, 창) 카운터로 한다(BE-21, ADR 0008).
+//
+// 원래는 대상 테이블의 당일 행을 셌다(BE-3~8). 그 방식이 **정상 운영에서**
+// 비싸졌다 — 행사장 단일 IP가 상한에 닿으면 이후 모든 요청이 그 행들을 전부
+// 훑는다(429로 거절되는 요청까지). 카운터는 PK 하나로 잡혀 대상 테이블 크기와
+// 무관하다. KV/DO가 아니라 D1 테이블인 이유는 바인딩·과금 축을 늘리지 않기
+// 위해서다(ADR 0006이 기각한 것은 저장소 추가였지 카운터 자체가 아니었다).
+//
+// **증가는 성공한 쓰기에만 한다** — 요청마다 세면 D1 쓰기 한도가 Workers 요청
+// 한도와 1:1로 붙어, 플러드가 읽기 대신 쓰기 티어를 태운다. 쓰기가 마르면
+// Q&A·설문·로그가 전부 죽는다.
 //
 // 키는 2층이다(ADR 0006): 브라우저 토큰 버킷(사람의 제출 속도) + IP 총량
 // 상한(위조 토큰 방어). 행사장 Wi-Fi는 단일 egress IP라 IP 단독 키로는
@@ -19,9 +27,6 @@ import { ApiError } from './db';
  * (설문처럼 토큰이 저장 자체에 필요한 라우트는 예외 — 그쪽 주석 참조.)
  */
 export const TOKEN_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
-
-/** KST 하루가 판정·로테이션의 공통 경계다(시드 리셋 Cron = 00:00 KST). */
-const KST_DAY_START_SQL = "datetime('now', '+9 hours', 'start of day', '-9 hours')";
 
 export async function sha16(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
@@ -75,162 +80,172 @@ export class RateLimited extends ApiError {
 }
 
 /**
- * 라우트별 rate limit 정책. 대상 테이블은 client_hash·token_hash와 timeColumn이
- * 가리키는 시각 컬럼, 그리고 (client_hash, 시각)·(token_hash, 시각) 인덱스를
- * 갖춰야 한다. table은 여기 유니온에 있는 상수만 허용된다 — SQL에 문자열로 삽입되므로
- * 임의 값이 들어오는 경로를 타입에서 막는다.
+ * 라우트별 rate limit 정책.
+ *
+ * `scope`는 카운터의 이름공간이다 — 정책이 서로의 한도를 갉지 않게 가른다.
+ * 한도의 단위는 **쓰기 수**다(요청 하나가 만드는 행 수 = cost). 설문은 문항
+ * 수만큼, 질문은 1이다.
  */
 export interface RatePolicy {
-  table: 'questions' | 'survey_responses' | 'event_logs';
-  /**
-   * 판정이 보는 시각 컬럼. 상수 유니온만 허용한다 — SQL에 문자열로 삽입된다.
-   *
-   * upsert하는 테이블(설문)은 created_at이 최초 제출이라 재제출을 못 본다.
-   * 마지막 쓰기 시각(updated_at)을 봐야 "같은 행 두드리기"가 60초 창과 하루
-   * 경계에 잡힌다. 인덱스도 이 컬럼 기준이어야 한다(0004_survey_updated_at).
-   */
-  timeColumn: 'created_at' | 'updated_at';
+  scope: 'questions' | 'survey' | 'logs';
   windowSeconds: number;
-  /** 브라우저(또는 토큰 없는 IP) 버킷 한도 — 행 기준. */
+  /** 브라우저(또는 토큰 없는 IP) 버킷 한도 — 이 이벤트 안에서. */
   maxPerWindow: number;
   maxPerDay: number;
-  /** IP 총량 상한 — 행 기준. */
+  /** IP 총량 상한 — 전역(이벤트를 가리지 않는다). */
   ipMaxPerWindow: number;
   ipMaxPerDay: number;
-  /**
-   * true면 하루 한도를 행 수가 아니라 write_count 누적 합으로 센다(테이블에
-   * write_count 컬럼 필요). upsert하는 테이블(설문)은 재제출이 행을 늘리지
-   * 않아 행 수 판정으로는 "같은 문항 반복 제출"이 D1 쓰기를 무한정 소모한다 —
-   * 쓰기 누적이 하루 캡에서 잡혀야 남용 통제가 성립한다. 60초 창은 순간
-   * 폭주(새 행 burst) 방지가 목적이라 행 기준을 유지한다.
-   */
-  countWrites?: boolean;
   /** 429 본문에 그대로 담는 사람이 읽을 사유. FE가 이 문구를 그대로 보여준다. */
   messages: { window: string; day: string; ipWindow: string; ipDay: string };
 }
 
+/** KST 기준 'YYYY-MM-DDTHH:MM'. 하루 경계도 여기서 잘라 쓴다. */
+function kstStamp(now = Date.now()): string {
+  return new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 16);
+}
+
+function windowKeys(now = Date.now()) {
+  const stamp = kstStamp(now);
+  // 하루 경계가 KST인 것이 요점이다 — 시드 리셋 Cron(00:00 KST)과 같은 순간에
+  // 카운터도 갈려야 한다. UTC면 두 경계가 9시간 어긋난다.
+  return { day: `d:${stamp.slice(0, 10)}`, window: `m:${stamp}` };
+}
+
 /**
- * 두 층의 한도를 모두 검사한다. 넘었으면 RateLimited를 던진다(ADR 0006).
+ * 브라우저 버킷은 이벤트별, IP 총량은 전역이다(BE-19).
  *
- *   - 토큰 있음: 브라우저 버킷(token_hash, **이 이벤트 안에서만**) + IP 총량(client_hash, 전역)
- *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash, 전역) — 생략이 우회가 되지 않게
- *     한도는 브라우저 버킷과 같다.
- *
- * **범위가 층마다 다른 것이 요점이다**(BE-19 ①). 브라우저 버킷은 "사람의 제출
- * 속도"를 재는 것이라 행사가 바뀌면 다시 세는 게 자연스럽다 — 전역으로 두면 한
- * 행사에서 3건을 쓴 사람이 **동시에 열어 둔 다른 행사에서 첫 질문부터 429**를
- * 맞는다. 반대로 IP 총량은 위조 토큰 방어가 목적이라 전역이어야 의미가 있다:
- * 이벤트별로 좁히면 봇이 이벤트를 여러 개 만들어(운영자 CRUD가 아직 무인증이다)
- * 한도를 이벤트 수만큼 곱할 수 있다.
- *
- * cost는 이 요청이 만들 행 수다 — 설문은 요청 1건이 문항 수만큼 행을 만들므로
- * "지금까지 쓴 행 + 이번 행"이 한도를 넘는지로 판정해야 배치 하나가 한도를
- * 통째로 뛰어넘지 못한다. 질문은 1이다.
- *
- * "하루"의 경계를 쿼리 자체에 둔다(KST 하루 시작) — 해시의 날짜 소금만 믿으면
- * 키 설계가 바뀔 때 COUNT가 조용히 전체 기간 카운트가 된다. 검사와 삽입 사이의
- * 동시성 창은 감수한다 — 초과분 한두 건이 새는 것은 남용 통제의 목적(무료 티어
- * 소진 방지)에 영향이 없다.
+ * 범위가 층마다 다른 이유: 브라우저 버킷은 "사람의 제출 속도"라 행사가 바뀌면
+ * 다시 세는 게 자연스럽고, IP 총량은 위조 방어라 전역이어야 의미가 있다
+ * (이벤트별이면 봇이 이벤트를 여러 개 만들어 한도를 곱한다).
  */
+function scopes(policy: RatePolicy, eventId: number) {
+  return { token: `${policy.scope}:e${eventId}`, ip: policy.scope };
+}
+
+interface CounterRow {
+  key_hash: string;
+  scope: string;
+  window_key: string;
+  count: number;
+}
+
 /**
- * rate limit 판정 쿼리 하나를 만들어 준다(실행하지 않는다).
+ * 판정에 필요한 카운터를 한 번에 읽는 statement. 라우트가 이벤트 조회와 같은
+ * batch에 실어 **요청당 D1 왕복 1회**로 묶는다.
  *
- * 라우트가 이 statement를 이벤트 조회와 같은 batch에 넣어 **요청당 D1 왕복을
- * 1회로** 묶을 수 있게 분리했다(BE-8). 실행까지 한 번에 하려면 assertRateLimit을
- * 쓴다 — 두 경로가 같은 SQL을 쓰도록 여기 한 곳에서만 만든다.
+ * 최대 4행이다(토큰 버킷 하루·창 + IP 하루·창). 대상 테이블이 아무리 커도
+ * 이 수는 변하지 않는다 — 그것이 이 구조를 도입한 이유다.
  */
-export function rateLimitStatement(
+export function rateCounterStatement(
   db: D1Database,
   keys: RateKeys,
   policy: RatePolicy,
   eventId: number,
 ): D1PreparedStatement {
-  const windowBind = `-${policy.windowSeconds} seconds`;
-  const { table, timeColumn } = policy;
-  const unit = policy.countWrites ? 'write_count' : '1';
-
-  if (!keys.tokenHash) {
-    // 토큰 없음 = IP 단독 강등 버킷. **이벤트로 좁히지 않는다** — 좁히면 토큰을
-    // 생략하는 것만으로 이벤트 수만큼 한도가 곱해져, 강등이 우회가 된다.
-    return db
-      .prepare(
-        `SELECT
-           SUM(${unit}) AS day_count,
-           SUM(${timeColumn} >= datetime('now', ?)) AS recent_count,
-           NULL AS ip_day, NULL AS ip_recent
-         FROM ${table}
-         WHERE client_hash = ? AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
-      )
-      .bind(windowBind, keys.ipHash);
-  }
-
+  const w = windowKeys();
+  const sc = scopes(policy, eventId);
+  // 토큰이 없으면 IP 단독 버킷 하나뿐이라 그 scope만 본다.
   return db
     .prepare(
-      `SELECT
-         SUM(CASE WHEN token_hash = ?1 AND event_id = ?4 THEN ${unit} ELSE 0 END) AS day_count,
-         SUM(token_hash = ?1 AND event_id = ?4 AND ${timeColumn} >= datetime('now', ?3)) AS recent_count,
-         SUM(CASE WHEN client_hash = ?2 THEN ${unit} ELSE 0 END) AS ip_day,
-         SUM(client_hash = ?2 AND ${timeColumn} >= datetime('now', ?3)) AS ip_recent
-       FROM ${table}
-       WHERE (token_hash = ?1 OR client_hash = ?2)
-         AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
+      `SELECT key_hash, scope, window_key, count FROM rate_counters
+        WHERE key_hash IN (?1, ?2) AND scope IN (?3, ?4) AND window_key IN (?5, ?6)`,
     )
-    .bind(keys.tokenHash, keys.ipHash, windowBind, eventId);
+    .bind(keys.tokenHash ?? '', keys.ipHash, sc.token, sc.ip, w.day, w.window);
 }
 
-interface RateCountRow {
-  day_count: number | null;
-  recent_count: number | null;
-  ip_day: number | null;
-  ip_recent: number | null;
+function pick(rows: CounterRow[], keyHash: string | null, scope: string, windowKey: string): number {
+  if (!keyHash) return 0;
+  const hit = rows.find(
+    (r) => r.key_hash === keyHash && r.scope === scope && r.window_key === windowKey,
+  );
+  return hit?.count ?? 0;
 }
 
 /**
- * rateLimitStatement의 결과 행을 정책과 대조해 초과면 RateLimited를 던진다.
+ * 카운터를 정책과 대조해 초과면 RateLimited를 던진다.
  *
- * 토큰이 없으면 ip_day/ip_recent가 NULL이다 — 그때 버킷은 IP 단독 하나뿐이라
- * day_count/recent_count가 이미 그 IP의 값이고, 총량 상한을 또 세면 같은 수를
- * 두 한도에 이중으로 적용하게 된다.
+ * cost는 이 요청이 만들 쓰기 수다 — 배치 하나가 한도를 통째로 뛰어넘지 못하게
+ * "지금까지 + 이번"으로 판정한다.
+ *
+ * 토큰이 없으면 IP 단독 버킷 하나로 강등한다. 한도는 브라우저 버킷과 같게 둬
+ * **토큰 생략이 우회가 되지 않게** 하고, 범위도 전역이다(이벤트별로 좁히면
+ * 토큰을 빼는 것만으로 한도가 이벤트 수만큼 곱해진다).
  */
-export function evaluateRateLimit(row: RateCountRow | null, policy: RatePolicy, cost = 1): void {
+export function evaluateRateLimit(
+  rows: CounterRow[],
+  keys: RateKeys,
+  policy: RatePolicy,
+  eventId: number,
+  cost = 1,
+): void {
+  const w = windowKeys();
+  const sc = scopes(policy, eventId);
   const { messages } = policy;
-  if ((row?.recent_count ?? 0) + cost > policy.maxPerWindow) throw new RateLimited(messages.window);
-  if ((row?.day_count ?? 0) + cost > policy.maxPerDay) throw new RateLimited(messages.day);
-  if (row?.ip_recent == null) return; // 토큰 없음 = IP 단독 버킷, 위에서 이미 판정됨
-  if (row.ip_recent + cost > policy.ipMaxPerWindow) throw new RateLimited(messages.ipWindow);
-  if ((row.ip_day ?? 0) + cost > policy.ipMaxPerDay) throw new RateLimited(messages.ipDay);
+
+  if (!keys.tokenHash) {
+    if (pick(rows, keys.ipHash, sc.ip, w.window) + cost > policy.maxPerWindow) {
+      throw new RateLimited(messages.window);
+    }
+    if (pick(rows, keys.ipHash, sc.ip, w.day) + cost > policy.maxPerDay) {
+      throw new RateLimited(messages.day);
+    }
+    return;
+  }
+
+  if (pick(rows, keys.tokenHash, sc.token, w.window) + cost > policy.maxPerWindow) {
+    throw new RateLimited(messages.window);
+  }
+  if (pick(rows, keys.tokenHash, sc.token, w.day) + cost > policy.maxPerDay) {
+    throw new RateLimited(messages.day);
+  }
+  if (pick(rows, keys.ipHash, sc.ip, w.window) + cost > policy.ipMaxPerWindow) {
+    throw new RateLimited(messages.ipWindow);
+  }
+  if (pick(rows, keys.ipHash, sc.ip, w.day) + cost > policy.ipMaxPerDay) {
+    throw new RateLimited(messages.ipDay);
+  }
 }
 
 /**
- * 두 층의 한도를 모두 검사한다. 넘었으면 RateLimited를 던진다(ADR 0006).
+ * 카운터를 올리는 statement들. **쓰기가 실제로 성공한 뒤에** 같은 batch에 실어
+ * 보낸다 — 요청마다 올리면 무효 요청이 쓰기 티어를 태운다(ADR 0008).
  *
- *   - 토큰 있음: 브라우저 버킷(token_hash, **이 이벤트 안에서만**) + IP 총량(client_hash, 전역)
- *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash, 전역) — 생략이 우회가 되지 않게
- *     한도는 브라우저 버킷과 같다.
- *
- * **범위가 층마다 다른 것이 요점이다**(BE-19 ①). 브라우저 버킷은 "사람의 제출
- * 속도"를 재는 것이라 행사가 바뀌면 다시 세는 게 자연스럽다 — 전역으로 두면 한
- * 행사에서 3건을 쓴 사람이 **동시에 열어 둔 다른 행사에서 첫 질문부터 429**를
- * 맞는다. 반대로 IP 총량은 위조 토큰 방어가 목적이라 전역이어야 의미가 있다:
- * 이벤트별로 좁히면 봇이 이벤트를 여러 개 만들어(운영자 CRUD가 아직 무인증이다)
- * 한도를 이벤트 수만큼 곱할 수 있다.
- *
- * cost는 이 요청이 만들 행 수다 — 설문은 요청 1건이 문항 수만큼 행을 만들므로
- * "지금까지 쓴 행 + 이번 행"이 한도를 넘는지로 판정해야 배치 하나가 한도를
- * 통째로 뛰어넘지 못한다. 질문은 1이다.
- *
- * "하루"의 경계를 쿼리 자체에 둔다(KST 하루 시작) — 해시의 날짜 소금만 믿으면
- * 키 설계가 바뀔 때 COUNT가 조용히 전체 기간 카운트가 된다. 검사와 삽입 사이의
- * 동시성 창은 감수한다 — 초과분 한두 건이 새는 것은 남용 통제의 목적(무료 티어
- * 소진 방지)에 영향이 없다.
+ * 만료는 창 길이보다 넉넉히 잡는다. 하루 카운터는 KST 하루가 끝난 뒤,
+ * 분 카운터는 창이 지난 뒤 정리 대상이 된다.
  */
-export async function assertRateLimit(
+export function rateUsageStatements(
   db: D1Database,
   keys: RateKeys,
   policy: RatePolicy,
   eventId: number,
   cost = 1,
-): Promise<void> {
-  const row = await rateLimitStatement(db, keys, policy, eventId).first<RateCountRow>();
-  evaluateRateLimit(row, policy, cost);
+): D1PreparedStatement[] {
+  const w = windowKeys();
+  const sc = scopes(policy, eventId);
+  const bump = (keyHash: string, scope: string, windowKey: string, ttl: string) =>
+    db
+      .prepare(
+        `INSERT INTO rate_counters (key_hash, scope, window_key, count, expires_at)
+         VALUES (?, ?, ?, ?, datetime('now', ?))
+         ON CONFLICT(key_hash, scope, window_key) DO UPDATE SET count = count + excluded.count`,
+      )
+      .bind(keyHash, scope, windowKey, cost, ttl);
+
+  const dayTtl = '+2 days';
+  const winTtl = `+${Math.max(policy.windowSeconds * 4, 300)} seconds`;
+
+  const out = [bump(keys.ipHash, sc.ip, w.day, dayTtl), bump(keys.ipHash, sc.ip, w.window, winTtl)];
+  if (keys.tokenHash) {
+    out.push(bump(keys.tokenHash, sc.token, w.day, dayTtl));
+    out.push(bump(keys.tokenHash, sc.token, w.window, winTtl));
+  }
+  return out;
+}
+
+/** 만료 카운터 정리. 자정 Cron이 부른다 — 방치하면 단조 증가한다. */
+export async function purgeExpiredCounters(db: D1Database): Promise<number> {
+  const res = await db
+    .prepare("DELETE FROM rate_counters WHERE expires_at <= datetime('now')")
+    .run();
+  return res.meta.changes ?? 0;
 }
