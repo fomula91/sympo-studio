@@ -1,0 +1,45 @@
+# 검증 게이트 (BE-2).
+#
+# 지금까지 lint·test·build는 사람이 손으로 돌렸다 — 규칙으로만 있고 강제되지
+# 않았다는 뜻이다. PR과 main push 양쪽에서 자동으로 돌려, 배포(deploy.yml)가
+# 이 결과를 전제로 삼게 한다.
+#
+# D1·R2 바인딩이 없어도 `next build`는 통과한다(라우트가 요청 시점에만 바인딩을
+# 읽는다). 그래서 이 잡은 비밀값 없이 돈다 — 포크에서 온 PR도 검사할 수 있다.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 같은 브랜치에 연달아 push하면 이전 실행을 취소한다 — 어차피 최신 것만 의미가 있다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 로컬 개발이 24.x다. 여기서 갈라지면 "로컬에선 되는데 CI에선 안 되는"
+          # 차이가 생긴다.
+          node-version: 24
+          cache: npm
+
+      # npm ci는 package-lock.json을 그대로 재현한다 — install과 달리 잠금을
+      # 갱신하지 않아, CI가 개발자와 다른 트리로 도는 일이 없다.
+      - run: npm ci
+
+      - name: lint
+        run: npm run lint
+
+      - name: test
+        run: npm test
+
+      - name: build
+        run: npm run build
