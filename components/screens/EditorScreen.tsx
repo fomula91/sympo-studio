@@ -461,7 +461,9 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
               }}
             >
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 650, letterSpacing: '-0.015em' }}>{t.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 650, letterSpacing: '-0.015em', color: UI.ink }}>
+                  {t.label}
+                </div>
                 <div style={{ fontSize: 12, color: UI.muted, marginTop: 3 }}>{t.desc}</div>
               </div>
               <div
@@ -586,7 +588,10 @@ function ThemeSection({
         {presets.map((p) => {
           const t = derive(p, ev.mode);
           const on = ev.presetId === p.id;
-          const sw = { width: 14, height: 28, borderRadius: 4 } as const;
+          // 라이트 모드로 파생된 프리셋의 ink(거의 검정)가 스튜디오 자체 다크모드의 카드 배경과
+          // 명도가 거의 같아져(둘 다 L≈0.24) 스와치가 배경에 묻혀 안 보이는 문제 — 배경과 무관하게
+          // 항상 경계가 보이도록 얇은 테두리를 둔다.
+          const sw = { width: 14, height: 28, borderRadius: 4, border: `1px solid ${UI.line}` } as const;
           return (
             <button
               key={p.id}
@@ -613,7 +618,16 @@ function ThemeSection({
                 <div style={{ ...sw, background: t.soft }} />
                 <div style={{ ...sw, background: t.ink }} />
               </div>
-              <div style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 650, letterSpacing: '-0.015em' }}>
+              <div
+                style={{
+                  flex: 1,
+                  textAlign: 'left',
+                  fontSize: 13,
+                  fontWeight: 650,
+                  letterSpacing: '-0.015em',
+                  color: UI.ink,
+                }}
+              >
                 {p.label}
               </div>
               <div style={{ fontSize: 13, color: UI.muted }}>{on ? '✓' : ''}</div>
@@ -667,9 +681,9 @@ function ThemeSection({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 5 }}>
-              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.brand }} />
-              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.soft }} />
-              <div style={{ width: 14, height: 28, borderRadius: 4, background: draftTheme.ink }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, border: `1px solid ${UI.line}`, background: draftTheme.brand }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, border: `1px solid ${UI.line}`, background: draftTheme.soft }} />
+              <div style={{ width: 14, height: 28, borderRadius: 4, border: `1px solid ${UI.line}`, background: draftTheme.ink }} />
             </div>
             <input
               className="inp"
