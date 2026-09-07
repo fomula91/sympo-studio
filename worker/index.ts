@@ -4,6 +4,7 @@
 // `opennextjs-cloudflare build` 이후에만 존재한다(로컬 개발 next dev와는 무관).
 
 import handler from '../.open-next/worker.js';
+import { purgeExpiredSessions } from '../lib/auth';
 import { purgeOldLogs, purgeOrphanDocuments } from '../lib/retention';
 import { resetDemoData } from '../lib/seed';
 
@@ -22,6 +23,8 @@ export default {
   // 순서는 정리가 먼저다: 리셋이 실패해도 로그 상한은 지켜진다.
   async scheduled(_event, env) {
     await purgeOldLogs(env.DB);
+    // 만료 세션은 방치하면 단조 증가한다 — 사용자가 지우는 경로가 없다(BE-12).
+    await purgeExpiredSessions(env.DB);
     await resetDemoData(env.DB);
     // 리셋이 자료 행을 CASCADE로 날린 **뒤에** 돌아야 그 객체들이 고아로 잡힌다.
     // R2 객체는 D1 CASCADE를 따라오지 않으므로 이 정리가 유일한 상한이다(BE-6).
