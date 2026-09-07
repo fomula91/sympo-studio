@@ -283,7 +283,6 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                       },
                       ...st.events,
                     ],
-                    editingId: id,
                     section: 'basic',
                   }));
                   router.push(`/events/${id}/edit`);
