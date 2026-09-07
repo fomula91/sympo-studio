@@ -112,9 +112,16 @@ export interface RatePolicy {
 /**
  * 두 층의 한도를 모두 검사한다. 넘었으면 RateLimited를 던진다(ADR 0006).
  *
- *   - 토큰 있음: 브라우저 버킷(token_hash) + IP 총량(client_hash)
- *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash) — 생략이 우회가 되지 않게
+ *   - 토큰 있음: 브라우저 버킷(token_hash, **이 이벤트 안에서만**) + IP 총량(client_hash, 전역)
+ *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash, 전역) — 생략이 우회가 되지 않게
  *     한도는 브라우저 버킷과 같다.
+ *
+ * **범위가 층마다 다른 것이 요점이다**(BE-19 ①). 브라우저 버킷은 "사람의 제출
+ * 속도"를 재는 것이라 행사가 바뀌면 다시 세는 게 자연스럽다 — 전역으로 두면 한
+ * 행사에서 3건을 쓴 사람이 **동시에 열어 둔 다른 행사에서 첫 질문부터 429**를
+ * 맞는다. 반대로 IP 총량은 위조 토큰 방어가 목적이라 전역이어야 의미가 있다:
+ * 이벤트별로 좁히면 봇이 이벤트를 여러 개 만들어(운영자 CRUD가 아직 무인증이다)
+ * 한도를 이벤트 수만큼 곱할 수 있다.
  *
  * cost는 이 요청이 만들 행 수다 — 설문은 요청 1건이 문항 수만큼 행을 만들므로
  * "지금까지 쓴 행 + 이번 행"이 한도를 넘는지로 판정해야 배치 하나가 한도를
@@ -136,12 +143,15 @@ export function rateLimitStatement(
   db: D1Database,
   keys: RateKeys,
   policy: RatePolicy,
+  eventId: number,
 ): D1PreparedStatement {
   const windowBind = `-${policy.windowSeconds} seconds`;
   const { table, timeColumn } = policy;
   const unit = policy.countWrites ? 'write_count' : '1';
 
   if (!keys.tokenHash) {
+    // 토큰 없음 = IP 단독 강등 버킷. **이벤트로 좁히지 않는다** — 좁히면 토큰을
+    // 생략하는 것만으로 이벤트 수만큼 한도가 곱해져, 강등이 우회가 된다.
     return db
       .prepare(
         `SELECT
@@ -157,15 +167,15 @@ export function rateLimitStatement(
   return db
     .prepare(
       `SELECT
-         SUM(CASE WHEN token_hash = ?1 THEN ${unit} ELSE 0 END) AS day_count,
-         SUM(token_hash = ?1 AND ${timeColumn} >= datetime('now', ?3)) AS recent_count,
+         SUM(CASE WHEN token_hash = ?1 AND event_id = ?4 THEN ${unit} ELSE 0 END) AS day_count,
+         SUM(token_hash = ?1 AND event_id = ?4 AND ${timeColumn} >= datetime('now', ?3)) AS recent_count,
          SUM(CASE WHEN client_hash = ?2 THEN ${unit} ELSE 0 END) AS ip_day,
          SUM(client_hash = ?2 AND ${timeColumn} >= datetime('now', ?3)) AS ip_recent
        FROM ${table}
        WHERE (token_hash = ?1 OR client_hash = ?2)
          AND ${timeColumn} >= ${KST_DAY_START_SQL}`,
     )
-    .bind(keys.tokenHash, keys.ipHash, windowBind);
+    .bind(keys.tokenHash, keys.ipHash, windowBind, eventId);
 }
 
 interface RateCountRow {
@@ -194,9 +204,16 @@ export function evaluateRateLimit(row: RateCountRow | null, policy: RatePolicy, 
 /**
  * 두 층의 한도를 모두 검사한다. 넘었으면 RateLimited를 던진다(ADR 0006).
  *
- *   - 토큰 있음: 브라우저 버킷(token_hash) + IP 총량(client_hash)
- *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash) — 생략이 우회가 되지 않게
+ *   - 토큰 있음: 브라우저 버킷(token_hash, **이 이벤트 안에서만**) + IP 총량(client_hash, 전역)
+ *   - 토큰 없음/형식 오류: IP 단독 버킷(client_hash, 전역) — 생략이 우회가 되지 않게
  *     한도는 브라우저 버킷과 같다.
+ *
+ * **범위가 층마다 다른 것이 요점이다**(BE-19 ①). 브라우저 버킷은 "사람의 제출
+ * 속도"를 재는 것이라 행사가 바뀌면 다시 세는 게 자연스럽다 — 전역으로 두면 한
+ * 행사에서 3건을 쓴 사람이 **동시에 열어 둔 다른 행사에서 첫 질문부터 429**를
+ * 맞는다. 반대로 IP 총량은 위조 토큰 방어가 목적이라 전역이어야 의미가 있다:
+ * 이벤트별로 좁히면 봇이 이벤트를 여러 개 만들어(운영자 CRUD가 아직 무인증이다)
+ * 한도를 이벤트 수만큼 곱할 수 있다.
  *
  * cost는 이 요청이 만들 행 수다 — 설문은 요청 1건이 문항 수만큼 행을 만들므로
  * "지금까지 쓴 행 + 이번 행"이 한도를 넘는지로 판정해야 배치 하나가 한도를
@@ -211,8 +228,9 @@ export async function assertRateLimit(
   db: D1Database,
   keys: RateKeys,
   policy: RatePolicy,
+  eventId: number,
   cost = 1,
 ): Promise<void> {
-  const row = await rateLimitStatement(db, keys, policy).first<RateCountRow>();
+  const row = await rateLimitStatement(db, keys, policy, eventId).first<RateCountRow>();
   evaluateRateLimit(row, policy, cost);
 }

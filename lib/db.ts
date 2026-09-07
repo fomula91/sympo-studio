@@ -207,6 +207,29 @@ export function assertPublicEvent(event: { status?: string } | undefined | null)
   }
 }
 
+/**
+ * 참가자·운영자 경로가 공통으로 쓰는 "이벤트 없음". 문구를 한 곳에 둔다 —
+ * 라우트마다 손으로 적으면 비공개 404(assertPublicEvent)와 문구가 갈라져
+ * "존재를 흘리지 않는다"는 규칙이 문구 차이로 새어 나간다.
+ */
+export function eventNotFound(): ApiError {
+  return new ApiError('이벤트를 찾을 수 없습니다.', 404);
+}
+
+/** 운영자 경로의 존재 확인. 참가자 경로는 공개 상태까지 보는 assertPublicEvent를 쓴다. */
+export function assertEventFound(row: unknown): void {
+  if (!row) throw eventNotFound();
+}
+
+/**
+ * 자정(KST) 시드 리셋과 경합하면 존재 확인 이후 이벤트가 사라질 수 있다 —
+ * 그때의 FK 위반은 서버 결함이 아니라 "이벤트가 없어졌다"이므로 404다.
+ * 라우트 5곳에 같은 catch가 복제돼 있던 것을 여기로 모은다(BE-19 ④).
+ */
+export function isMissingEventFk(e: unknown): boolean {
+  return e instanceof Error && e.message.includes('FOREIGN KEY constraint failed');
+}
+
 /** HTTP 상태를 아는 예외의 공통 부모. withRoute가 status 그대로 응답을 만든다. */
 export class ApiError extends Error {
   constructor(
