@@ -613,7 +613,16 @@ function ThemeSection({
                 <div style={{ ...sw, background: t.soft }} />
                 <div style={{ ...sw, background: t.ink }} />
               </div>
-              <div style={{ flex: 1, textAlign: 'left', fontSize: 13, fontWeight: 650, letterSpacing: '-0.015em' }}>
+              <div
+                style={{
+                  flex: 1,
+                  textAlign: 'left',
+                  fontSize: 13,
+                  fontWeight: 650,
+                  letterSpacing: '-0.015em',
+                  color: UI.ink,
+                }}
+              >
                 {p.label}
               </div>
               <div style={{ fontSize: 13, color: UI.muted }}>{on ? '✓' : ''}</div>
