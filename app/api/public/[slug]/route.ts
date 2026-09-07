@@ -82,7 +82,18 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
   // 0행이고, 아래 공개 상태 검사가 어차피 404를 낸다.
   const bySlug = 'event_id = (SELECT id FROM events WHERE slug = ?)';
   const [eventRes, sessions, documents] = await db.batch([
-    db.prepare('SELECT * FROM events WHERE slug = ?').bind(slug),
+    // 프리셋을 LEFT JOIN으로 함께 가져온다(BE-20) — 참가자 화면이 색을 그리려면
+    // presetId 문자열만으로는 부족하고 hue·chroma가 필요하다. 빌트인 5종은
+    // 클라이언트에도 있지만 **추출 프리셋(FE-8)은 서버에만 있어**, id만 내려주면
+    // 참가자 페이지가 못 찾고 기본 프리셋으로 조용히 폴백한다. 별도 statement가
+    // 아니라 JOIN인 이유는 왕복을 늘리지 않기 위해서다.
+    db
+      .prepare(
+        `SELECT e.*, p.label AS preset_label, p.hue AS preset_hue, p.chroma AS preset_chroma
+         FROM events e LEFT JOIN brand_presets p ON p.id = e.preset_id
+         WHERE e.slug = ?`,
+      )
+      .bind(slug),
     db.prepare(`SELECT * FROM sessions WHERE ${bySlug} ORDER BY sort_order, id`).bind(slug),
     db
       .prepare(
@@ -93,7 +104,9 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
       .bind(slug),
   ]);
 
-  const event = eventRes.results[0] as EventRow | undefined;
+  const event = eventRes.results[0] as
+    | (EventRow & { preset_label: string | null; preset_hue: number | null; preset_chroma: number | null })
+    | undefined;
   if (!event || !PUBLIC_STATUSES.has(event.status)) {
     return json({ error: '페이지를 찾을 수 없습니다.' }, 404);
   }
@@ -101,6 +114,20 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
   return Response.json(
     {
       ...toEventDTO(event),
+      theme: {
+        ...toEventDTO(event).theme,
+        // 값이 있으면 클라이언트는 이걸로 derive하고, null이면 presetId로 빌트인을
+        // 찾는 기존 경로를 그대로 쓴다 — 계약을 깨지 않고 얹는다.
+        preset:
+          event.preset_hue !== null && event.preset_chroma !== null
+            ? {
+                id: event.preset_id,
+                label: event.preset_label,
+                h: event.preset_hue,
+                c: event.preset_chroma,
+              }
+            : null,
+      },
       sessions: (sessions.results as unknown as SessionRow[]).map(toSessionDTO),
       documents: await Promise.all(
         (documents.results as unknown as PublicDocumentRow[]).map((r) => toDocumentDTO(r, secret)),
