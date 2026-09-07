@@ -1,5 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
+  eventNotFound,
+  isMissingEventFk,
   assertPublicEvent,
   BadRequest,
   eventId,
@@ -70,7 +72,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const respondent = await sha16(`respondent|${token}`);
 
   const keys = await rateKeys(request);
-  await assertRateLimit(db, keys, SURVEY_RATE_POLICY, answers.length);
+  await assertRateLimit(db, keys, SURVEY_RATE_POLICY, id, answers.length);
 
   // ON CONFLICT의 대상은 idx_survey_once(UNIQUE)와 정확히 같은 표현식이어야
   // 한다 — session_id NULL을 IFNULL로 접는 것까지 포함해서.
@@ -110,11 +112,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     // 남지 않는다.
     await db.batch(statements);
   } catch (e) {
-    // 자정(KST) 시드 리셋과 경합하면 위의 존재 검사 이후 이벤트가 사라질 수
-    // 있다 — 그때의 FK 위반은 결함이 아니라 "이벤트가 없어졌다"이므로 404.
-    if (e instanceof Error && e.message.includes('FOREIGN KEY constraint failed')) {
-      return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    }
+    // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
+    if (isMissingEventFk(e)) throw eventNotFound();
     throw e;
   }
 

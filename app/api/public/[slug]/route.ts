@@ -72,34 +72,36 @@ export const GET = withRoute(async (_request: NextRequest, ctx: SlugCtx) => {
   const db = await getDb();
   const secret = getUrlSecret(await getEnv());
 
-  const event = await db
-    .prepare('SELECT * FROM events WHERE slug = ?')
-    .bind(slug)
-    .first<EventRow>();
-
-  if (!event || !PUBLIC_STATUSES.has(event.status)) {
-    return json({ error: '페이지를 찾을 수 없습니다.' }, 404);
-  }
-
-  const [sessions, documents] = await Promise.all([
-    db
-      .prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id')
-      .bind(event.id)
-      .all<SessionRow>(),
+  // 세 쿼리를 batch로 묶어 **요청당 D1 왕복 1회**(BE-19 ③). `Promise.all`은
+  // 동시에 보내도 왕복이 3회다 — 참가자 화면의 가장 트래픽 많은 경로라 여기서
+  // 왕복 수가 곧 무료 티어 소진 속도가 된다(`app/api/events/[id]`가 같은 이유로
+  // 이미 batch를 쓴다).
+  //
+  // 이벤트 id를 아직 모르는 상태에서 하위 조회를 같은 batch에 실어야 하므로
+  // slug 서브쿼리로 건다. 없는 slug면 서브쿼리가 NULL이 되어 하위 조회는
+  // 0행이고, 아래 공개 상태 검사가 어차피 404를 낸다.
+  const bySlug = 'event_id = (SELECT id FROM events WHERE slug = ?)';
+  const [eventRes, sessions, documents] = await db.batch([
+    db.prepare('SELECT * FROM events WHERE slug = ?').bind(slug),
+    db.prepare(`SELECT * FROM sessions WHERE ${bySlug} ORDER BY sort_order, id`).bind(slug),
     db
       .prepare(
         `SELECT id, session_id, display_name, tag, status, page_count, size_bytes,
                 r2_key
-         FROM documents WHERE event_id = ? ORDER BY sort_order, id`,
+         FROM documents WHERE ${bySlug} ORDER BY sort_order, id`,
       )
-      .bind(event.id)
-      .all<PublicDocumentRow>(),
+      .bind(slug),
   ]);
+
+  const event = eventRes.results[0] as EventRow | undefined;
+  if (!event || !PUBLIC_STATUSES.has(event.status)) {
+    return json({ error: '페이지를 찾을 수 없습니다.' }, 404);
+  }
 
   return Response.json(
     {
       ...toEventDTO(event),
-      sessions: sessions.results.map(toSessionDTO),
+      sessions: (sessions.results as unknown as SessionRow[]).map(toSessionDTO),
       documents: await Promise.all(
         (documents.results as unknown as PublicDocumentRow[]).map((r) => toDocumentDTO(r, secret)),
       ),

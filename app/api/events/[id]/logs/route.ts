@@ -1,5 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
+  eventNotFound,
+  isMissingEventFk,
   assertPublicEvent,
   BadRequest,
   eventId,
@@ -43,7 +45,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   const [eventRes, rateRes] = await db.batch([
     db.prepare('SELECT id, status FROM events WHERE id = ?').bind(id),
-    rateLimitStatement(db, keys, LOG_RATE_POLICY),
+    rateLimitStatement(db, keys, LOG_RATE_POLICY, id),
   ]);
   // 비공개 상태는 없는 이벤트와 같은 404다(BE-16).
   assertPublicEvent(eventRes.results[0] as { status?: string });
@@ -62,10 +64,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   try {
     await db.batch(statements);
   } catch (e) {
-    // 자정(KST) 시드 리셋과 경합하면 존재 확인 이후 이벤트가 사라질 수 있다.
-    if (e instanceof Error && e.message.includes('FOREIGN KEY constraint failed')) {
-      return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
-    }
+    // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
+    if (isMissingEventFk(e)) throw eventNotFound();
     throw e;
   }
 

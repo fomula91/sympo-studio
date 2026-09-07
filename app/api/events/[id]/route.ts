@@ -98,8 +98,9 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (key === 'date' && typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
     }
-    if (key === 'capacity' && value !== null && typeof value !== 'number') {
-      throw new BadRequest('capacity는 숫자여야 합니다.');
+    // 음수 금지 — 응답률·참석률의 분모다(BE-19 ②).
+    if (key === 'capacity' && value !== null && (typeof value !== 'number' || value < 0)) {
+      throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
     }
     sets.push(`${column} = ?`);
     binds.push(value ?? null);
