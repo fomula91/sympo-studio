@@ -461,7 +461,9 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
               }}
             >
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 650, letterSpacing: '-0.015em' }}>{t.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 650, letterSpacing: '-0.015em', color: UI.ink }}>
+                  {t.label}
+                </div>
                 <div style={{ fontSize: 12, color: UI.muted, marginTop: 3 }}>{t.desc}</div>
               </div>
               <div
