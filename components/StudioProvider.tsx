@@ -41,7 +41,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // "지금 편집 중인 이벤트"는 URL이 정본이다 — 컨텍스트 state로 따로 들고 effect로 동기화하면
   // 첫 렌더(들)에 URL과 다른 이전 값이 잠깐 보인다(하드 리로드 시 헤더·게이트 오표시, PR #9 리뷰).
   const params = useParams<{ id?: string }>();
-  const urlEventId = params.id ? Number(params.id) : null;
+  // `Number('abc')`는 NaN인데 `NaN !== NaN`(===도 마찬가지)은 항상 true라, 숫자가 아닌 id를
+  // 그대로 두면 아래 렌더 중 비교가 매번 "달라짐"으로 판정돼 setState를 무한 반복한다
+  // (팀원 교차 리뷰가 실제 500으로 재현·발견). 존재하는 이벤트 id가 아니면 null로 눌러 담아,
+  // 무한 루프뿐 아니라 없는 id가 selectedId에 남아 이후 라우트까지 오염시키는 것도 막는다 —
+  // 페이지의 `ev.id !== Number(id)` 검사는 이 null 폴백으로도 그대로 404를 낸다.
+  const parsedId = params.id ? Number(params.id) : null;
+  const urlEventId = parsedId != null && s.events.some((e) => e.id === parsedId) ? parsedId : null;
   // `/console`·`/report`는 URL에 이벤트 id가 없다 — 그런 라우트에서도 "마지막으로 편집하던
   // 이벤트"를 계속 보여줘야 하므로 별도로 기억해둔다. effect가 아니라 렌더 중 비교로 갱신하는
   // 이유는 URL이 바뀐 바로 그 렌더에서 동기적으로 값을 맞춰야(위 주석과 같은 이유) 하기 때문이다
