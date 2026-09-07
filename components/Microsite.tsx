@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
+import { sendEventLogs } from '@/lib/api';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -47,6 +48,63 @@ export default function Microsite({
   const online = useOnlineStatus();
   const [qaOpen, setQaOpen] = useState(false);
   const docs = documents ?? DEMO_DOCUMENTS;
+  const agendaRef = useRef<HTMLOListElement>(null);
+  // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
+  // seen을 effect 안에 두면 그때마다 초기화돼 이미 본 세션을 다시 화면에 노출된 것으로 오인해
+  // session_view를 중복 전송한다 — ref로 렌더 사이에 유지한다.
+  const seenSessionsRef = useRef<Set<number>>(new Set());
+
+  // 아젠다 카드가 화면에 노출될 때 session_view를 배치로 보낸다(FE-20) — 스튜디오 미리보기(preview)에서는 보내지 않는다.
+  // 값은 이 화면에서만 검증된 선택이다 — FE-6·FE-4가 같은 패턴으로 doc_view·survey_complete를 추가할 때
+  // 그대로 맞출지 다르게 갈지 판단하고 넘어갈 것.
+  useEffect(() => {
+    const SESSION_VIEW_DEBOUNCE_MS = 1500;
+    const SESSION_VIEW_THRESHOLD = 0.5;
+    if (preview || eventId == null) return;
+    const container = agendaRef.current;
+    if (!container) return;
+    const seen = seenSessionsRef.current;
+    let pending: number[] = [];
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      const ids = pending;
+      pending = [];
+      if (ids.length === 0) return;
+      sendEventLogs(eventId, ids.map((sessionId) => ({ kind: 'session_view' as const, sessionId }))).then((ok) => {
+        // 실패분은 seen에서 빼서, sessions 재조회로 effect가 다시 돌 때(FE-9 재연결) 다시 관찰되게 한다(FE-21).
+        if (!ok) for (const id of ids) seen.delete(id);
+      });
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const id = Number((entry.target as HTMLElement).dataset.sessionId);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          pending.push(id);
+          observer.unobserve(entry.target);
+        }
+        if (pending.length > 0 && !timer) timer = setTimeout(flush, SESSION_VIEW_DEBOUNCE_MS);
+      },
+      { threshold: SESSION_VIEW_THRESHOLD },
+    );
+    // 이미 seen인 요소는 다시 관찰하지 않는다 — sessions 참조가 바뀌어 effect가 재실행돼도
+    // 화면에 그대로 떠 있는 항목을 또 감지해 옵저버에 올리지 않게.
+    container
+      .querySelectorAll<HTMLElement>('[data-session-id]')
+      .forEach((el) => {
+        if (!seen.has(Number(el.dataset.sessionId))) observer.observe(el);
+      });
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+      // 디바운스 중 effect가 재실행되면(예: sessions 재조회) seen에는 이미 기록됐지만
+      // 아직 전송 안 된 pending이 남는다 — 유실 없이 지금 바로 흘려보낸다.
+      if (pending.length > 0) flush();
+    };
+  }, [eventId, preview, sessions]);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
 
@@ -210,6 +268,7 @@ export default function Microsite({
       >
         <div style={sectionLabel}>아젠다</div>
         <ol
+          ref={agendaRef}
           style={{
             listStyle: 'none',
             margin: '0 0 24px',
@@ -222,6 +281,7 @@ export default function Microsite({
           {sessions.map((s) => (
             <li
               key={s.id}
+              data-session-id={s.id}
               style={{
                 display: 'flex',
                 alignItems: 'flex-start',

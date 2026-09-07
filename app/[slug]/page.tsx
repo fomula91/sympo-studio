@@ -2,9 +2,9 @@
 
 // 참가자용 공개 마이크로사이트 — GET /api/public/[slug]에서 실제 이벤트를 받아 렌더한다
 import { notFound, useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
-import { fetchWithTimeout } from '@/lib/api';
+import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
 import { UI } from '@/lib/ui';
@@ -70,6 +70,18 @@ export default function PublicEventPage() {
   const { slug } = useParams<{ slug: string }>();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [retryTick, setRetryTick] = useState(0);
+  const pageViewSent = useRef(false);
+
+  useEffect(() => {
+    if (state.status === 'ready' && !pageViewSent.current) {
+      pageViewSent.current = true;
+      // 오프라인 등으로 실패하면 표시를 되돌린다 — 아래 두 번째 effect의 online 리스너가
+      // 재조회하면 state가 새 참조가 되어 이 effect가 다시 돌고, 그때 재시도된다(FE-21).
+      sendEventLogs(state.data.id, [{ kind: 'page_view' }]).then((ok) => {
+        if (!ok) pageViewSent.current = false;
+      });
+    }
+  }, [state]);
 
   useEffect(() => {
     let cancelled = false;
