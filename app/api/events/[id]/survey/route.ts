@@ -11,7 +11,14 @@ import {
   type EventRow,
   type IdCtx,
 } from '@/lib/db';
-import { assertRateLimit, rateKeys, sha16, TOKEN_PATTERN } from '@/lib/rate-limit';
+import {
+  evaluateRateLimit,
+  rateCounterStatement,
+  rateKeys,
+  rateUsageStatements,
+  sha16,
+  TOKEN_PATTERN,
+} from '@/lib/rate-limit';
 import { SURVEY_RATE_POLICY, validateSurveyBody } from '@/lib/survey';
 
 /**
@@ -72,7 +79,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const respondent = await sha16(`respondent|${token}`);
 
   const keys = await rateKeys(request);
-  await assertRateLimit(db, keys, SURVEY_RATE_POLICY, id, answers.length);
+  const { results: counters } = await rateCounterStatement(db, keys, SURVEY_RATE_POLICY, id).all();
+  evaluateRateLimit(counters as never, keys, SURVEY_RATE_POLICY, id, answers.length);
 
   // ON CONFLICT의 대상은 idx_survey_once(UNIQUE)와 정확히 같은 표현식이어야
   // 한다 — session_id NULL을 IFNULL로 접는 것까지 포함해서.
@@ -110,7 +118,8 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   try {
     // batch는 D1에서 단일 트랜잭션이다 — 문항 일부만 저장된 어정쩡한 상태가
     // 남지 않는다.
-    await db.batch(statements);
+    // 카운터는 쓰기 성공과 같은 트랜잭션에서 올린다(ADR 0008).
+    await db.batch([...statements, ...rateUsageStatements(db, keys, SURVEY_RATE_POLICY, id, answers.length)]);
   } catch (e) {
     // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
     if (isMissingEventFk(e)) throw eventNotFound();

@@ -32,18 +32,15 @@ export const MAX_ANSWERS_PER_REQUEST = 20;
 //   IP 하루 2,000행 — 세션별 1문항 흐름(문항 ~10개)이면 120명 행사 전원을
 //     담는다. D1 쓰기 무료 티어(10만/일)의 2%라 상한까지 남용돼도 티어는 안전하다.
 export const SURVEY_RATE_POLICY: RatePolicy = {
-  table: 'survey_responses',
-  // 재제출이 upsert라 created_at(최초 제출)로는 재제출이 판정에 안 잡힌다.
-  timeColumn: 'updated_at',
+  scope: 'survey',
   windowSeconds: 60,
   maxPerWindow: 60,
   maxPerDay: 200,
   ipMaxPerWindow: 400,
   ipMaxPerDay: 2000,
-  // 재제출은 upsert라 행이 안 는다 — 하루 한도는 행 수가 아니라 쓰기 누적
-  // (write_count 합)으로 센다. 아니면 같은 문항 반복 제출이 어떤 한도에도
-  // 안 걸린 채 D1 쓰기를 무한정 소모한다(RatePolicy.countWrites 주석 참조).
-  countWrites: true,
+  // 카운터가 쓰기를 세므로(BE-21) 재제출도 그대로 잡힌다 — upsert라 행이 안
+  // 늘어도 cost는 문항 수만큼 올라간다. 예전의 write_count 컬럼 우회 대응이
+  // 필요 없어졌다.
   messages: {
     window: '잠시 후 다시 시도해 주세요. 설문 제출이 너무 잦습니다.',
     day: '오늘 제출할 수 있는 설문 응답 수를 모두 사용했습니다.',

@@ -16,8 +16,7 @@ export const LOG_KINDS = ['page_view', 'session_view', 'doc_view', 'survey_compl
 export const MAX_LOGS_PER_REQUEST = 30;
 
 export const LOG_RATE_POLICY: RatePolicy = {
-  table: 'event_logs',
-  timeColumn: 'created_at',
+  scope: 'logs',
   windowSeconds: 60,
   // 행 기준. 한 참가자가 아젠다를 훑으며 세션 6개 + 자료 4개를 여는 것이
   // 1분 안에 일어날 수 있어 Q&A(3건)와는 자릿수가 다르다.

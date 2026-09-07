@@ -18,7 +18,7 @@ import {
   type QuestionDTOInput,
   type QuestionRow,
 } from '@/lib/qa';
-import { evaluateRateLimit, rateKeys, rateLimitStatement } from '@/lib/rate-limit';
+import { evaluateRateLimit, rateCounterStatement, rateKeys, rateUsageStatements } from '@/lib/rate-limit';
 
 const WINDOW = 200;
 
@@ -153,7 +153,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   const [eventRes, rateRes] = await db.batch([
     db.prepare('SELECT id, status, engage_qa FROM events WHERE id = ?').bind(id),
-    rateLimitStatement(db, keys, QUESTION_RATE_POLICY, id),
+    rateCounterStatement(db, keys, QUESTION_RATE_POLICY, id),
   ]);
 
   const event = eventRes.results[0] as Pick<EventRow, 'id' | 'status' | 'engage_qa'> | undefined;
@@ -162,7 +162,7 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   assertPublicEvent(event);
   if (!event!.engage_qa) return json({ error: '이 행사는 Q&A를 받지 않습니다.' }, 403);
 
-  evaluateRateLimit(rateRes.results[0] as never, QUESTION_RATE_POLICY);
+  evaluateRateLimit(rateRes.results as never, keys, QUESTION_RATE_POLICY, id);
 
   const raw = (await request.json().catch(() => {
     throw new BadRequest('요청 본문이 JSON이 아닙니다.');
@@ -188,15 +188,18 @@ export const POST = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     sessionId = raw.sessionId;
   }
 
+  // 카운터는 **쓰기가 성공한 뒤에** 같은 batch에서 올린다(ADR 0008) — 요청마다
+  // 올리면 무효 요청이 D1 쓰기 티어를 태운다.
   let row: QuestionRow | null;
   try {
-    row = await db
-      .prepare(
+    const [inserted] = await db.batch([
+      db.prepare(
         `INSERT INTO questions (event_id, session_id, body, author, client_hash, token_hash)
          VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
-      )
-      .bind(id, sessionId, body, author, keys.ipHash, keys.tokenHash)
-      .first<QuestionRow>();
+      ).bind(id, sessionId, body, author, keys.ipHash, keys.tokenHash),
+      ...rateUsageStatements(db, keys, QUESTION_RATE_POLICY, id),
+    ]);
+    row = (inserted.results[0] as QuestionRow | undefined) ?? null;
   } catch (e) {
     // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
     if (isMissingEventFk(e)) throw eventNotFound();
