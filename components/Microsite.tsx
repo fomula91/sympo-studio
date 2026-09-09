@@ -495,6 +495,7 @@ export default function Microsite({
               eventTitle={ev.title}
               venue={ev.venue}
               date={ev.date}
+              certEnabled={ev.engage.cert}
               onComplete={() => sendEventLogs(eventId, [{ kind: 'survey_complete' }])}
             />
           ) : (

@@ -2,7 +2,7 @@
 
 // 설문 참여 패널 — 2단(행사 전체 만족도 → 세션별 평가) 후 수료증 다운로드로 이어지는 흐름.
 // 고령 참가자가 주 대상이라(field-experience.md) 문항 수를 최소화하고 버튼을 크게 잡았다.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiClientError, submitSurvey, type SurveyAnswer } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import type { Session } from '@/lib/types';
@@ -16,6 +16,8 @@ interface SurveyPanelProps {
   eventTitle: string;
   venue: string;
   date: string;
+  /** engage.cert — 꺼진 이벤트는 완료 화면에 수료증 다운로드를 보여주지 않는다. */
+  certEnabled: boolean;
   onComplete?: () => void;
 }
 
@@ -72,6 +74,7 @@ export default function SurveyPanel({
   eventTitle,
   venue,
   date,
+  certEnabled,
   onComplete,
 }: SurveyPanelProps) {
   const [step, setStep] = useState<1 | 2 | 'done'>(1);
@@ -82,6 +85,15 @@ export default function SurveyPanel({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [surveyDisabled, setSurveyDisabled] = useState(false);
   const [cooldown, setCooldown] = useState(false);
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // 60초 창 한도 해제 타이머가 언마운트(설문 패널 닫기·페이지 이탈) 후에도 남아있으면
+    // 사라진 컴포넌트에 setState를 호출한다 — 언마운트 시 정리한다.
+    return () => {
+      if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+    };
+  }, []);
 
   async function handleSubmit() {
     if (overall == null) return;
@@ -105,7 +117,7 @@ export default function SurveyPanel({
         if (e.status === 429) {
           const isDailyLimit = e.message.includes('오늘');
           setCooldown(true);
-          if (!isDailyLimit) setTimeout(() => setCooldown(false), 60000);
+          if (!isDailyLimit) cooldownTimerRef.current = setTimeout(() => setCooldown(false), 60000);
         }
         if (e.status === 403) setSurveyDisabled(true);
       } else {
@@ -150,44 +162,48 @@ export default function SurveyPanel({
     return (
       <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: t.ink }}>설문에 참여해주셔서 감사합니다</div>
-        <div>
-          <label style={{ fontSize: 12.5, color: t.muted, display: 'block', marginBottom: 6 }}>
-            이름을 남겨주시면 수료증에 표시됩니다 (선택)
-          </label>
-          <input
-            value={participantName}
-            onChange={(e) => setParticipantName(e.target.value)}
-            placeholder="이름"
-            maxLength={40}
-            style={{
-              width: '100%',
-              height: 44,
-              borderRadius: 10,
-              border: `1px solid ${t.line}`,
-              background: t.bg,
-              color: t.ink,
-              fontSize: 15,
-              padding: '0 12px',
-            }}
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => generateCertificate({ eventTitle, venue, date, participantName })}
-          style={{
-            height: 54,
-            borderRadius: 14,
-            border: 'none',
-            background: t.brand,
-            color: t.onBrand,
-            fontSize: 14.5,
-            fontWeight: 700,
-            letterSpacing: '-0.02em',
-            cursor: 'pointer',
-          }}
-        >
-          수료증 다운로드
-        </button>
+        {certEnabled ? (
+          <>
+            <div>
+              <label style={{ fontSize: 12.5, color: t.muted, display: 'block', marginBottom: 6 }}>
+                이름을 남겨주시면 수료증에 표시됩니다 (선택)
+              </label>
+              <input
+                value={participantName}
+                onChange={(e) => setParticipantName(e.target.value)}
+                placeholder="이름"
+                maxLength={40}
+                style={{
+                  width: '100%',
+                  height: 44,
+                  borderRadius: 10,
+                  border: `1px solid ${t.line}`,
+                  background: t.bg,
+                  color: t.ink,
+                  fontSize: 15,
+                  padding: '0 12px',
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => generateCertificate({ eventTitle, venue, date, participantName })}
+              style={{
+                height: 54,
+                borderRadius: 14,
+                border: 'none',
+                background: t.brand,
+                color: t.onBrand,
+                fontSize: 14.5,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                cursor: 'pointer',
+              }}
+            >
+              수료증 다운로드
+            </button>
+          </>
+        ) : null}
       </div>
     );
   }
@@ -209,7 +225,10 @@ export default function SurveyPanel({
           ) : null}
           <button
             type="button"
-            onClick={() => setStep(2)}
+            onClick={() => {
+              setSubmitError(null);
+              setStep(2);
+            }}
             disabled={overall == null}
             style={{
               height: 54,
@@ -254,7 +273,10 @@ export default function SurveyPanel({
           <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="button"
-              onClick={() => setStep(1)}
+              onClick={() => {
+                setSubmitError(null);
+                setStep(1);
+              }}
               style={{
                 height: 54,
                 width: 88,
