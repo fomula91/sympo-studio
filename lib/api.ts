@@ -82,6 +82,23 @@ export async function postQuestion(eventId: number, body: string): Promise<Quest
   return (await res.json()) as Question;
 }
 
+export interface SurveyAnswer {
+  questionKey: string;
+  answer: string | number;
+  sessionId?: number;
+}
+
+export async function submitSurvey(eventId: number, answers: SurveyAnswer[]): Promise<number> {
+  const res = await fetchWithTimeout(`/api/events/${eventId}/survey`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-client-token': getClientToken() },
+    body: JSON.stringify({ answers }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { saved: number };
+  return data.saved;
+}
+
 export interface EventOps {
   capacity: number | null;
   visitors: number;
