@@ -9,6 +9,7 @@ import {
   withRoute,
   type EventRow,
 } from '@/lib/db';
+import { getSessionUser } from '@/lib/auth';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
@@ -117,13 +118,22 @@ export const POST = withRoute(async (request: NextRequest) => {
   const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
   const slug = await ensureUniqueSlug(db, requested);
 
+  // 로그인했으면 소유자를 박고, 아니면 NULL로 둔다 — NULL은 데모 이벤트라는 뜻이고
+  // 자정 Cron의 리셋 대상이 된다(lib/seed.ts). **여기서 로그인을 요구하지는 않는다** —
+  // 게스트를 401로 막는 것은 BE-13의 일이고, 이 커밋에서 함께 잠그면 참가자·데모
+  // 경로의 회귀를 한 번에 판정해야 해서 위험이 섞인다.
+  //
+  // 이 한 줄이 없으면 owner_id를 가진 행이 **아예 생길 수 없어**, 0010이 만든 컬럼도
+  // 시드 가드(`WHERE owner_id IS NULL`)도 CASCADE도 지킬 대상이 없는 채로 남는다.
+  const owner = await getSessionUser(db, request);
+
   const row = await db
     .prepare(
-      `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status, owner_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
-    .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status)
+    .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status, owner?.id ?? null)
     .first<EventRow>();
 
   if (!row) throw new Error('이벤트 생성 후 행을 돌려받지 못했습니다.');
