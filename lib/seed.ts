@@ -24,6 +24,8 @@ export async function resetDemoData(db: D1Database): Promise<void> {
   // 통째로 지운다** — events의 CASCADE를 타고 아젠다·자료·질문·설문 응답까지
   // 함께 날아간다. owner_id를 도입한 마이그레이션(0007)과 **같은 커밋에서**
   // 한정한 이유가 이것이다(ADR 0007). 데모 이벤트는 소유자가 없다.
+  // 이 술어가 사라지지 않는지는 lib/seed.test.ts가 고정한다 — 조용히 되돌아가면
+  // 증상이 "매일 아침 사용자 데이터가 사라져 있다"로만 드러난다.
   const statements: D1PreparedStatement[] = [
     db.prepare('DELETE FROM events WHERE owner_id IS NULL'),
   ];

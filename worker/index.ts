@@ -4,11 +4,8 @@
 // `opennextjs-cloudflare build` 이후에만 존재한다(로컬 개발 next dev와는 무관).
 
 import handler from '../.open-next/worker.js';
-<<<<<<< HEAD
-import { purgeExpiredCounters } from '../lib/rate-limit';
-=======
 import { purgeExpiredSessions } from '../lib/auth';
->>>>>>> c47bd40 (feat(be-12): Google SSO 인증 기반 — 스키마·세션·OAuth 라우트)
+import { purgeExpiredCounters } from '../lib/rate-limit';
 import { purgeOldLogs, purgeOrphanDocuments } from '../lib/retention';
 import { resetDemoData } from '../lib/seed';
 
