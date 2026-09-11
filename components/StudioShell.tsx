@@ -10,7 +10,8 @@ import { autoSlug, defaultEventDetail, NAV, uniqueSlug } from '@/lib/data';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
-const BULK_ACTIONS = ['공개예정', '완료', '보관', '복제'];
+// 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
+const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
 
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 

@@ -28,7 +28,7 @@ export async function resetDemoData(db: D1Database): Promise<void> {
         `INSERT INTO events
            (id, slug, brand, title, venue, event_date, host, capacity, status,
             engage_qa, engage_survey, engage_chat, engage_cert)
-         VALUES (1, ?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '진행중', 1, 1, 0, 1)`,
+         VALUES (1, ?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개', 1, 1, 0, 1)`,
       )
       .bind(autoSlug(DEMO_TITLE, DEMO_VENUE, DEMO_DATE), DEMO_TITLE, DEMO_VENUE, DEMO_DATE),
   );

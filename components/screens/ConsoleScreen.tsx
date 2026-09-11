@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { STATUS } from '@/lib/data';
 import type { PatchFn, SortKey, StudioState } from '@/lib/types';
-import { MONO, pillStyle, seg, UI } from '@/lib/ui';
+import { eventPhase } from '@/lib/status';
+import { MONO, phasePillStyle, pillStyle, seg, UI } from '@/lib/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
 
@@ -160,6 +161,11 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                     <div style={pillStyle(e.status)}>{e.status}</div>
+                    {(() => {
+                      // 시점은 저장값이 아니라 event_date에서 파생된다(BE-23).
+                      const phase = eventPhase(e.date);
+                      return phase ? <div style={phasePillStyle()}>{phase}</div> : null;
+                    })()}
                     <div
                       style={{
                         fontFamily: MONO,

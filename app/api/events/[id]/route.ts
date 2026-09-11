@@ -14,6 +14,7 @@ import {
   type IdCtx,
   type SessionRow,
 } from '@/lib/db';
+import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
  * GET /api/events/[id] — 이벤트 단건 + 아젠다 + 자료
@@ -98,6 +99,13 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     const value = body[key];
     if (key === 'date' && typeof value === 'string' && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
+    }
+    // 목록 밖의 값을 막는 것이 요점이다(BE-23) — status는 공개/비공개를 가르는
+    // 유일한 값이라, 오타 하나가 PUBLIC_STATUSES를 빗나가면 공개 페이지가 **200을
+    // 돌려받은 채로** 조용히 404가 된다. 호출자는 저장에 성공했다고 믿는다.
+    // null도 여기서 막힌다 — 컬럼이 NOT NULL이라 통과시키면 UPDATE가 터진다.
+    if (key === 'status' && !isEventStatus(value)) {
+      throw new BadRequest(statusBadRequestMessage());
     }
     // 음수 금지 — 응답률·참석률의 분모다(BE-19 ②).
     if (key === 'capacity' && value !== null && (typeof value !== 'number' || value < 0)) {

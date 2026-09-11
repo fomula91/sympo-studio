@@ -9,6 +9,7 @@ import {
   withRoute,
   type EventRow,
 } from '@/lib/db';
+import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
  * GET /api/events — 이벤트 목록
@@ -31,6 +32,9 @@ export const GET = withRoute(async (request: NextRequest) => {
     binds.push(`%${q}%`);
   }
   if (status && status !== '전체') {
+    // 목록 밖의 값은 400으로 끊는다(BE-23). 그냥 통과시키면 0건을 돌려주는데,
+    // 화면에는 "해당 상태의 이벤트가 없음"과 "오타로 잘못 물었음"이 똑같이 보인다.
+    if (!isEventStatus(status)) throw new BadRequest(statusBadRequestMessage());
     where.push(`status = ?${binds.length + 1}`);
     binds.push(status);
   }
@@ -93,7 +97,11 @@ export const POST = withRoute(async (request: NextRequest) => {
   const venue = str(body.venue, 'venue');
   const date = str(body.date, 'date');
   const host = str(body.host, 'host');
+  // 목록 밖의 값을 막는 것이 요점이다(BE-23) — PATCH와 같은 이유다. 생성 경로도
+  // 아무 문자열이나 받아 201로 돌려주고 있었고, 그렇게 만들어진 이벤트는 공개
+  // 페이지가 처음부터 404라 운영자가 원인을 짚을 단서가 없다.
   const status = str(body.status, 'status') ?? '초안';
+  if (!isEventStatus(status)) throw new BadRequest(statusBadRequestMessage());
 
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new BadRequest('date는 YYYY-MM-DD 형식이어야 합니다.');
