@@ -12,6 +12,7 @@ import {
   type DocumentRow,
   type IdCtx,
 } from '@/lib/db';
+import { assertCanEdit } from '@/lib/auth';
 
 /**
  * PUT /api/events/[id]/documents — 자료 목록(메타) 저장 (BE-14)
@@ -31,6 +32,9 @@ import {
 export const PUT = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
+  // 이벤트를 바꾸는 쓰기 경로는 전부 소유권을 지난다 — 상위 라우트만 막으면
+  // 여기로 우회된다(Codex 교차 리뷰 #2에서 재현).
+  await assertCanEdit(db, request, id);
 
   const raw = (await request.json().catch(() => {
     throw new BadRequest('요청 본문이 JSON이 아닙니다.');

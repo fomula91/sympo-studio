@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { ApiError, BadRequest, getDb, getEnv, json, withRoute, type DocumentRow } from '@/lib/db';
+import { assertCanEdit } from '@/lib/auth';
 import { assertUploadable, documentKey, MAX_FILE_BYTES } from '@/lib/r2';
 
 type UploadCtx = { params: Promise<{ id: string; docId: string }> };
@@ -45,6 +46,10 @@ export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
 
   const db = await getDb();
   const env = await getEnv();
+
+  // 이벤트를 바꾸는 쓰기 경로는 전부 소유권을 지난다 — 상위 라우트만 막으면
+  // 여기로 우회된다(Codex 교차 리뷰 #2에서 재현).
+  await assertCanEdit(db, request, eventId);
 
   const doc = await db
     .prepare('SELECT id, r2_key FROM documents WHERE id = ? AND event_id = ?')

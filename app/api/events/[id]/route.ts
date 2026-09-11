@@ -3,7 +3,6 @@ import {
   isMissingEventFk,
   BadRequest,
   eventId,
-  eventNotFound,
   getDb,
   json,
   toDocumentDTO,
@@ -15,7 +14,7 @@ import {
   type IdCtx,
   type SessionRow,
 } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { assertCanEdit } from '@/lib/auth';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
@@ -52,33 +51,6 @@ export const GET = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
   });
 });
 
-
-/**
- * 이 이벤트를 고치거나 지울 수 있는가 (BE-12 리뷰 #5).
- *
- * BE-13이 인가 경계 전체를 맡지만 **소유권을 가드보다 먼저 배포하면 안 된다.** 이전에는
- * 모든 이벤트가 매일 밤 리셋에 지워져서 무보호의 대가가 최대 하루치였는데, `owner_id`가
- * 채워지는 순간 로그인 사용자의 이벤트는 영속한다 — 그 상태로 가드가 없으면 id를 아는
- * 누구나 **영구 삭제**할 수 있고 아젠다·자료·질문·설문 응답까지 CASCADE로 따라간다.
- * 일시적 구멍이 영구적 데이터 손실로 넓어지는 것이라 여기서 함께 막는다.
- *
- * **소유자가 없는 이벤트(데모)는 지금처럼 열어 둔다** — 게스트 체험과 데모 경로가
- * 이것에 기대고 있고, 그것까지 잠그는 것은 BE-13의 범위다.
- *
- * 남의 것이면 403이 아니라 **404**다 — "있지만 네 것이 아니다"를 알려주면 존재가 샌다
- * (BE-7이 채택한 규칙과 같다).
- */
-async function assertCanEdit(db: D1Database, request: NextRequest, id: number): Promise<void> {
-  const row = await db
-    .prepare('SELECT owner_id FROM events WHERE id = ?')
-    .bind(id)
-    .first<{ owner_id: number | null }>();
-  if (!row) throw eventNotFound();
-  if (row.owner_id === null) return;
-
-  const user = await getSessionUser(db, request);
-  if (!user || user.id !== row.owner_id) throw eventNotFound();
-}
 
 /** PATCH가 받는 필드 → 컬럼 매핑. 여기 없는 키는 조용히 무시된다. */
 const PATCHABLE: Record<string, string> = {
