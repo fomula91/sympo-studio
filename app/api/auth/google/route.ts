@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
   authorizeUrl, cookieNames, googleConfig, isSecureRequest, OAUTH_TTL_SECONDS,
-  pkceChallenge, randomToken, serializeCookie,
+  pkceChallenge, randomToken, safeNextPath, serializeCookie,
 } from '@/lib/auth';
 import { getEnv, withRoute } from '@/lib/db';
 
@@ -25,8 +25,8 @@ export const GET = withRoute(async (request: NextRequest) => {
   const verifier = randomToken(32);
   const redirectUri = new URL('/api/auth/callback/google', request.url).toString();
 
-  const raw = request.nextUrl.searchParams.get('next');
-  const next = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : '/console';
+  // 문자 검사로는 `/\evil.com`을 막을 수 없다 — 판정을 URL 파서에 맡긴다(BE-12 리뷰 #1).
+  const next = safeNextPath(request.nextUrl.searchParams.get('next'));
 
   const headers = new Headers({ Location: authorizeUrl(cfg, redirectUri, state, await pkceChallenge(verifier)) });
   headers.append(

@@ -37,7 +37,12 @@ export function serializeCookie(
   opts: { maxAge: number; secure: boolean },
 ): string {
   const parts = [
-    `${name}=${value}`,
+    // **값을 반드시 인코딩한다.** 그대로 이어붙이면 두 가지가 터진다(BE-12 리뷰):
+    // ① `/a; Domain=evil.example` 같은 값이 쿠키 **속성 주입**이 된다 — `__Host-`
+    //    환경에선 브라우저가 쿠키를 통째로 버리고, 접두사 없는 로컬 http에선 실제로 먹는다.
+    // ② 비ASCII 값(한글 경로 등)이 들어오면 `Headers.append`가 ByteString 변환에
+    //    실패해 **로그인 진입점이 500**이 된다.
+    `${name}=${encodeURIComponent(value)}`,
     'Path=/',
     'HttpOnly',
     // Strict면 Google에서 돌아오는 top-level 내비게이션에 쿠키가 안 실려
@@ -55,9 +60,46 @@ export function readCookie(request: Request, name: string): string | null {
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
     if (i < 0) continue;
-    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+    if (part.slice(0, i).trim() === name) {
+      const raw = part.slice(i + 1).trim();
+      // serializeCookie가 인코딩해 넣으므로 짝을 맞춘다. 잘못된 %  시퀀스는
+      // decodeURIComponent가 던지므로 원문을 그대로 돌려준다(값이 없는 것보다 낫다).
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        return raw;
+      }
+    }
   }
   return null;
+}
+
+/**
+ * 로그인 후 돌아갈 경로를 **같은 출처의 경로로 강제**한다 (BE-12 리뷰 #1).
+ *
+ * 문자 검사(`startsWith('/') && !startsWith('//')`)로는 막을 수 없다 — 브라우저는
+ * `Location`을 WHATWG URL 파서로 해석하고, special scheme에서 **`\`는 `/`와 동치**다.
+ * 그래서 `/\evil.com`이 그 검사를 통과한 뒤 `https://evil.com/`으로 해석된다
+ * (실측 확인). 같은 파서에 태워 **출처가 바뀌면 거절**하는 것이 유일하게 맞는 판정이다.
+ *
+ * 통과한 값은 파서가 정규화한 `pathname + search + hash`만 쓴다 — 비ASCII가
+ * 퍼센트 인코딩돼 돌아오므로 쿠키·헤더에 실을 수 있는 형태가 함께 보장된다.
+ */
+const NEXT_BASE = 'https://sympo.invalid';
+
+export function safeNextPath(raw: string | null | undefined, fallback = '/console'): string {
+  if (!raw) return fallback;
+  let url: URL;
+  try {
+    url = new URL(raw, NEXT_BASE);
+  } catch {
+    return fallback;
+  }
+  // 절대 URL·프로토콜 상대(`//host`)·백슬래시 변형은 전부 origin이 바뀐다.
+  // `javascript:` 같은 스킴은 origin이 'null'이라 여기서 함께 걸린다.
+  if (url.origin !== NEXT_BASE) return fallback;
+  const path = `${url.pathname}${url.search}${url.hash}`;
+  return path.startsWith('/') ? path : fallback;
 }
 
 function base64url(bytes: Uint8Array): string {

@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
   cookieNames, createSession, exchangeCode, googleConfig, isSecureRequest,
-  readCookie, serializeCookie, SESSION_TTL_DAYS, upsertUser,
+  readCookie, safeNextPath, serializeCookie, SESSION_TTL_DAYS, upsertUser,
 } from '@/lib/auth';
 import { ApiError, getDb, getEnv, withRoute } from '@/lib/db';
 
@@ -19,7 +19,9 @@ export const GET = withRoute(async (request: NextRequest) => {
   const names = cookieNames(secure);
   const expire = (n: string) => serializeCookie(n, '', { maxAge: 0, secure });
 
-  const back = readCookie(request, names.redirect) || '/console';
+  // 쿠키에서 읽은 값도 **다시** 검증한다 — 쿠키를 쓸 수 있는 경로가 하나라도
+  // 생기면(서브도메인 탈취 등) 여기가 #1을 그대로 다시 연다(BE-12 리뷰 #2).
+  const back = safeNextPath(readCookie(request, names.redirect));
   const fail = (reason: string) => {
     const headers = new Headers({ Location: `/console?auth=${reason}` });
     headers.append('Set-Cookie', expire(names.state));

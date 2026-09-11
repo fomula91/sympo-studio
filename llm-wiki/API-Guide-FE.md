@@ -256,7 +256,9 @@ await fetch('/api/auth/logout', { method: 'POST' });
 - 로그인 실패·취소는 `/console?auth=failed` 또는 `?auth=cancelled`로 돌아옵니다 — 사유를 화면에 흘리지 않습니다
 - 세션 쿠키는 httpOnly라 JS에서 읽을 수 없습니다. 로그인 여부는 `/api/auth/me`로만 판단하세요
 
-**아직 `owner_id`를 채우거나 검사하지 않습니다** — 로그인해도 이벤트 소유권은 붙지 않습니다(BE-13). 지금은 "누가 로그인했는지"까지만 압니다.
+**이벤트 소유권이 붙습니다** — 로그인 상태로 `POST /api/events`를 하면 그 이벤트에 `owner_id`가 박히고, 이후 **`PATCH`·`DELETE`는 소유자만** 됩니다. 남의 것이면 403이 아니라 **404**입니다(존재를 흘리지 않습니다). 비로그인으로 만든 이벤트는 소유자가 없어 누구나 고칠 수 있고, **자정 리셋에 지워집니다.**
+
+아직 없는 것: `POST /api/events`의 로그인 강제(게스트도 만들 수 있습니다), `GET /api/events`의 내 이벤트 필터링, 운영자 쓰기 rate limit — 전부 BE-13입니다.
 
 ## 브랜드 프리셋 — `/api/presets` (BE-20)
 
