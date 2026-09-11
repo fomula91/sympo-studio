@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
+import SurveyPanel from '@/components/SurveyPanel';
 import { sendEventLogs } from '@/lib/api';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
@@ -47,6 +48,7 @@ export default function Microsite({
 }: MicrositeProps) {
   const online = useOnlineStatus();
   const [qaOpen, setQaOpen] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
   const docs = documents ?? DEMO_DOCUMENTS;
   const agendaRef = useRef<HTMLOListElement>(null);
   // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
@@ -464,27 +466,61 @@ export default function Microsite({
               질문 남기기
             </button>
           ))}
-        {ev.engage.survey !== false && (
-          <div
-            aria-disabled={!online}
-            style={{
-              height: 54,
-              borderRadius: 14,
-              background: 'transparent',
-              border: `1px solid ${t.line}`,
-              color: t.ink,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 14,
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
-              cursor: online ? 'pointer' : 'not-allowed',
-              opacity: online ? 1 : 0.45,
-            }}
-          >
-            설문 참여 · 2분
-          </div>
-        )}
+        {ev.engage.survey !== false &&
+          (preview ? (
+            <div
+              aria-disabled
+              style={{
+                height: 54,
+                borderRadius: 14,
+                background: 'transparent',
+                border: `1px solid ${t.line}`,
+                color: t.muted,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                cursor: 'not-allowed',
+              }}
+            >
+              설문 참여 (미리보기 — 참가자 페이지에서만 동작)
+            </div>
+          ) : surveyOpen && eventId != null ? (
+            <SurveyPanel
+              theme={t}
+              online={online}
+              eventId={eventId}
+              sessions={sessions}
+              eventTitle={ev.title}
+              venue={ev.venue}
+              date={ev.date}
+              certEnabled={ev.engage.cert}
+              onComplete={() => sendEventLogs(eventId, [{ kind: 'survey_complete' }])}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSurveyOpen(true)}
+              disabled={!online}
+              style={{
+                width: '100%',
+                height: 54,
+                borderRadius: 14,
+                border: `1px solid ${t.line}`,
+                background: 'transparent',
+                color: t.ink,
+                fontFamily: 'inherit',
+                fontSize: 14,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                cursor: online ? 'pointer' : 'not-allowed',
+                opacity: online ? 1 : 0.45,
+              }}
+            >
+              설문 참여 · 2분
+            </button>
+          ))}
       </div>
     </div>
   );
