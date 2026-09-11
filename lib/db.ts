@@ -1,4 +1,5 @@
 import { getCloudflareContext } from '@opennextjs/cloudflare';
+import { DEMO_SLUG } from './seed';
 import { eventPhase, PUBLIC_STATUSES, type EventPhase } from './status';
 
 /**
@@ -187,6 +188,9 @@ export async function ensureUniqueSlug(db: D1Database, base: string): Promise<st
   const clean = base || 'event';
   for (let n = 1; n < 100; n++) {
     const candidate = n === 1 ? clean : `${clean}-${n}`;
+    // 데모의 공개 주소는 예약어다 — 행이 지워져 비어 있는 순간에도 배정하지 않는다.
+    // 배정되면 신뢰된 URL이 넘어가고 자정 리셋이 slug 충돌로 멈춘다(Codex 교차 리뷰 #3).
+    if (candidate === DEMO_SLUG) continue;
     const hit = await db.prepare('SELECT 1 FROM events WHERE slug = ?').bind(candidate).first();
     if (!hit) return candidate;
   }

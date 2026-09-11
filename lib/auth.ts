@@ -1,4 +1,4 @@
-import { ApiError } from './db';
+import { ApiError, eventNotFound } from './db';
 
 // Google SSO + D1 세션 (BE-12, [[0007-sso-and-account-model]]).
 //
@@ -326,4 +326,42 @@ export async function purgeExpiredSessions(db: D1Database): Promise<number> {
     .prepare("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
     .run();
   return res.meta.changes ?? 0;
+}
+
+// ── 인가 ────────────────────────────────────────────────────────────────────
+
+/**
+ * 이 이벤트를 고치거나 지울 수 있는가 (BE-12 리뷰 #5, Codex 교차 리뷰 #2).
+ *
+ * BE-13이 인가 경계 전체를 맡지만 **소유권을 가드보다 먼저 배포하면 안 된다.** 이전에는
+ * 모든 이벤트가 매일 밤 리셋에 지워져서 무보호의 대가가 최대 하루치였는데, `owner_id`가
+ * 채워지는 순간 로그인 사용자의 이벤트는 영속한다 — 그 상태로 가드가 없으면 id를 아는
+ * 누구나 **영구 삭제**할 수 있다.
+ *
+ * **상위 라우트만 막으면 뚫린다.** 처음엔 `PATCH`/`DELETE /api/events/[id]`에만 걸었는데,
+ * Codex 교차 리뷰가 자식 라우트로 우회되는 것을 재현했다 — `DELETE /api/events/42`는
+ * 404인데 `PUT /api/events/42/sessions`에 `{"sessions":[]}`를 보내면 **200으로 통과해
+ * 피해자의 아젠다가 전부 지워졌다**(세션에 딸린 설문 응답까지). "영구 삭제는 막았지만
+ * 영구 파괴는 안 막은" 상태였다. 그래서 이벤트를 바꾸는 **모든** 쓰기 경로가 이걸 지난다.
+ *
+ * **소유자가 없는 이벤트(데모)는 지금처럼 열어 둔다** — 게스트 체험과 데모 경로가
+ * 이것에 기대고 있고, 그것까지 잠그는 것은 BE-13의 범위다.
+ *
+ * 남의 것이면 403이 아니라 **404**다 — "있지만 네 것이 아니다"를 알려주면 존재가 샌다
+ * (BE-7이 채택한 규칙과 같다).
+ */
+export async function assertCanEdit(
+  db: D1Database,
+  request: Request,
+  eventId: number,
+): Promise<void> {
+  const row = await db
+    .prepare('SELECT owner_id FROM events WHERE id = ?')
+    .bind(eventId)
+    .first<{ owner_id: number | null }>();
+  if (!row) throw eventNotFound();
+  if (row.owner_id === null) return;
+
+  const user = await getSessionUser(db, request);
+  if (!user || user.id !== row.owner_id) throw eventNotFound();
 }

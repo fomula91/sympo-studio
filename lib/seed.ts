@@ -19,8 +19,17 @@ const DEMO_TITLE = 'MERIDIAN 심포지엄';
 const DEMO_VENUE = '아르떼 호텔 서울';
 const DEMO_DATE = '2026-08-15';
 
+/**
+ * 데모의 공개 URL. **예약어다** — `ensureUniqueSlug`가 이 값을 이미 쓰인 것으로 취급해
+ * 사용자 이벤트에는 절대 배정되지 않는다(Codex 교차 리뷰 #3).
+ *
+ * 예약하지 않으면 이런 일이 벌어진다: 무소유 데모를 익명으로 지우고, 로그인한 뒤
+ * 같은 slug로 이벤트를 만들면 **신뢰된 공개 주소가 통째로 넘어가고**, 이후 매일 밤
+ * 리셋이 `UNIQUE constraint failed: events.slug`로 터져 R2 고아 정리까지 멈춘다.
+ */
+export const DEMO_SLUG = autoSlug(DEMO_TITLE, DEMO_VENUE, DEMO_DATE);
+
 export async function resetDemoData(db: D1Database): Promise<void> {
-  const demoSlug = autoSlug(DEMO_TITLE, DEMO_VENUE, DEMO_DATE);
 
   // **데모 이벤트를 지웠다 다시 만들지 않는다 — 제자리에서 되돌린다.**
   //
@@ -35,9 +44,13 @@ export async function resetDemoData(db: D1Database): Promise<void> {
   // 그래서 id를 고정하지 않는다. 대신 **slug로 데모 행을 찾아 UPDATE**하고, 없을 때만
   // INSERT한다 — id가 매일 흔들리지도 않고(지웠다 만들면 AUTOINCREMENT가 새 번호를
   // 준다) 남의 id를 침범하지도 않는다.
+  // **owner_id 조건을 걸지 않는다.** 걸면 누군가 이 slug를 차지했을 때 조회가 놓치고,
+  // 이어지는 INSERT가 `UNIQUE constraint failed: events.slug`로 터져 리셋 전체가
+  // 롤백된다(Codex 교차 리뷰 #3). 지금은 DEMO_SLUG가 예약어라 사용자 이벤트가 이걸
+  // 가질 수 없지만, 조회까지 owner에 기대면 예약이 뚫리는 날 같은 사고가 재발한다.
   const found = await db
-    .prepare('SELECT id FROM events WHERE slug = ? AND owner_id IS NULL')
-    .bind(demoSlug)
+    .prepare('SELECT id FROM events WHERE slug = ?')
+    .bind(DEMO_SLUG)
     .first<{ id: number }>();
 
   const eventId =
@@ -51,7 +64,7 @@ export async function resetDemoData(db: D1Database): Promise<void> {
            VALUES (?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개', 1, 1, 0, 1)
            RETURNING id`,
         )
-        .bind(demoSlug, DEMO_TITLE, DEMO_VENUE, DEMO_DATE)
+        .bind(DEMO_SLUG, DEMO_TITLE, DEMO_VENUE, DEMO_DATE)
         .first<{ id: number }>()
     )?.id;
 
@@ -64,7 +77,8 @@ export async function resetDemoData(db: D1Database): Promise<void> {
     db
       .prepare(
         `UPDATE events
-            SET brand = 'MERIDIAN', title = ?, venue = ?, event_date = ?, host = '좌장 서정우',
+            SET owner_id = NULL,
+                brand = 'MERIDIAN', title = ?, venue = ?, event_date = ?, host = '좌장 서정우',
                 capacity = 120, status = '공개',
                 engage_qa = 1, engage_survey = 1, engage_chat = 0, engage_cert = 1,
                 updated_at = datetime('now')

@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server';
 import { BadRequest, eventId, getDb, json, withRoute } from '@/lib/db';
+import { assertCanEdit } from '@/lib/auth';
 
 type QuestionCtx = { params: Promise<{ id: string; qid: string }> };
 
@@ -24,6 +25,9 @@ const STATUSES = ['published', 'hidden'];
 export const PATCH = withRoute(async (request: NextRequest, ctx: QuestionCtx) => {
   const db = await getDb();
   const id = await eventId(ctx as never);
+  // 이벤트를 바꾸는 쓰기 경로는 전부 소유권을 지난다 — 상위 라우트만 막으면
+  // 여기로 우회된다(Codex 교차 리뷰 #2에서 재현).
+  await assertCanEdit(db, request, id);
   const { qid } = await ctx.params;
   const questionId = Number(qid);
   if (!Number.isInteger(questionId) || questionId <= 0) {
