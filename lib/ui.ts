@@ -68,17 +68,41 @@ export const monoLabel: CSSProperties = {
   color: UI.faint,
 };
 
+/**
+ * 행사 시점 배지 (BE-23). 발행 상태 배지 옆에 나란히 그린다 — 두 축이 다른 것을
+ * 말하므로 한 칸에 합치지 않는다. `null`(날짜 미정)이면 아무것도 그리지 않는다.
+ *
+ * 색을 죽여 둔 이유: 시점은 달력이 정하는 사실이지 운영자가 조치할 상태가 아니다.
+ * 발행 상태 배지와 같은 채도로 그리면 눈이 둘을 같은 종류로 읽는다.
+ */
+export function phasePillStyle(): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    height: 22,
+    padding: '0 8px',
+    borderRadius: 6,
+    fontFamily: MONO,
+    fontSize: 10.5,
+    fontWeight: 650,
+    letterSpacing: '0.02em',
+    background: 'transparent',
+    border: `1px solid ${UI.line}`,
+    color: UI.faint,
+  };
+}
+
 // 콘솔 카드 상태 배지
 export function pillStyle(status: string): CSSProperties {
+  // 발행 상태 4종만 받는다(BE-23) — 행사 시점('당일'·'종료')은 별도 축이라
+  // 배지를 나눠 그린다(phasePillStyle).
   const map: Record<string, [string, string]> = {
-    진행중: ['oklch(0.96 0.03 145)', 'oklch(0.4 0.1 145)'],
+    공개: ['oklch(0.96 0.03 145)', 'oklch(0.4 0.1 145)'],
     검수대기: ['oklch(0.965 0.035 78)', 'oklch(0.44 0.09 68)'],
-    공개예정: ['oklch(0.955 0.003 250)', 'oklch(0.4 0.008 250)'],
     초안: ['transparent', 'oklch(0.55 0.008 250)'],
-    완료: ['oklch(0.955 0.003 250)', 'oklch(0.5 0.008 250)'],
     보관: ['transparent', 'oklch(0.66 0.006 250)'],
   };
-  const [bg, fg] = map[status] || map['완료'];
+  const [bg, fg] = map[status] || map['초안'];
   return {
     display: 'inline-flex',
     alignItems: 'center',

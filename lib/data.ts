@@ -16,7 +16,9 @@ export const VENUES = [
   '보문 레이크 경주',
 ];
 
-export const STATUS = ['초안', '검수대기', '공개예정', '진행중', '완료', '보관'];
+// 콘솔 필터 칩·배지가 쓰는 목록. 정본은 lib/status.ts이고 서버 검증도 같은 배열을
+// 본다(BE-23) — 여기 손으로 적어두면 서버가 400으로 막는 값을 화면이 칩으로 내민다.
+export { EVENT_STATUSES as STATUS } from './status';
 
 export const SESSIONS0: Session[] = [
   { id: 1, time: '17:00', title: '개회사', speaker: '좌장 서정우 · 도원대학교병원', kind: 'OPENING' },
@@ -105,13 +107,17 @@ export const NAV: { id: string; label: string; glyph: string; shape?: 'phone' }[
 
 export function seedEvents(): EventItem[] {
   const events: EventItem[] = [];
-  const d = new Date(2026, 7, 15);
+  // 오늘을 기준으로 흩뿌린다(BE-23) — 날짜를 고정해두면 목업 15건이 전부 '종료'로만
+  // 보여 시점 배지가 무슨 축인지 화면에서 드러나지 않는다. i=2가 정확히 오늘이라
+  // '예정'·'당일'·'종료'가 콘솔에 한 번에 나온다.
+  const today = new Date();
   for (let i = 0; i < 15; i++) {
     const brand = BRANDS[i % BRANDS.length];
     const venue = VENUES[(i * 3) % VENUES.length];
-    const st =
-      i === 0 ? '진행중' : i === 1 ? '검수대기' : i === 2 ? '공개예정' : i === 3 ? '초안' : i > 11 ? '보관' : '완료';
-    const dd = new Date(d.getTime() - i * 6.4 * 86400000);
+    // 발행 상태만 배정한다 — '진행중'·'완료' 같은 시점은 event_date에서 파생되므로
+    // 여기서 고를 값이 아니다(BE-23).
+    const st = i === 1 ? '검수대기' : i === 3 ? '초안' : i > 11 ? '보관' : '공개';
+    const dd = new Date(today.getTime() + (12 - i * 6) * 86400000);
     const code =
       String(dd.getFullYear()).slice(2) +
       String(dd.getMonth() + 1).padStart(2, '0') +
