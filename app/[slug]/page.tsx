@@ -35,6 +35,7 @@ interface PublicEvent {
     status: string;
     pages: number | null;
     sizeBytes: number | null;
+    url: string | null;
   }[];
 }
 
@@ -176,6 +177,7 @@ export default function PublicEventPage() {
     name: d.name,
     status: d.status,
     pages: d.pages,
+    url: d.url,
   }));
 
   return (
@@ -199,6 +201,7 @@ export default function PublicEventPage() {
         icons={ICONSETS[iconSet].glyphs}
         eventId={data.id}
         documents={documents}
+        slug={slug}
         event={{
           title: data.title,
           venue: data.venue ?? '',
