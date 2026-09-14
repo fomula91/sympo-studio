@@ -1,0 +1,70 @@
+# 매일 아침 할 일 브리핑 → Discord.
+#
+# 위키(`llm-wiki/Next-Tasks.md`)가 과제의 정본인데, 열어보지 않으면 아무도
+# 오늘 뭐가 급한지 모른다. 하루 한 번 정본을 그대로 읽어 Discord로 밀어준다.
+# **읽기 전용이다** — 위키를 고치지도, 과제를 만들지도 않는다.
+#
+# 필요한 시크릿: `DISCORD_WEBHOOK_URL`
+#   Discord 채널 → 채널 편집 → 연동 → 웹후크 → URL 복사
+#   → 저장소 Settings → Secrets and variables → Actions → New repository secret
+#
+# **저장소 Settings → Webhooks 에 이미 걸어 둔 Discord 웹훅과 같은 것을 써도 된다.**
+# 다만 그쪽 설정값을 워크플로가 읽어올 수는 없다 — 저장소 Webhooks는 GitHub가
+# 이벤트마다 바깥으로 POST를 쏘는 설정이고, `GITHUB_TOKEN`에는 그걸 읽을 권한
+# (`administration`)을 줄 수 없다. URL만 위 시크릿으로 복사해 넣는다.
+# 끝에 붙은 `/github`는 스크립트가 알아서 뗀다(그 엔드포인트는 GitHub 페이로드
+# 전용이라 embed를 보내면 튕긴다).
+name: Daily Digest
+
+on:
+  schedule:
+    # GitHub cron은 UTC 고정이다. 01:00 UTC = 10:00 KST — 한국은 서머타임이
+    # 없어 연중 같은 시각이다.
+    # 주의: 예약 실행은 **기본 브랜치(main)의 파일만** 쓰인다. 그리고 러너가
+    # 붐비면 수 분~수십 분 늦게 뜬다 — 정각을 보장하지 않는다.
+    - cron: "0 1 * * *"
+  # 웹훅을 바꿨거나 지금 당장 받아보고 싶을 때 손으로 실행한다.
+  workflow_dispatch:
+
+# 어제 것이 아직 돌고 있는데 오늘 것이 겹치는 상황을 막는다. 브리핑은 최신
+# 하나만 의미가 있으므로 진행 중인 것을 취소한다.
+concurrency:
+  group: daily-digest
+  cancel-in-progress: true
+
+# 위키를 읽을 뿐이라 쓰기 권한이 필요 없다.
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 시크릿이 없으면 조용히 넘어가지 않고 사유를 남기며 실패한다 —
+      # "브리핑이 안 왔는데 초록불"이 가장 나쁜 상태다(deploy.yml과 같은 판단).
+      - name: 웹훅 확인
+        run: |
+          if [ -z "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
+            echo "::error::DISCORD_WEBHOOK_URL이 저장소 시크릿에 없습니다. Settings → Secrets and variables → Actions에서 등록하세요."
+            exit 1
+          fi
+
+      # 본문은 스크립트가 stdout으로 내보낸다. 그걸 실행 요약에도 옮겨 둔다 —
+      # Discord를 못 봐도 Actions 화면에서 오늘 뭘 보냈는지 확인된다.
+      # 전송이 실패해도 요약은 남기고, 종료 코드는 스크립트 것을 그대로 쓴다.
+      - name: 할 일 정리 후 Discord 전송
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          set +e
+          ./scripts/daily-digest.sh | tee "$RUNNER_TEMP/digest.txt"
+          status=${PIPESTATUS[0]}
+          set -e
+          {
+            echo '```'
+            cat "$RUNNER_TEMP/digest.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
