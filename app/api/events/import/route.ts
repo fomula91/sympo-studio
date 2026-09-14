@@ -64,7 +64,18 @@ function resolveSlug(base: string, taken: Set<string>): string {
  *
  * 상한은 셋이다: 한 번에 20개(`MAX_IMPORT_EVENTS`), 이벤트당 아젠다 60개
  * (BE-14의 `MAX_SESSIONS`), 계정당 총 20개(BE-13 ⑦). rate limit의 cost는
- * **이벤트 수**다 — 가져오기 한 번이 생성 N번과 같은 무게라서다.
+ * **이벤트 수**다 — 가져오기 한 번이 생성 N번과 같은 무게라서다. 계정당 총량은
+ * 삽입문의 술어로 한 번 더 판정해 **동시 요청도 넘어서지 못한다**(실측: 동시 15+15가
+ * 정확히 20에서 멈춘다).
+ *
+ * ## 알고 있는 한계 — 동시 가져오기의 slug 경합
+ *
+ * `taken` 집합은 요청 시작 시점의 스냅샷이다. **같은 사용자가 가져오기를 동시에 두 번
+ * 보내면** 두 번째는 첫 번째가 방금 차지한 slug를 모른 채 같은 후보를 배정하고, `slug`
+ * UNIQUE에 걸려 그 이벤트가 `failed`가 된다(Codex 교차 리뷰). **중복이 만들어지지는
+ * 않고**, `client_ref` 멱등성 덕에 **그대로 다시 보내면 성공한다** — 그때는 스냅샷이
+ * 새로 잡히기 때문이다. 한 브라우저에서 로그인 한 번에 한 번 도는 경로라 동시 실행
+ * 자체가 드물어, 자동 재시도를 넣는 대신 이 성질을 적어 둔다.
  */
 export const POST = withRoute(async (request: NextRequest) => {
   const db = await getDb();
@@ -204,12 +215,16 @@ async function insertEvent(
   const [inserted] = await db.batch<{ id: number }>([
     db
       .prepare(
+        // 사전 검사(총량)는 요청 하나 안에서만 맞다 — 동시에 들어온 다른 가져오기가
+        // 같은 수를 읽고 둘 다 통과할 수 있다(Codex 교차 리뷰). 삽입문 자체에 술어를
+        // 달아 **커밋 시점**에 판정한다. 걸리면 이 이벤트만 `failed`가 된다.
         `INSERT INTO events
            (slug, brand, title, venue, event_date, host, capacity, status, owner_id, client_ref,
             preset_id, mode, icon_set, density, key_visual, kv_pattern)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                 ?, COALESCE(?, 'light'), COALESCE(?, 'geo'), COALESCE(?, '기본'), ?,
-                 COALESCE(?, 'stripe'))
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, COALESCE(?, 'light'), COALESCE(?, 'geo'), COALESCE(?, '기본'), ?,
+                COALESCE(?, 'stripe')
+          WHERE (SELECT COUNT(*) FROM events WHERE owner_id = ?) < ?
          RETURNING id`,
       )
       .bind(
@@ -217,6 +232,7 @@ async function insertEvent(
         ownerId, ev.clientRef,
         presetId, ev.theme.mode, ev.theme.iconSet, ev.theme.density, ev.theme.keyVisual,
         ev.theme.kvPattern,
+        ownerId, MAX_EVENTS_PER_USER,
       ),
     ...ev.sessions.map((s, order) =>
       db
@@ -227,5 +243,9 @@ async function insertEvent(
         .bind(ownerId, ev.clientRef, order, s.time, s.title, s.speaker, s.kind),
     ),
   ]);
-  return inserted.results[0]?.id;
+  const id = inserted.results[0]?.id;
+  // 술어에 걸렸다 = 그 사이 계정 총량이 찼다. 세션 삽입은 서브쿼리가 NULL을 집어
+  // FK로 함께 실패하므로 반쪽 이벤트가 남지 않는다(batch가 통째로 롤백된다).
+  if (id === undefined) throw new Error(`계정당 이벤트 ${MAX_EVENTS_PER_USER}개 상한`);
+  return id;
 }

@@ -315,6 +315,10 @@ export async function sessionTokenHash(request: Request): Promise<string | null>
  * 늘지 않는다. 토큰이 없거나 만료면 서브쿼리가 NULL이고, `owner_id = NULL`은 참이
  * 되지 않으므로 **게스트는 무소유(데모) 행만** 통과한다.
  *
+ * **토큰이 없으면 빈 문자열이 아니라 NULL을 바인딩한다**(Codex 교차 리뷰 하드닝).
+ * 지금은 세션 id가 항상 64자리 해시라 `''`로도 뚫리지 않지만, `s.id = NULL`은
+ * **어떤 행과도 절대 같지 않다** — 실수로 빈 id 행이 생겨도 인증되지 않는다.
+ *
  * `n`은 바인딩 자리번호다 — 호출부가 자기 바인딩 순서에 맞춰 넘긴다.
  */
 export function sessionUserIdSql(n: number): string {

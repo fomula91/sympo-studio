@@ -47,6 +47,7 @@
 -- (원자성 덕에 정상 경로에서는 안 생기지만, 원격 적용이 다른 방식으로 끊길 가능성까지
 -- 배제할 근거는 없다 — 실측한 것은 로컬이다). 값이 비싼 쪽으로 기울여 둔다.
 -- **원격에 적용하기 전에 백업을 뜬다**(`wrangler d1 export`).
+DROP TABLE IF EXISTS tmp_users_seq;
 DROP TABLE IF EXISTS tmp_event_owner;
 DROP TABLE IF EXISTS tmp_preset_owner;
 DROP TABLE IF EXISTS tmp_oauth_accounts;
@@ -60,6 +61,14 @@ CREATE TABLE tmp_preset_owner AS SELECT id, owner_id FROM brand_presets WHERE ow
 UPDATE brand_presets SET owner_id = NULL;
 
 -- 2) NOT NULL이라 내려놓을 수 없는 자식은 통째로 대피시킨다.
+-- AUTOINCREMENT의 high-water mark도 함께 옮긴다(Codex 교차 리뷰).
+-- `users_new`에 현재 행만 복사하면 `sqlite_sequence`가 **살아 있는 최대 id**로 다시
+-- 잡히므로, 과거에 지워진 더 큰 id가 있으면 **새 계정이 그 번호를 물려받는다.**
+-- FK 자식은 CASCADE로 함께 지워졌겠지만 FK가 아닌 흔적 — 예컨대 `rate_counters`의
+-- 키는 `user_id`에서 파생된다 — 은 남아 있어, 새 사람이 옛 사람의 한도 상태를
+-- 이어받는 일이 생긴다. id 재사용은 조용히 틀리는 종류의 버그다.
+CREATE TABLE tmp_users_seq AS SELECT seq FROM sqlite_sequence WHERE name = 'users';
+
 CREATE TABLE tmp_oauth_accounts AS SELECT * FROM oauth_accounts;
 CREATE TABLE tmp_auth_sessions AS SELECT * FROM auth_sessions;
 DELETE FROM oauth_accounts;
@@ -99,6 +108,12 @@ UPDATE brand_presets
    SET owner_id = (SELECT t.owner_id FROM tmp_preset_owner t WHERE t.id = brand_presets.id)
  WHERE id IN (SELECT id FROM tmp_preset_owner);
 
+-- 시퀀스를 원래 자리로. rename 직후에는 복사된 행의 최대 id로만 잡혀 있다.
+UPDATE sqlite_sequence
+   SET seq = (SELECT MAX(seq) FROM (SELECT seq FROM tmp_users_seq UNION ALL SELECT seq))
+ WHERE name = 'users' AND EXISTS (SELECT 1 FROM tmp_users_seq);
+
+DROP TABLE tmp_users_seq;
 DROP TABLE tmp_event_owner;
 DROP TABLE tmp_preset_owner;
 DROP TABLE tmp_oauth_accounts;

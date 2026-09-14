@@ -19,7 +19,7 @@ import { toPresetDTO, validatePresetBody, type PresetRow } from '@/lib/presets';
  */
 export const GET = withRoute(async (request: NextRequest) => {
   const db = await getDb();
-  const tokenHash = (await sessionTokenHash(request)) ?? '';
+  const tokenHash = await sessionTokenHash(request);
   const { results } = await db
     .prepare(
       `SELECT id, label, hue, chroma, origin, source_key FROM brand_presets

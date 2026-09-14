@@ -44,7 +44,7 @@ export const GET = withRoute(async (request: NextRequest) => {
   // 하나 늘고, 콘솔은 화면 하나에 여러 API를 연속으로 부른다(BE-13 ⑥).
   // 토큰이 없거나 만료면 서브쿼리가 NULL이라 무소유(데모) 행만 남는다.
   where.push(`(owner_id IS NULL OR owner_id = ${sessionUserIdSql(binds.length + 1)})`);
-  binds.push((await sessionTokenHash(request)) ?? '');
+  binds.push(await sessionTokenHash(request));
 
   if (q) {
     // 자리번호를 **계산해서** 쓴다. 예전엔 `?1`이 하드코딩이었는데, 앞에 소유권
@@ -172,15 +172,27 @@ export const POST = withRoute(async (request: NextRequest) => {
   const [insertRes] = await db.batch<EventRow>([
     db
       .prepare(
+        // 총량 판정을 **삽입문 안에** 한 번 더 둔다. 위의 사전 검사는 읽고-나서-쓰는
+        // 구조라 동시 요청이 둘 다 통과해 상한을 넘을 수 있다(Codex 교차 리뷰).
+        // D1은 쓰기를 직렬화하므로 이 술어가 커밋 시점 값으로 평가돼 **실제 천장**이 된다.
         `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status, owner_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+          WHERE (SELECT COUNT(*) FROM events WHERE owner_id = ?) < ?
          RETURNING *`,
       )
-      .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status, owner.id),
+      .bind(
+        slug, brand, title, venue, date, host, body.capacity ?? null, status, owner.id,
+        owner.id, MAX_EVENTS_PER_USER,
+      ),
     ...rateUsageStatements(db, keys, EVENT_WRITE_RATE_POLICY, 0, 1, now),
   ]);
 
   const row = insertRes.results[0];
-  if (!row) throw new Error('이벤트 생성 후 행을 돌려받지 못했습니다.');
+  // 술어에 걸렸다 = 그 사이 상한이 찼다. 사전 검사와 같은 문구로 돌려준다.
+  if (!row) {
+    throw new BadRequest(
+      `계정당 이벤트는 ${MAX_EVENTS_PER_USER}개까지입니다. 쓰지 않는 이벤트를 지우고 다시 시도해 주세요.`,
+    );
+  }
   return json(toEventDTO(row), 201);
 });

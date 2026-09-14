@@ -26,7 +26,7 @@ import { opsStatements, toOpsDTO } from '@/lib/ops';
 export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
-  const tokenHash = (await sessionTokenHash(request)) ?? '';
+  const tokenHash = await sessionTokenHash(request);
 
   const [eventRes, kindRes, targetRes] = await db.batch([
     db

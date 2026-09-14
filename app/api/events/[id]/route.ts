@@ -42,7 +42,7 @@ import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
-  const tokenHash = (await sessionTokenHash(request)) ?? '';
+  const tokenHash = await sessionTokenHash(request);
 
   const [eventRes, sessionRes, documentRes] = await db.batch([
     db
@@ -158,7 +158,7 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
         `SELECT 1 FROM brand_presets
           WHERE id = ?1 AND (owner_id IS NULL OR owner_id = ${sessionUserIdSql(2)})`,
       )
-      .bind(presetToCheck, (await sessionTokenHash(request)) ?? '')
+      .bind(presetToCheck, await sessionTokenHash(request))
       .first();
     if (!usable) {
       throw new BadRequest('없는 프리셋입니다. POST /api/presets로 먼저 저장하세요.');
