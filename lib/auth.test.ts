@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountLinkConflict, assertCanRead, matchOAuthState, requireUser, sessionUserIdSql, upsertUser } from './auth';
+import { assertCanRead, matchOAuthState, requireUser, sessionUserIdSql, upsertUser } from './auth';
 
 /**
  * BE-26의 두 가지를 고정한다.
@@ -64,14 +64,18 @@ describe('upsertUser', () => {
     expect(update).toMatch(/EXISTS \(SELECT 1 FROM users o WHERE o\.email = \? AND o\.id <> \?\)/i);
   });
 
-  it('링크가 없을 때 같은 이메일의 계정에 붙지 않고 거절한다', async () => {
+  it('같은 이메일의 계정이 있어도 붙지 않고 별개 계정을 만든다', async () => {
+    // BE-26은 여기서 거절할 수밖에 없었다(email이 UNIQUE라 두 번째 행을 못 만들었다).
+    // 0014가 제약을 떼면서 모델이 제자리를 찾았다 — 이메일은 표시용이고 계정을
+    // 가리키는 것은 oauth_accounts뿐이다. **붙는 것만 아니면 된다.**
     const { db, sql, batches } = fakeDb({ linked: null, clash: { id: 7 } });
 
-    await expect(upsertUser(db, who)).rejects.toBeInstanceOf(AccountLinkConflict);
+    await expect(upsertUser(db, who)).resolves.toBe(777);
 
-    // 붙이지도, 만들지도 않는다.
-    expect(sql.some((q) => /^INSERT INTO oauth_accounts\b/i.test(q))).toBe(false);
-    expect(batches).toHaveLength(0);
+    // 기존 계정을 건드리지 않는다 — UPDATE도, 그 계정으로의 링크도 없다.
+    expect(sql.some((q) => /^UPDATE users\b/i.test(q))).toBe(false);
+    expect(batches).toHaveLength(1);
+    expect(batches[0][0]).toMatch(/^INSERT INTO users\b/i);
   });
 
   it('신규 계정은 users·oauth_accounts를 같은 batch에 넣는다', async () => {
@@ -84,6 +88,16 @@ describe('upsertUser', () => {
     expect(batches[0]).toHaveLength(2);
     expect(batches[0][0]).toMatch(/^INSERT INTO users\b/i);
     expect(batches[0][1]).toMatch(/^INSERT INTO oauth_accounts\b/i);
+  });
+
+  it('링크의 user_id를 이메일이 아니라 last_insert_rowid()로 집는다', async () => {
+    // 이메일 서브쿼리는 0014로 `email`이 UNIQUE를 잃으면서 깨졌다 — 같은 주소의
+    // **다른 계정**을 가리킬 수 있다. 되돌아가면 로그인이 조용히 남의 계정에 붙는다.
+    const { db, batches } = fakeDb({ linked: null, clash: null });
+    await upsertUser(db, who);
+
+    expect(batches[0][1]).toContain('last_insert_rowid()');
+    expect(batches[0][1]).not.toMatch(/SELECT id FROM users WHERE email/i);
   });
 });
 

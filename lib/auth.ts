@@ -329,20 +329,6 @@ export async function deleteSession(db: D1Database, request: Request): Promise<v
 }
 
 /**
- * 같은 이메일의 다른 계정이 이미 있어 **잇지 않고 거절**했다 (BE-26 ①).
- *
- * 콜백이 이 사유를 일반 실패와 구분해 돌려보낸다. 사유를 흘리지 않는 로그인 경로의
- * 원칙에서 이것만 예외로 두는 이유: 이 상태에 빠진 사람은 문구가 없으면 **영원히
- * 원인을 모른 채 실패**하고, 드러나는 사실("그 주소로 만들어진 계정이 있다")은
- * 정작 그 주소를 가진 본인만 볼 수 있다.
- */
-export class AccountLinkConflict extends ApiError {
-  constructor() {
-    super('이 이메일로 만들어진 계정이 이미 있습니다. 기존 로그인 방법을 사용해 주세요.', 409);
-  }
-}
-
-/**
  * Google이 돌아온 신원으로 사용자를 찾거나 만든다.
  *
  * **연결 키는 `oauth_accounts(provider, provider_account_id)` 하나뿐이다** (BE-26 ①).
@@ -353,9 +339,11 @@ export class AccountLinkConflict extends ApiError {
  * 것으로는 막지 못한다 — 검증된 주소라도 "지금 그 주소를 가진 사람"이 예전 계정의
  * 주인과 같다는 보장이 없기 때문이다(Codex 교차 리뷰, [[log]] 2026-09-11).
  *
- * 이메일이 겹치면 **잇지 않고 거절한다.** 별개 계정을 만드는 쪽이 모델상 더 옳지만
- * `users.email`이 UNIQUE라 지금 스키마에서는 INSERT가 실패하고, 그 제약을 떼려면
- * D1에서 위험한 테이블 재작성이 필요하다(ADR 0010 — BE-30으로 등록).
+ * **이메일이 겹치면 별개 계정을 만든다** (BE-30). BE-26은 여기서 거절할 수밖에 없었다 —
+ * `users.email`이 UNIQUE라 두 번째 행을 못 만들었고, 그래서 그 주소를 가진 사람은
+ * 로그인이 막다른 길이었다. 0014가 그 제약을 떼면서 모델이 제자리를 찾았다:
+ * **이메일은 표시용 속성이고, 계정을 가리키는 것은 `oauth_accounts`뿐이다**
+ * ([[Decisions/0010-account-link-key]]).
  *
  * 신규 생성은 **`batch` 하나로 원자적이다** (BE-26 ②). 이전에는 `INSERT users`와
  * `INSERT oauth_accounts`가 따로 돌아, 사이에서 실패하면 **oauth 링크 없는 고아
@@ -390,20 +378,17 @@ export async function upsertUser(db: D1Database, who: GoogleIdentity): Promise<n
     return linked.user_id;
   }
 
-  // 이 sub로는 처음 보는 사람이다. 같은 이메일의 계정이 있으면 **다른 사람**으로 본다.
-  const clash = await db
-    .prepare('SELECT id FROM users WHERE email = ?')
-    .bind(who.email)
-    .first<{ id: number }>();
-  if (clash) throw new AccountLinkConflict();
-
-  // `users` 행과 그 링크를 한 트랜잭션에 넣는다. 두 번째 문의 user_id를 첫 번째의
-  // `RETURNING id`로 받을 수는 없어(batch는 바인딩이 먼저 끝난다) **방금 넣은 행을
-  // 이메일로 다시 집는다** — 바로 위에서 충돌이 없음을 확인했고 `email`이 UNIQUE라
-  // 이 서브쿼리는 그 행 하나만 가리킨다. `last_insert_rowid()`에 기대지 않는 이유는
-  // D1 batch가 그 값을 문 사이에 보존한다는 보장을 문서로 확인할 수 없어서다.
-  // 경합으로 같은 이메일이 사이에 끼어들면 UNIQUE가 걸려 **batch 전체가 롤백**된다 —
-  // 고아 행이 남지 않는 것이 이 묶음의 요점이다.
+  // 이 sub로는 처음 보는 사람이다 — 같은 이메일의 계정이 있어도 **다른 사람**이다.
+  //
+  // `users` 행과 그 링크를 한 트랜잭션에 넣는다. batch는 바인딩이 먼저 끝나 첫 문의
+  // `RETURNING id`를 둘째 문에 넣을 수 없으므로 `last_insert_rowid()`로 집는다.
+  //
+  // **BE-26에서는 이메일 서브쿼리로 집었는데 그 수법이 0014로 깨졌다** — `email`이
+  // 더 이상 UNIQUE가 아니라서 같은 주소의 다른 계정을 가리킬 수 있다. 그때
+  // `last_insert_rowid()`를 피했던 이유는 "D1 batch가 문 사이에 보존한다는 보장을
+  // 문서로 확인할 수 없어서"였는데, **이번에 로컬 D1로 직접 재봤다**: 같은 batch에서
+  // INSERT 뒤 `last_insert_rowid()`가 방금 넣은 행의 id를 정확히 돌려준다. batch는
+  // 한 트랜잭션이라 사이에 다른 쓰기가 끼어들 수도 없다.
   const [created] = await db.batch<{ id: number }>([
     db
       .prepare('INSERT INTO users (email, name, avatar_url) VALUES (?, ?, ?) RETURNING id')
@@ -411,9 +396,9 @@ export async function upsertUser(db: D1Database, who: GoogleIdentity): Promise<n
     db
       .prepare(
         `INSERT INTO oauth_accounts (user_id, provider, provider_account_id)
-         VALUES ((SELECT id FROM users WHERE email = ?), ?, ?)`,
+         VALUES (last_insert_rowid(), ?, ?)`,
       )
-      .bind(who.email, 'google', who.sub),
+      .bind('google', who.sub),
   ]);
 
   const userId = created?.results?.[0]?.id;

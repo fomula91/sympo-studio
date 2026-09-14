@@ -1,6 +1,6 @@
 import type { NextRequest } from 'next/server';
 import {
-  AccountLinkConflict, cookieNames, createSession, exchangeCode, googleConfig, isSecureRequest,
+  cookieNames, createSession, exchangeCode, googleConfig, isSecureRequest,
   matchOAuthState, readCookie, safeNextPath, serializeCookie, SESSION_TTL_DAYS, upsertUser,
 } from '@/lib/auth';
 import { getDb, getEnv, withRoute } from '@/lib/db';
@@ -18,8 +18,11 @@ import { getDb, getEnv, withRoute } from '@/lib/db';
  * 쿠키 없음"으로 실패했다. 남의 콜백인지 먼저 가려낸 뒤에 쿠키를 건드린다(BE-26 ④).
  *
  * 실패는 사유를 화면에 흘리지 않고 `/console?auth=failed`로 돌려보낸다 —
- * 로그인 경로의 오류 문구는 공격자에게도 정보다. 예외는 `email_conflict` 하나다
- * (`AccountLinkConflict` 주석 참고).
+ * 로그인 경로의 오류 문구는 공격자에게도 정보다.
+ *
+ * **`email_conflict` 사유는 없어졌다** (BE-30). BE-26이 같은 이메일의 계정을 거절하면서
+ * 만든 사유인데, 0014가 `users.email`의 UNIQUE를 떼면서 **거절할 일 자체가 사라졌다** —
+ * 이제 별개 계정이 만들어진다.
  */
 export const GET = withRoute(async (request: NextRequest) => {
   const secure = isSecureRequest(request);
@@ -66,7 +69,6 @@ export const GET = withRoute(async (request: NextRequest) => {
     // 로그인 화면 대신 500 스택 페이지가 떴다 — 로그인 실패는 앱이 감당해야 하는
     // 정상 경로지 사용자에게 스택을 보여줄 자리가 아니다. 대신 원인을 잃지 않게
     // 로그는 남긴다(Workers 로그에만 남고 응답에는 실리지 않는다).
-    if (e instanceof AccountLinkConflict) return fail('email_conflict');
     console.error('[auth] google callback', e);
     return fail('failed');
   }
