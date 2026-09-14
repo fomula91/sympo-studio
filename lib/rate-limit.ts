@@ -83,11 +83,15 @@ export class RateLimited extends ApiError {
  * 라우트별 rate limit 정책.
  *
  * `scope`는 카운터의 이름공간이다 — 정책이 서로의 한도를 갉지 않게 가른다.
- * 한도의 단위는 **쓰기 수**다(요청 하나가 만드는 행 수 = cost). 설문은 문항
+ * 한도의 단위는 보통 **쓰기 수**다(요청 하나가 만드는 행 수 = cost). 설문은 문항
  * 수만큼, 질문은 1이다.
+ *
+ * **`upload`만 단위가 MB다**(BE-29) — 지키려는 자원이 D1 행이 아니라 R2의
+ * 저장량·Class A 연산이라, 요청 수로 세면 1MB와 20MB가 같은 비용이 된다.
+ * 판정 구조는 그대로 쓰고 cost의 의미만 정책이 정한다(`uploadCostMb()`).
  */
 export interface RatePolicy {
-  scope: 'questions' | 'survey' | 'logs';
+  scope: 'questions' | 'survey' | 'logs' | 'upload';
   windowSeconds: number;
   /** 브라우저(또는 토큰 없는 IP) 버킷 한도 — 이 이벤트 안에서. */
   maxPerWindow: number;
