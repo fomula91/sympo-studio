@@ -102,6 +102,25 @@ export function safeNextPath(raw: string | null | undefined, fallback = '/consol
   return path.startsWith('/') ? path : fallback;
 }
 
+/**
+ * 이 콜백이 **이 브라우저가 시작한 로그인의 것인지** 가린다 (BE-26 ④).
+ *
+ * 단기 쿠키에는 `state.verifier`가 한 문자열로 들어 있다. 쿼리의 state와 쿠키의
+ * state가 같아야만 통과하고, 통과하면 PKCE verifier를 함께 돌려준다.
+ *
+ * 콜백에서 **이 판정이 가장 먼저 와야 한다.** 쿠키를 만료시키는 실패 경로가 이보다
+ * 먼저 돌면, 남이 띄운 콜백 한 번으로 진행 중인 정상 로그인을 깨뜨릴 수 있다.
+ */
+export function matchOAuthState(
+  stored: string | null | undefined,
+  state: string | null | undefined,
+): { verifier: string } | null {
+  if (!stored || !state) return null;
+  const [expectedState, verifier] = stored.split('.');
+  if (!expectedState || !verifier) return null;
+  return expectedState === state ? { verifier } : null;
+}
+
 function base64url(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
@@ -281,42 +300,96 @@ export async function deleteSession(db: D1Database, request: Request): Promise<v
   await db.prepare('DELETE FROM auth_sessions WHERE id = ?').bind(await sha256hex(token)).run();
 }
 
-/** Google이 돌아온 신원으로 사용자를 찾거나 만든다. 같은 이메일이면 같은 계정이다. */
+/**
+ * 같은 이메일의 다른 계정이 이미 있어 **잇지 않고 거절**했다 (BE-26 ①).
+ *
+ * 콜백이 이 사유를 일반 실패와 구분해 돌려보낸다. 사유를 흘리지 않는 로그인 경로의
+ * 원칙에서 이것만 예외로 두는 이유: 이 상태에 빠진 사람은 문구가 없으면 **영원히
+ * 원인을 모른 채 실패**하고, 드러나는 사실("그 주소로 만들어진 계정이 있다")은
+ * 정작 그 주소를 가진 본인만 볼 수 있다.
+ */
+export class AccountLinkConflict extends ApiError {
+  constructor() {
+    super('이 이메일로 만들어진 계정이 이미 있습니다. 기존 로그인 방법을 사용해 주세요.', 409);
+  }
+}
+
+/**
+ * Google이 돌아온 신원으로 사용자를 찾거나 만든다.
+ *
+ * **연결 키는 `oauth_accounts(provider, provider_account_id)` 하나뿐이다** (BE-26 ①).
+ * 이전 구현은 같은 이메일의 `users` 행이 있으면 거기에 제공자를 이었다 — "나중에
+ * GitHub을 붙일 때 같은 사람이 계정 두 개로 갈리지 않게"라는 의도였지만, 그건
+ * **계정 탈취 경로**다. Google 문서는 이메일이 바뀔 수 있으니 계정 식별자로 쓰지
+ * 말라고 하고(Workspace에서 주소가 회수·재발급된다), `email_verified`를 보는
+ * 것으로는 막지 못한다 — 검증된 주소라도 "지금 그 주소를 가진 사람"이 예전 계정의
+ * 주인과 같다는 보장이 없기 때문이다(Codex 교차 리뷰, [[log]] 2026-09-11).
+ *
+ * 이메일이 겹치면 **잇지 않고 거절한다.** 별개 계정을 만드는 쪽이 모델상 더 옳지만
+ * `users.email`이 UNIQUE라 지금 스키마에서는 INSERT가 실패하고, 그 제약을 떼려면
+ * D1에서 위험한 테이블 재작성이 필요하다(ADR 0010 — BE-30으로 등록).
+ *
+ * 신규 생성은 **`batch` 하나로 원자적이다** (BE-26 ②). 이전에는 `INSERT users`와
+ * `INSERT oauth_accounts`가 따로 돌아, 사이에서 실패하면 **oauth 링크 없는 고아
+ * user 행**이 남았다 — 그리고 그 행이 남으면 다음 로그인이 이메일 매칭으로 흘러가
+ * ①이 막으려는 상황을 스스로 만들어냈다.
+ */
 export async function upsertUser(db: D1Database, who: GoogleIdentity): Promise<number> {
   const linked = await db
     .prepare('SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_account_id = ?')
     .bind('google', who.sub)
     .first<{ user_id: number }>();
   if (linked) {
-    // 이름·아바타는 Google 쪽에서 바뀔 수 있으니 로그인마다 맞춰 둔다.
+    // 이름·아바타·이메일은 Google 쪽에서 바뀔 수 있으니 로그인마다 맞춰 둔다.
+    // **이메일도 갱신한다** — 예전엔 최초 가입 시점 값이 굳어, 계정에 붙어 있는
+    // 주소가 실제와 달라진 채로 화면에 표시됐다.
+    //
+    // 다만 새 주소를 **다른 행이 이미 쓰고 있으면 옛 주소를 유지한다.** `email`이
+    // UNIQUE라 그대로 쓰면 제약 위반으로 **이미 링크된 사람의 로그인이 실패**한다 —
+    // 표시용 값 하나 때문에 로그인을 막을 수는 없다. 판정을 같은 문에 넣어 왕복을
+    // 늘리지 않는다(자기 행은 `o.id <> ?`로 제외).
     await db
-      .prepare("UPDATE users SET name = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(who.name, who.picture, linked.user_id)
+      .prepare(
+        `UPDATE users
+            SET email = CASE
+                  WHEN EXISTS (SELECT 1 FROM users o WHERE o.email = ? AND o.id <> ?)
+                  THEN email ELSE ? END,
+                name = ?, avatar_url = ?, updated_at = datetime('now')
+          WHERE id = ?`,
+      )
+      .bind(who.email, linked.user_id, who.email, who.name, who.picture, linked.user_id)
       .run();
     return linked.user_id;
   }
 
-  // 같은 이메일의 계정이 이미 있으면 거기에 제공자를 잇는다 — 나중에 GitHub 등을
-  // 붙일 때 같은 사람이 계정 두 개로 갈리지 않게.
-  const existing = await db
+  // 이 sub로는 처음 보는 사람이다. 같은 이메일의 계정이 있으면 **다른 사람**으로 본다.
+  const clash = await db
     .prepare('SELECT id FROM users WHERE email = ?')
     .bind(who.email)
     .first<{ id: number }>();
+  if (clash) throw new AccountLinkConflict();
 
-  const userId =
-    existing?.id ??
-    (
-      await db
-        .prepare('INSERT INTO users (email, name, avatar_url) VALUES (?, ?, ?) RETURNING id')
-        .bind(who.email, who.name, who.picture)
-        .first<{ id: number }>()
-    )?.id;
+  // `users` 행과 그 링크를 한 트랜잭션에 넣는다. 두 번째 문의 user_id를 첫 번째의
+  // `RETURNING id`로 받을 수는 없어(batch는 바인딩이 먼저 끝난다) **방금 넣은 행을
+  // 이메일로 다시 집는다** — 바로 위에서 충돌이 없음을 확인했고 `email`이 UNIQUE라
+  // 이 서브쿼리는 그 행 하나만 가리킨다. `last_insert_rowid()`에 기대지 않는 이유는
+  // D1 batch가 그 값을 문 사이에 보존한다는 보장을 문서로 확인할 수 없어서다.
+  // 경합으로 같은 이메일이 사이에 끼어들면 UNIQUE가 걸려 **batch 전체가 롤백**된다 —
+  // 고아 행이 남지 않는 것이 이 묶음의 요점이다.
+  const [created] = await db.batch<{ id: number }>([
+    db
+      .prepare('INSERT INTO users (email, name, avatar_url) VALUES (?, ?, ?) RETURNING id')
+      .bind(who.email, who.name, who.picture),
+    db
+      .prepare(
+        `INSERT INTO oauth_accounts (user_id, provider, provider_account_id)
+         VALUES ((SELECT id FROM users WHERE email = ?), ?, ?)`,
+      )
+      .bind(who.email, 'google', who.sub),
+  ]);
+
+  const userId = created?.results?.[0]?.id;
   if (!userId) throw new ApiError('계정을 만들지 못했습니다.', 500);
-
-  await db
-    .prepare('INSERT INTO oauth_accounts (user_id, provider, provider_account_id) VALUES (?, ?, ?)')
-    .bind(userId, 'google', who.sub)
-    .run();
   return userId;
 }
 

@@ -59,6 +59,7 @@
 | [[0007-sso-and-account-model]] | Google SSO + 개인 계정 소유권 (게스트 경로 유지, 0001 개정) |
 | [[0008-rate-limit-counter]] | rate limit 판정을 (키, 창) 카운터로 (0006 부분 개정) |
 | [[0009-event-status-axes]] | 이벤트 상태를 발행 상태·행사 시점 두 축으로 |
+| [[0010-account-link-key]] | 계정 연결 키는 `oauth_accounts` 하나, 이메일은 식별자가 아니다 (0007 부분 개정) |
 
 ## Reviews
 
