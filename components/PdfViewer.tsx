@@ -77,27 +77,32 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
     if (state !== 'ready' || !pdfRef.current || !canvasRef.current) return;
     let cancelled = false;
     (async () => {
-      const pdfPage = await pdfRef.current!.getPage(page);
-      if (cancelled) return;
-      const dpr = window.devicePixelRatio || 1;
-      const viewport = pdfPage.getViewport({ scale });
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = Math.floor(viewport.width * dpr);
-      canvas.height = Math.floor(viewport.height * dpr);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      renderTaskRef.current?.cancel();
-      const task = pdfPage.render({ canvasContext: ctx, viewport, canvas });
-      renderTaskRef.current = task;
       try {
-        await task.promise;
-      } catch (e) {
-        // 페이지·확대를 빠르게 연속으로 바꾸면 이전 렌더가 취소되며 여기로 온다 — 정상 흐름.
-        if ((e as { name?: string })?.name !== 'RenderingCancelledException') throw e;
+        const pdfPage = await pdfRef.current!.getPage(page);
+        if (cancelled) return;
+        const dpr = window.devicePixelRatio || 1;
+        const viewport = pdfPage.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        renderTaskRef.current?.cancel();
+        const task = pdfPage.render({ canvasContext: ctx, viewport, canvas });
+        renderTaskRef.current = task;
+        try {
+          await task.promise;
+        } catch (e) {
+          // 페이지·확대를 빠르게 연속으로 바꾸면 이전 렌더가 취소되며 여기로 온다 — 정상 흐름.
+          if ((e as { name?: string })?.name !== 'RenderingCancelledException') throw e;
+        }
+      } catch {
+        // getPage 실패나 취소가 아닌 렌더 오류 — 잡지 않으면 state가 'ready'에 멈춰 빈 화면만 남는다.
+        if (!cancelled) setState('error');
       }
     })();
     return () => {

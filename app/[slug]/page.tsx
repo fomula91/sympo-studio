@@ -201,6 +201,7 @@ export default function PublicEventPage() {
         icons={ICONSETS[iconSet].glyphs}
         eventId={data.id}
         documents={documents}
+        slug={slug}
         event={{
           title: data.title,
           venue: data.venue ?? '',

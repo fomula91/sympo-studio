@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
 import SurveyPanel from '@/components/SurveyPanel';
-import { sendEventLogs } from '@/lib/api';
+import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
@@ -25,6 +25,8 @@ interface MicrositeProps {
   preview?: boolean;
   /** 참가자 공개 페이지에서만 넘긴다 — 없으면(스튜디오 미리보기) 대표 예시 2건을 보여준다. */
   documents?: DocumentInfo[];
+  /** 참가자 공개 페이지에서만 넘긴다 — 자료를 열기 직전 서명 URL을 새로 받아오는 데 쓴다(서명은 10분 TTL). */
+  slug?: string;
   kv?: string;
   kvPattern?: KvPattern;
   density?: Density;
@@ -46,6 +48,7 @@ export default function Microsite({
   eventId,
   preview = false,
   documents,
+  slug,
   kv = '',
   kvPattern = 'stripe',
   density = '기본',
@@ -55,13 +58,32 @@ export default function Microsite({
   const [qaOpen, setQaOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
+  const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
   const docs = documents ?? DEMO_DOCUMENTS;
 
-  function openDocument(doc: DocumentInfo) {
+  async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
-    setOpenDoc(doc);
-    if (!preview && eventId != null) {
-      sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
+    setDocError(null);
+    // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
+    // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
+    if (preview || !slug) {
+      setOpenDoc(doc);
+      return;
+    }
+    setLoadingDocId(doc.id);
+    try {
+      const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { documents: { id: number; url: string | null }[] };
+      const fresh = data.documents.find((d) => d.id === doc.id)?.url;
+      if (!fresh) throw new Error();
+      setOpenDoc({ ...doc, url: fresh });
+      if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
+    } catch {
+      setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      setLoadingDocId(null);
     }
   }
   const agendaRef = useRef<HTMLOListElement>(null);
@@ -362,12 +384,16 @@ export default function Microsite({
           ) : (
             docs.map((f) => {
               const pending = f.status === 'pending';
+              // status가 pending을 벗어났어도 파일(url)이 없는 자료는 열 수 없다 — pending과
+              // 똑같이 비활성으로 그려야 "활성화된 것처럼 보이는데 눌러도 반응이 없는" 상태를 피한다.
+              const unavailable = pending || !f.url;
+              const loading = loadingDocId === f.id;
               return (
                 <div
                   key={f.id}
                   role="button"
-                  tabIndex={pending ? -1 : 0}
-                  aria-disabled={pending}
+                  tabIndex={unavailable ? -1 : 0}
+                  aria-disabled={unavailable}
                   onClick={() => openDocument(f)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -383,8 +409,8 @@ export default function Microsite({
                     border: `1px solid ${t.line}`,
                     borderRadius: 13,
                     padding: '12px 13px',
-                    cursor: pending ? 'not-allowed' : 'pointer',
-                    opacity: pending ? 0.6 : 1,
+                    cursor: unavailable ? 'not-allowed' : 'pointer',
+                    opacity: unavailable ? 0.6 : loading ? 0.8 : 1,
                   }}
                 >
                   <div
@@ -417,14 +443,17 @@ export default function Microsite({
                       {f.name}
                     </div>
                     <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>
-                      {pending ? '준비 중' : `${f.pages ?? '?'}p · 앱 내 열람`}
+                      {unavailable ? '준비 중' : `${f.pages ?? '?'}p · 앱 내 열람`}
                     </div>
                   </div>
-                  <div style={{ color: t.muted, fontSize: 14 }}>→</div>
+                  <div style={{ color: t.muted, fontSize: 14 }}>{loading ? '…' : '→'}</div>
                 </div>
               );
             })
           )}
+          {docError ? (
+            <div style={{ fontSize: 12, color: t.muted }}>{docError}</div>
+          ) : null}
         </div>
 
         {!preview && !online && (ev.engage.qa !== false || ev.engage.survey !== false) ? (
