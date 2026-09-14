@@ -29,6 +29,30 @@ const DEMO_DATE = '2026-08-15';
  */
 export const DEMO_SLUG = autoSlug(DEMO_TITLE, DEMO_VENUE, DEMO_DATE);
 
+/**
+ * 데모 행사의 테마 초기값 (BE-28).
+ *
+ * **INSERT와 리셋 UPDATE가 이 한 목록을 함께 쓴다.** 값이 아니라 **두 경로가 갈라져
+ * 있던 것**이 결함이었다 — INSERT는 테마 컬럼을 아예 적지 않아 스키마 기본값을 받고,
+ * 리셋 UPDATE는 테마 컬럼을 건드리지 않아 **방문자가 바꾼 값을 그대로 남겼다.** 같은
+ * 행을 만드는 두 경로가 다른 컬럼 목록을 쓰면 언제든 다시 갈라진다.
+ *
+ * 데모 이벤트는 `owner_id IS NULL`이라 **누구나 편집할 수 있는 게스트 체험 경로**다
+ * (`assertCanEdit` 통과). 즉 방문자가 테마를 바꾸는 것은 정상 동작이고, 그것을 자정에
+ * 되돌리는 것이 리셋의 존재 이유다 — 채용담당자가 30초 안에 판단하는 화면이 남이
+ * 망가뜨린 상태여서는 안 된다.
+ *
+ * 값은 `0001_init.sql`의 컬럼 기본값과 같다. 바꾸려면 여기만 고치면 두 경로가 함께 따라온다.
+ */
+const DEMO_THEME = {
+  presetId: null,
+  mode: 'light',
+  iconSet: 'geo',
+  density: '기본',
+  keyVisual: null,
+  kvPattern: 'stripe',
+} as const;
+
 export async function resetDemoData(db: D1Database): Promise<void> {
 
   // **데모 이벤트를 지웠다 다시 만들지 않는다 — 제자리에서 되돌린다.**
@@ -60,11 +84,17 @@ export async function resetDemoData(db: D1Database): Promise<void> {
         .prepare(
           `INSERT INTO events
              (slug, brand, title, venue, event_date, host, capacity, status,
-              engage_qa, engage_survey, engage_chat, engage_cert)
-           VALUES (?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개', 1, 1, 0, 1)
+              engage_qa, engage_survey, engage_chat, engage_cert,
+              preset_id, mode, icon_set, density, key_visual, kv_pattern)
+           VALUES (?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개', 1, 1, 0, 1,
+                   ?, ?, ?, ?, ?, ?)
            RETURNING id`,
         )
-        .bind(DEMO_SLUG, DEMO_TITLE, DEMO_VENUE, DEMO_DATE)
+        .bind(
+          DEMO_SLUG, DEMO_TITLE, DEMO_VENUE, DEMO_DATE,
+          DEMO_THEME.presetId, DEMO_THEME.mode, DEMO_THEME.iconSet,
+          DEMO_THEME.density, DEMO_THEME.keyVisual, DEMO_THEME.kvPattern,
+        )
         .first<{ id: number }>()
     )?.id;
 
@@ -81,10 +111,17 @@ export async function resetDemoData(db: D1Database): Promise<void> {
                 brand = 'MERIDIAN', title = ?, venue = ?, event_date = ?, host = '좌장 서정우',
                 capacity = 120, status = '공개',
                 engage_qa = 1, engage_survey = 1, engage_chat = 0, engage_cert = 1,
+                preset_id = ?, mode = ?, icon_set = ?, density = ?,
+                key_visual = ?, kv_pattern = ?,
                 updated_at = datetime('now')
           WHERE id = ?`,
       )
-      .bind(DEMO_TITLE, DEMO_VENUE, DEMO_DATE, eventId),
+      .bind(
+        DEMO_TITLE, DEMO_VENUE, DEMO_DATE,
+        DEMO_THEME.presetId, DEMO_THEME.mode, DEMO_THEME.iconSet,
+        DEMO_THEME.density, DEMO_THEME.keyVisual, DEMO_THEME.kvPattern,
+        eventId,
+      ),
     // 자식은 전부 새로 깐다. events를 지우지 않으므로 CASCADE가 안 돌아 직접 지운다.
     db.prepare('DELETE FROM event_logs WHERE event_id = ?').bind(eventId),
     db.prepare('DELETE FROM survey_responses WHERE event_id = ?').bind(eventId),

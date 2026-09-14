@@ -59,7 +59,6 @@
 | BE-24 | 무인증 읽기 차단 | 남의 이벤트 상세·운영 지표가 URL만 알면 열림 | BE, BE-13과 같은 파일 |
 | BE-25 | 프리셋 쓰기 보호 | id만 알면 내장 프리셋까지 덮어쓰임 | BE |
 | BE-27 | 자료 status ↔ 파일 존재 일치 | 파일 없는 문서가 `ready`가 될 수 있음 | BE |
-| BE-28 | 데모 리셋이 테마를 안 되돌림 | 방문자가 바꾼 테마가 다음날도 남음 | BE |
 | BE-30 | `users.email` UNIQUE 제거 + 계정 연결 흐름 | 이메일 겹치면 로그인이 막다른 길 (BE-26의 타협) | BE, 테이블 재작성 |
 
 `⛓ FE-30` = FE-30이 풀리기 전에는 같은 벽에 다시 부딪힌다.
@@ -210,11 +209,6 @@
 **무엇** — `PUT /api/events/[id]/documents`가 **파일 없는 기존 문서를 `status: 'ready'`로 바꾸는 것을 막는다.** `lib/agenda.ts`는 **신규 생성만** 검사한다(`id === null && status === 'ready'` → 400). 기존 항목 수정 경로(`UPDATE documents SET … status = ?`)에는 검사가 없어서, `r2_key`가 NULL인 문서를 메타 저장 한 번으로 `ready`로 올릴 수 있다. `r2_key IS NULL`이면 `ready`를 거절하거나, 아예 `status`를 **입력이 아니라 `r2_key` 유무에서 파생**시키는 것을 검토한다(후자가 근본적이다 — 두 값이 어긋날 수 없게 된다).
 **왜** — 참가자 화면에 **열 수 없는 자료가 "준비됨"으로 뜬다.** FE-6 작업 중 이 상태를 실제로 만들어 재현했고, FE 쪽은 `unavailable = pending || !url` 게이트로 방어했지만 **그건 증상을 가린 것이지 원인을 고친 게 아니다**([[log]] 2026-09-14). 서버가 일관성을 보장하지 않으면 다른 소비자(운영자 화면, 리포트)가 같은 함정을 각자 다시 밟는다. `status='pending'`은 "연자가 늦어 자료가 행사 중에 올라온다"는 실무 관찰을 담은 이 테이블의 요점이라([[field-experience]], `0001_init.sql` 주석) 그 의미가 어긋나면 안 된다.
 **완료 기준** — `r2_key`가 NULL인 문서를 `ready`로 바꾸려는 `PUT`이 거절되고 사유가 응답에 드러남(또는 파생 방식을 택했다면 애초에 입력받지 않음). 업로드가 끝나면 `ready`가 되는 기존 흐름은 회귀 없음. 파생 방식을 택했다면 **기존 행 중 어긋난 것이 있는지 확인하고 정리**. `npm run test`에 회귀 테스트 추가.
-
-### BE-28. 데모 리셋이 테마를 되돌리지 않는다
-**무엇** — `lib/seed.ts`의 `resetDemoData`가 데모 이벤트를 제자리 `UPDATE`할 때 **테마 6컬럼을 되돌리지 않는다.** 지금 되돌리는 건 `owner_id`·`brand`·`title`·`venue`·`event_date`·`host`·`capacity`·`status`·`engage_*`뿐이고, `preset_id`·`mode`·`icon_set`·`density`·`key_visual`·`kv_pattern`은 손대지 않는다(`migrations/0001_init.sql:42-47`). `UPDATE` 목록에 추가한다.
-**왜** — **데모 이벤트는 누구나 편집할 수 있는 게스트 체험 경로**다(`owner_id IS NULL` → `assertCanEdit` 통과). 방문자가 테마를 바꾸면 **자정 리셋이 그걸 되돌리지 못해 다음 방문자에게 그대로 남는다.** 데모가 매일 같은 상태로 시작한다는 전제가 깨지고, 채용담당자가 30초 안에 판단하는 화면이 남이 망가뜨린 상태일 수 있다. 리셋의 존재 이유가 바로 이 전제다. Codex 교차 리뷰가 "리셋이 테마를 안 되돌리는 것"으로 지목했고 BE-13 범위로 미뤄졌으나 실제로는 등록되지 않았다([[log]] 2026-09-11).
-**완료 기준** — 데모 이벤트의 테마를 바꾼 뒤 `resetDemoData`를 돌리면 6컬럼이 전부 초기값으로 돌아옴(`key_visual`은 NULL). `lib/seed.test.ts`에 회귀 테스트 추가 — **가짜 D1이 SQL 문자열만 본다는 기존 한계**를 감안해 단언을 짜고, 그 한계를 파일 주석에 이미 적어 둔 방식을 따른다. R2에 올라간 키비주얼이 있다면 고아 정리 경로와 어긋나지 않는지 확인.
 
 ### BE-30. `users.email`의 UNIQUE를 떼고 계정 연결 흐름을 만든다
 **무엇** — ① `users.email`의 `NOT NULL UNIQUE`를 떼는 마이그레이션. SQLite라 **테이블 재작성**이고, `users`는 `oauth_accounts`·`auth_sessions`·`events.owner_id` 세 자식의 부모이며 전부 `ON DELETE CASCADE`다 — FK가 켜진 채 `DROP TABLE users`를 하면 SQLite가 암묵적 `DELETE FROM`을 돌리고 **CASCADE 액션은 비활성화되지 않아 모든 사용자 이벤트가 지워진다.** D1은 `PRAGMA foreign_keys=OFF`를 안 주고 `defer_foreign_keys`는 검사만 미룰 뿐 액션을 막지 않으므로, **안전한 경로를 먼저 찾아 로컬 D1에서 실측한 뒤** 마이그레이션을 쓴다(자식 데이터 대피 후 복원까지 포함해 판단). ② 제약이 빠지면 `upsertUser`의 `AccountLinkConflict`를 **별개 계정 생성**으로 바꾼다([[Decisions/0010-account-link-key]]). ③ **로그인한 상태에서 다른 제공자를 잇는 명시적 흐름**을 만든다 — 원래 이메일 자동 연결이 하려던 일을 추측이 아니라 사용자의 동의로 한다. ④ 콜백의 `auth=email_conflict` 처리와 FE 문구를 함께 정리한다(FE-15 의존).
