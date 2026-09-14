@@ -43,9 +43,13 @@ describe('UPLOAD_RATE_POLICY', () => {
   const rows = (count: number) => [
     { key_hash: 'tok000', scope: 'upload:e1', window_key: windowKey(), count },
   ];
-  // rate-limit.ts의 windowKeys()와 같은 규칙(KST 분 단위).
+  // rate-limit.ts의 windowKeys()와 같은 규칙 — **정책의 창 길이로 내림**한다.
+  // 예전 테스트는 여기에 분 단위를 박아 둬서, 창이 5분인데 1분마다 리셋되던
+  // 결함을 잡기는커녕 고정하고 있었다(`/code-review` 발견).
   function windowKey() {
-    return `m:${new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)}`;
+    const span = UPLOAD_RATE_POLICY.windowSeconds * 1000;
+    const kst = Date.now() + 9 * 60 * 60 * 1000;
+    return `m:${new Date(Math.floor(kst / span) * span).toISOString().slice(0, 16)}`;
   }
 
   it('현장에서 자료를 연달아 올리는 정상 경로는 막지 않는다', () => {

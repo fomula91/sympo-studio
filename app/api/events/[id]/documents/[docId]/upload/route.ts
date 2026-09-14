@@ -2,8 +2,8 @@ import type { NextRequest } from 'next/server';
 import { ApiError, BadRequest, getDb, getEnv, json, withRoute, type DocumentRow } from '@/lib/db';
 import { assertCanEdit } from '@/lib/auth';
 import {
-  assertEventCapacity, assertUploadable, documentKey, MAX_FILE_BYTES, uploadCostMb,
-  UPLOAD_RATE_POLICY,
+  assertEventCapacity, assertUploadable, documentKey, MAX_EVENT_BYTES, MAX_FILE_BYTES,
+  uploadCostMb, UPLOAD_RATE_POLICY,
 } from '@/lib/r2';
 import { evaluateRateLimit, rateCounterStatement, rateKeys, rateUsageStatements } from '@/lib/rate-limit';
 
@@ -48,20 +48,37 @@ function positiveInt(v: string, field: string): number {
  *    `documentKey`가 회차마다 nonce를 붙이므로 **덮어쓰기는 제자리 갱신이 아니라 새 객체
  *    생성**이고, 옛 객체 삭제는 실패해도 넘어가는(best-effort) 경로다. 1·2만으로는
  *    이 반복이 안 막힌다.
+ *
+ * ## 이 라우트만 `Content-Length`를 요구하는 이유 (`/code-review` 발견)
+ *
+ * 없으면 **상한 셋이 전부 뒤로 밀린다** — `assertUploadable`의 크기 검사가 건너뛰어지고
+ * (`size !== null`일 때만 본다), 버퍼에 담기 전 사전 판정도 못 하며, 그대로
+ * `arrayBuffer()`가 **본문 전체를 메모리에 올린 뒤에야** 20MB 검사에 닿는다. 즉
+ * `Transfer-Encoding: chunked` 하나로 100MB를 아이솔레이트(한도 128MB)에 밀어 넣을 수
+ * 있었고, 카운터는 성공할 때만 오르므로 **공격자에게 비용이 0**이었다. 헤더를 넣는
+ * 쪽이 정상 경로다(`fetch`가 `File`/`Blob`/`ArrayBuffer` 본문에 자동으로 채운다).
  */
 export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
   const { id, docId } = await ctx.params;
   const eventId = positiveInt(id, 'id');
   const documentId = positiveInt(docId, '자료 id');
 
+  // 요청 하나가 읽기·판정·증가에서 **같은 창**을 보도록 시작 시각을 고정한다.
+  // 본문 읽기가 창 경계를 넘으면 판정이 새 창을 0으로 읽어 그냥 통과한다
+  // (`/code-review` 발견 — 느린 전송만으로 재현된다).
+  const now = Date.now();
+
   const declared = request.headers.get('content-length');
-  const declaredSize = declared ? Number(declared) : null;
+  const declaredSize = declared === null ? null : Number(declared);
+  if (declaredSize === null || !Number.isInteger(declaredSize) || declaredSize < 0) {
+    throw new BadRequest('Content-Length 헤더가 필요합니다(청크 전송은 받지 않습니다).');
+  }
   const contentType = assertUploadable(request.headers.get('content-type'), declaredSize);
   if (!request.body) throw new BadRequest('업로드할 파일이 없습니다.');
 
   const db = await getDb();
   const env = await getEnv();
-  const keys = await rateKeys(request);
+  const keys = await rateKeys(request, now);
 
   // 이벤트를 바꾸는 쓰기 경로는 전부 소유권을 지난다 — 상위 라우트만 막으면
   // 여기로 우회된다(Codex 교차 리뷰 #2에서 재현).
@@ -79,7 +96,7 @@ export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
           WHERE event_id = ? AND id <> ?`,
       )
       .bind(eventId, documentId),
-    rateCounterStatement(db, keys, UPLOAD_RATE_POLICY, eventId),
+    rateCounterStatement(db, keys, UPLOAD_RATE_POLICY, eventId, now),
   ]);
 
   const doc = docRes.results[0] as Pick<DocumentRow, 'id' | 'r2_key'> | undefined;
@@ -89,12 +106,10 @@ export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
   // **바이트를 버퍼에 담기 전에** 신고 크기로 한 번 걸러낸다 — 이미 한도를 넘긴
   // 상대에게 20MB를 더 받아 메모리에 올릴 이유가 없다. 신고 크기는 못 믿으므로
   // 실제 크기로 아래에서 다시 판정한다(여기서 통과시키는 쪽으로만 관대하다).
-  if (declaredSize !== null && Number.isFinite(declaredSize)) {
-    assertEventCapacity(otherBytes, declaredSize);
-    evaluateRateLimit(
-      rateRes.results as never, keys, UPLOAD_RATE_POLICY, eventId, uploadCostMb(declaredSize),
-    );
-  }
+  assertEventCapacity(otherBytes, declaredSize);
+  evaluateRateLimit(
+    rateRes.results as never, keys, UPLOAD_RATE_POLICY, eventId, uploadCostMb(declaredSize), now,
+  );
 
   // Content-Length는 클라이언트가 말한 값이라 믿지 않는다 — 실제로 받은 바이트로
   // 한 번 더 검사한다. R2에 넣기 **전에** 확인하므로 넣었다 지우는 왕복이 없다.
@@ -106,29 +121,54 @@ export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
 
   assertEventCapacity(otherBytes, bytes.byteLength);
   const cost = uploadCostMb(bytes.byteLength);
-  evaluateRateLimit(rateRes.results as never, keys, UPLOAD_RATE_POLICY, eventId, cost);
+  evaluateRateLimit(rateRes.results as never, keys, UPLOAD_RATE_POLICY, eventId, cost, now);
 
   const key = documentKey(eventId, documentId);
   const object = await env.DOCS.put(key, bytes, { httpMetadata: { contentType } });
 
+  let updated: D1Result;
   try {
     // 카운터는 쓰기가 성공한 뒤 같은 트랜잭션에서 올린다(ADR 0008) — 요청마다 올리면
     // 무효 요청이 D1 쓰기 티어를 태운다.
-    await db.batch([
+    //
+    // **총량 판정을 UPDATE의 WHERE에 한 번 더 넣는다.** 위의 `assertEventCapacity`는
+    // 읽고-나서-쓰는 구조라, 같은 이벤트의 **다른 자료**에 동시에 올리면 둘 다 같은
+    // `otherBytes`를 보고 통과해 상한을 넘긴다(`/code-review` 발견). D1은 쓰기를
+    // 직렬화하므로 이 술어가 커밋 시점의 값으로 평가돼 **상한이 실제 천장이 된다.**
+    const [res] = await db.batch([
       db
         .prepare(
           `UPDATE documents
               SET r2_key = ?, content_type = ?, size_bytes = ?, status = 'ready',
                   uploaded_at = datetime('now')
-            WHERE id = ? AND event_id = ?`,
+            WHERE id = ? AND event_id = ?
+              AND (SELECT COALESCE(SUM(size_bytes), 0) FROM documents other
+                    WHERE other.event_id = ? AND other.id <> ?) + ? <= ?`,
         )
-        .bind(key, contentType, object.size, documentId, eventId),
-      ...rateUsageStatements(db, keys, UPLOAD_RATE_POLICY, eventId, cost),
+        .bind(
+          key, contentType, object.size, documentId, eventId,
+          eventId, documentId, object.size, MAX_EVENT_BYTES,
+        ),
+      ...rateUsageStatements(db, keys, UPLOAD_RATE_POLICY, eventId, cost, now),
     ]);
+    updated = res;
   } catch (e) {
     // D1 갱신이 실패하면 R2에 아무도 못 찾는 객체가 남는다 — 되돌린다.
     await env.DOCS.delete(key);
     throw e;
+  }
+
+  // 술어에 걸렸다(또는 그 사이 자료가 지워졌다). 올린 객체를 되돌리고 사유를 알린다 —
+  // 여기까지 온 요청은 사전 판정을 지났으므로 원인은 사실상 동시 업로드다.
+  if ((updated.meta.changes ?? 0) === 0) {
+    await env.DOCS.delete(key).catch(() => {});
+    const current = await db
+      .prepare('SELECT COALESCE(SUM(size_bytes), 0) AS total FROM documents WHERE event_id = ?')
+      .bind(eventId)
+      .first<{ total: number }>();
+    assertEventCapacity(Number(current?.total ?? 0), object.size);
+    // 총량이 문제가 아니었다면 자료 행이 사라진 것이다.
+    return json({ error: '자료를 찾을 수 없습니다.' }, 404);
   }
 
   // 교체 업로드였다면 옛 객체를 지운다. 실패해도 요청은 성공이다 — 남은 객체는

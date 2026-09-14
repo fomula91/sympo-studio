@@ -55,7 +55,7 @@ export interface RateKeys {
  * 토큰 해시에 IP를 섞지 않는다 — 참가자가 Wi-Fi↔LTE를 오가도 버킷이 유지된다.
  * 위조 토큰의 무제한 시도는 IP 상한이 잡는다.
  */
-export async function rateKeys(request: Request): Promise<RateKeys> {
+export async function rateKeys(request: Request, now = Date.now()): Promise<RateKeys> {
   // cf-connecting-ip는 CF 엣지가 채운다. x-forwarded-for 폴백은 엣지 밖
   // (next dev·wrangler preview) 전용이다 — 클라이언트가 위조할 수 있으므로
   // 운영에서 판정 근거가 되면 안 된다. ??가 아니라 ||인 이유: 빈 문자열
@@ -64,7 +64,7 @@ export async function rateKeys(request: Request): Promise<RateKeys> {
     request.headers.get('cf-connecting-ip') ||
     request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
     'unknown';
-  const day = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const day = new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const token = request.headers.get('x-client-token');
   return {
     ipHash: await sha16(`${ip}|${day}`),
@@ -104,15 +104,27 @@ export interface RatePolicy {
 }
 
 /** KST 기준 'YYYY-MM-DDTHH:MM'. 하루 경계도 여기서 잘라 쓴다. */
-function kstStamp(now = Date.now()): string {
+function kstStamp(now: number): string {
   return new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 16);
 }
 
-function windowKeys(now = Date.now()) {
-  const stamp = kstStamp(now);
-  // 하루 경계가 KST인 것이 요점이다 — 시드 리셋 Cron(00:00 KST)과 같은 순간에
-  // 카운터도 갈려야 한다. UTC면 두 경계가 9시간 어긋난다.
-  return { day: `d:${stamp.slice(0, 10)}`, window: `m:${stamp}` };
+/**
+ * 카운터 버킷 이름. **`policy.windowSeconds`만큼 바닥으로 내림한 시각**이 창 이름이다.
+ *
+ * 예전에는 분 단위 스탬프를 그대로 썼고 `windowSeconds`는 카운터 TTL에만 쓰였다.
+ * 정책이 전부 60초였던 동안은 우연히 일치했지만, **BE-29가 처음으로 300초를 쓰면서
+ * 어긋났다** — 문구는 "5분에 200MB"인데 실제로는 1분마다 리셋돼 5배 느슨했다
+ * (`/code-review` 발견). 창 길이가 정책의 값이 되도록 여기서 내림한다.
+ *
+ * 60초 정책은 내림 결과가 예전과 같은 분 경계라 **동작이 바뀌지 않는다.**
+ *
+ * 하루 경계가 KST인 것이 요점이다 — 시드 리셋 Cron(00:00 KST)과 같은 순간에
+ * 카운터도 갈려야 한다. UTC면 두 경계가 9시간 어긋난다.
+ */
+function windowKeys(policy: RatePolicy, now: number) {
+  const span = Math.max(1, policy.windowSeconds) * 1000;
+  const floored = Math.floor((now + 9 * 60 * 60 * 1000) / span) * span - 9 * 60 * 60 * 1000;
+  return { day: `d:${kstStamp(now).slice(0, 10)}`, window: `m:${kstStamp(floored)}` };
 }
 
 /**
@@ -145,8 +157,9 @@ export function rateCounterStatement(
   keys: RateKeys,
   policy: RatePolicy,
   eventId: number,
+  now = Date.now(),
 ): D1PreparedStatement {
-  const w = windowKeys();
+  const w = windowKeys(policy, now);
   const sc = scopes(policy, eventId);
   // 토큰이 없으면 IP 단독 버킷 하나뿐이라 그 scope만 본다.
   return db
@@ -174,6 +187,13 @@ function pick(rows: CounterRow[], keyHash: string | null, scope: string, windowK
  * 토큰이 없으면 IP 단독 버킷 하나로 강등한다. 한도는 브라우저 버킷과 같게 둬
  * **토큰 생략이 우회가 되지 않게** 하고, 범위도 전역이다(이벤트별로 좁히면
  * 토큰을 빼는 것만으로 한도가 이벤트 수만큼 곱해진다).
+ *
+ * `now`를 받는 이유는 **요청 하나가 읽기·판정·증가에서 같은 창을 봐야** 하기
+ * 때문이다(`/code-review` 발견). 각자 `Date.now()`를 부르면 그 사이에 창이 넘어갈
+ * 수 있고, 그러면 판정이 **새 창의 카운터를 0으로 읽어 무조건 통과**시킨다.
+ * 업로드처럼 본문 읽기가 오래 걸리는 라우트에서는 느린 전송만으로 재현된다
+ * (하루 경계에서는 증가분이 아무도 안 읽는 행에 쌓여 그날 사용량이 사라진다).
+ * 라우트가 요청 시작 시각을 고정해 넘긴다.
  */
 export function evaluateRateLimit(
   rows: CounterRow[],
@@ -181,8 +201,9 @@ export function evaluateRateLimit(
   policy: RatePolicy,
   eventId: number,
   cost = 1,
+  now = Date.now(),
 ): void {
-  const w = windowKeys();
+  const w = windowKeys(policy, now);
   const sc = scopes(policy, eventId);
   const { messages } = policy;
 
@@ -223,8 +244,9 @@ export function rateUsageStatements(
   policy: RatePolicy,
   eventId: number,
   cost = 1,
+  now = Date.now(),
 ): D1PreparedStatement[] {
-  const w = windowKeys();
+  const w = windowKeys(policy, now);
   const sc = scopes(policy, eventId);
   const bump = (keyHash: string, scope: string, windowKey: string, ttl: string) =>
     db
