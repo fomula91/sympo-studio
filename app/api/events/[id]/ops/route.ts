@@ -1,78 +1,50 @@
+import type { NextRequest } from 'next/server';
 import { eventId, getDb, json, withRoute, type IdCtx } from '@/lib/db';
-
-interface KindRow { kind: string; visitors: number; hits: number }
-interface TargetRow { session_id: number | null; document_id: number | null; visitors: number; hits: number }
+import { sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
+import { opsStatements, toOpsDTO } from '@/lib/ops';
 
 /**
- * GET /api/events/[id]/ops — 운영 지표 집계 (BE-5)
+ * GET /api/events/[id]/ops — 운영 지표 집계 (BE-5, BE-24)
  *
- * 리포트(FE-5)의 입력. **운영자용이라 공개 상태 게이트를 걸지 않는다**(BE-16의
- * summary와 같은 이유 — 초안 상태에서 시험 열람으로 지표를 확인하는 것이 정상
- * 흐름이다). 인가 검사가 붙기 전까지(BE-13) 누구나 조회할 수 있다.
+ * **운영자 전용이다.** 예전에는 이 라우트에 **인증 호출이 0건**이었고, `owner_id`가
+ * 채워지기 시작한 뒤에도 그대로라 **남의 이벤트 방문자·열람 지표가 id만 알면 열렸다.**
+ * 소유권 모델을 도입해 놓고 읽기가 뚫려 있으면 그 모델이 성립하지 않는다.
  *
- * "몇 명"과 "몇 번"을 함께 준다. 열람률의 분모는 사람이라 DISTINCT visitor가
- * 필요하지만, 토큰 없는 방문자는 visitor가 NULL이라 인원에서 빠진다 — 그때도
- * hits는 남으므로 두 수가 크게 벌어지면 "토큰 없이 도는 클라이언트가 많다"는
- * 신호로 읽으면 된다.
+ * 남의 것이면 403이 아니라 **404**다 — 존재를 흘리지 않는다(BE-7·BE-13의 규칙).
+ * 소유자가 없는 데모 이벤트는 그대로 열려 있다(게스트 체험 경로).
  *
- * 세 쿼리를 batch로 묶어 요청당 D1 왕복 1회. 폴링 대상은 아니지만 로그가 쌓일수록
- * 스캔이 커지므로 짧은 엣지 캐시를 둔다(BE-8에서 summary에 둔 것과 같은 이유).
+ * **공개 상태 게이트는 걸지 않는다**(BE-16의 summary와 같은 이유) — 초안 상태에서
+ * 시험 열람으로 지표를 확인하는 것이 정상 흐름이다.
+ *
+ * **참가자 공개 리포트는 이 경로를 쓰지 않는다** — `/api/public/[slug]/report`로
+ * 갈랐다(BE-24). 하나만 잠그면 참가자 리포트가 죽고, 열어 두면 남의 지표가 샌다.
+ * 집계 계산은 `lib/ops.ts`에 한 벌만 둔다.
+ *
+ * 판정을 조회와 같은 문에 넣어 왕복을 늘리지 않는다(BE-13 ⑥). 폴링 대상은 아니지만
+ * 로그가 쌓일수록 스캔이 커지므로 짧은 엣지 캐시를 둔다.
  */
-export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
+export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
+  const tokenHash = (await sessionTokenHash(request)) ?? '';
 
   const [eventRes, kindRes, targetRes] = await db.batch([
-    db.prepare('SELECT capacity FROM events WHERE id = ?').bind(id),
     db
       .prepare(
-        `SELECT kind, COUNT(DISTINCT visitor) AS visitors, COUNT(*) AS hits
-         FROM event_logs WHERE event_id = ? GROUP BY kind`,
+        `SELECT capacity, (owner_id IS NULL OR owner_id = ${sessionUserIdSql(2)}) AS can_read
+           FROM events WHERE id = ?1`,
       )
-      .bind(id),
-    db
-      .prepare(
-        `SELECT session_id, document_id,
-                COUNT(DISTINCT visitor) AS visitors, COUNT(*) AS hits
-         FROM event_logs
-         WHERE event_id = ? AND kind IN ('session_view', 'doc_view')
-         GROUP BY session_id, document_id
-         ORDER BY visitors DESC`,
-      )
-      .bind(id),
+      .bind(id, tokenHash),
+    ...opsStatements(db, { id }),
   ]);
 
-  const event = eventRes.results[0] as { capacity: number | null } | undefined;
-  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  const event = eventRes.results[0] as { capacity: number | null; can_read: number } | undefined;
+  if (!event || !event.can_read) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
-  const byKind = new Map(
-    (kindRes.results as unknown as KindRow[]).map((r) => [r.kind, { visitors: r.visitors, hits: r.hits }]),
-  );
-  const zero = { visitors: 0, hits: 0 };
-  const pageView = byKind.get('page_view') ?? zero;
-
-  const targets = targetRes.results as unknown as TargetRow[];
-
-  return json(
-    {
-      capacity: event.capacity,
-      // 방문자 수의 기준은 page_view다 — 화면에 들어온 사람.
-      visitors: pageView.visitors,
-      pageViews: pageView.hits,
-      surveyCompleted: (byKind.get('survey_complete') ?? zero).visitors,
-      // 분모(capacity)는 운영자 손입력이라 방문자가 그것을 넘을 수 있다.
-      // summary의 responseRate와 같은 이유로 1을 넘지 않게 자른다.
-      attendanceRate: event.capacity
-        ? Math.min(1, Math.round((pageView.visitors / event.capacity) * 1000) / 1000)
-        : null,
-      sessions: targets
-        .filter((r) => r.session_id !== null)
-        .map((r) => ({ sessionId: r.session_id, visitors: r.visitors, hits: r.hits })),
-      documents: targets
-        .filter((r) => r.document_id !== null)
-        .map((r) => ({ documentId: r.document_id, visitors: r.visitors, hits: r.hits })),
-    },
-    200,
-    { 'Cache-Control': 'public, max-age=5' },
-  );
+  return json(toOpsDTO(event.capacity, kindRes.results, targetRes.results), 200, {
+    // 소유자별로 달라지는 응답이라 **공유 캐시에 올리지 않는다** — `public`이면
+    // 중간 캐시가 한 사람의 응답을 다른 사람에게 줄 수 있다(참가자용 공개 리포트
+    // 쪽은 누구에게나 같은 응답이라 `public`을 쓴다).
+    'Cache-Control': 'private, max-age=5',
+  });
 });

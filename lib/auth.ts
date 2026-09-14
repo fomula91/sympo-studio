@@ -293,6 +293,34 @@ export async function getSessionUser(
   return row ? { id: row.id, email: row.email, name: row.name, avatarUrl: row.avatar_url } : null;
 }
 
+/**
+ * 세션 쿠키의 토큰 해시. 없으면 null이다 (BE-13 ⑥).
+ *
+ * `getSessionUser`와 달리 **D1을 건드리지 않는다** — 판정을 SQL 안으로 넣기 위한
+ * 재료만 만든다. 아래 `sessionUserIdSql()`과 짝이다.
+ */
+export async function sessionTokenHash(request: Request): Promise<string | null> {
+  const token = readCookie(request, cookieNames(isSecureRequest(request)).session);
+  return token ? await sha256hex(token) : null;
+}
+
+/**
+ * "이 토큰의 사용자 id" 서브쿼리 (BE-13 ⑥).
+ *
+ * 읽기 경로가 소유권을 보려면 세션을 알아야 하는데, `getSessionUser`를 먼저 부르면
+ * **요청당 D1 왕복이 하나 는다.** 콘솔 화면은 여러 API를 연속으로 부르므로 그 하나가
+ * 화면 하나당 여러 번이 된다(ADR 0007이 "batch로 묶는다"고 적어 둔 지점).
+ *
+ * 그래서 판정을 SQL 안으로 넣는다 — 대상 조회와 **같은 문**에서 평가되므로 왕복이
+ * 늘지 않는다. 토큰이 없거나 만료면 서브쿼리가 NULL이고, `owner_id = NULL`은 참이
+ * 되지 않으므로 **게스트는 무소유(데모) 행만** 통과한다.
+ *
+ * `n`은 바인딩 자리번호다 — 호출부가 자기 바인딩 순서에 맞춰 넘긴다.
+ */
+export function sessionUserIdSql(n: number): string {
+  return `(SELECT s.user_id FROM auth_sessions s WHERE s.id = ?${n} AND s.expires_at > datetime('now'))`;
+}
+
 export async function deleteSession(db: D1Database, request: Request): Promise<void> {
   const name = cookieNames(isSecureRequest(request)).session;
   const token = readCookie(request, name);
@@ -402,6 +430,50 @@ export async function purgeExpiredSessions(db: D1Database): Promise<number> {
 }
 
 // ── 인가 ────────────────────────────────────────────────────────────────────
+
+/**
+ * 이 이벤트를 **볼** 수 있는가 (BE-24).
+ *
+ * 판정은 `assertCanEdit`와 같다 — 소유자가 없으면(데모) 누구나, 있으면 본인만,
+ * 아니면 **404**다. 쓰기와 읽기의 경계를 굳이 다르게 둘 이유가 없고, 다르게 두면
+ * "고칠 수는 없지만 볼 수는 있다"는 애매한 상태가 생겨 설명해야 할 규칙이 하나 는다.
+ *
+ * **왜 읽기에도 필요한가**: `owner_id`가 채워지기 시작한 뒤(BE-12) 이벤트 상세와
+ * 운영 지표는 **인증 호출이 아예 0건**이었다(`_request`가 쓰이지도 않았다). 소유권
+ * 모델을 도입해 놓고 읽기가 뚫려 있으면 그 모델이 성립하지 않는다.
+ *
+ * **참가자 경로는 이걸 쓰지 않는다** — 공개 상태(`assertPublicEvent`)로 판정하는
+ * 별개 경계다. 참가자에게 로그인을 요구하면 제품이 깨진다.
+ *
+ * 이미 이벤트 행을 읽은 라우트를 위해 `owner_id`를 직접 받는 형태다 — 조회를
+ * 한 번 더 하면 요청당 D1 왕복이 는다(BE-13 ⑥).
+ */
+export async function assertCanRead(
+  db: D1Database,
+  request: Request,
+  ownerId: number | null,
+): Promise<void> {
+  if (ownerId === null) return;
+  const user = await getSessionUser(db, request);
+  if (!user || user.id !== ownerId) throw eventNotFound();
+}
+
+/**
+ * 로그인한 사용자를 돌려주고, 없으면 **401**이다 (BE-13 ①).
+ *
+ * 게스트에게 401을 주는 유일한 자리는 **새 이벤트를 서버에 만드는 경로**다. 나머지
+ * 운영자 경로는 "없는 것"으로 404를 주는데(존재 비노출), 생성은 가리킬 대상이 없어
+ * 숨길 존재도 없다 — 여기서 404를 주면 "왜 안 되는지" 알 길이 없어진다.
+ *
+ * 게스트가 만든 것을 잃지 않게 하는 장치는 로컬 워크스페이스와 가져오기(BE-15)이지
+ * 서버에 무소유 행을 쌓는 것이 아니다 — 무소유 행은 **자정 리셋이 지우는 데모의 몫**이라,
+ * 게스트가 거기에 만들면 하룻밤 뒤 사라진다(ADR 0007 결정 1).
+ */
+export async function requireUser(db: D1Database, request: Request): Promise<SessionUser> {
+  const user = await getSessionUser(db, request);
+  if (!user) throw new ApiError('로그인이 필요합니다.', 401);
+  return user;
+}
 
 /**
  * 이 이벤트를 고치거나 지울 수 있는가 (BE-12 리뷰 #5, Codex 교차 리뷰 #2).

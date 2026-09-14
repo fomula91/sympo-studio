@@ -72,6 +72,25 @@ export async function rateKeys(request: Request, now = Date.now()): Promise<Rate
   };
 }
 
+/**
+ * 로그인 사용자용 키 (BE-13 ⑦).
+ *
+ * 토큰 버킷 자리에 **브라우저 토큰 대신 user_id**를 넣는다 — 운영자 쓰기에서 막고
+ * 싶은 것은 "이 브라우저"가 아니라 "이 계정"이고, 계정은 기기를 바꿔도 같다.
+ * 날짜를 섞는 것은 다른 키와 같다(매일 로테이션, 원문 저장 안 함).
+ *
+ * IP 층은 그대로 둔다 — 계정을 여러 개 만들어 도는 경우를 잡는 것은 그쪽이다.
+ */
+export async function userRateKeys(
+  request: Request,
+  userId: number,
+  now = Date.now(),
+): Promise<RateKeys> {
+  const { ipHash } = await rateKeys(request, now);
+  const day = new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return { ipHash, tokenHash: await sha16(`user|${userId}|${day}`) };
+}
+
 /** rate limit 초과 → 429. withRoute가 상태코드를 읽는다. */
 export class RateLimited extends ApiError {
   constructor(message: string) {

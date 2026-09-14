@@ -9,7 +9,11 @@ import {
   withRoute,
   type EventRow,
 } from '@/lib/db';
-import { getSessionUser } from '@/lib/auth';
+import { requireUser, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
+import { EVENT_WRITE_RATE_POLICY, MAX_EVENTS_PER_USER } from '@/lib/events';
+import {
+  evaluateRateLimit, rateCounterStatement, rateUsageStatements, userRateKeys,
+} from '@/lib/rate-limit';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
@@ -17,6 +21,14 @@ import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
  *
  * 콘솔 화면의 검색·상태 필터·정렬을 그대로 받는다.
  *   ?q=검색어  ?status=진행중  ?sort=최신|행사일|이름
+ *
+ * **보이는 범위는 소유권으로 갈린다** (BE-13 ③ · BE-24). 예전에는 `owner_id` 필터가
+ * 없어 **남의 이벤트가 전부 목록에 나왔다.** 지금은 로그인하면 "내 것 + 데모",
+ * 게스트는 데모(`owner_id IS NULL`)만이다.
+ *
+ * 데모를 로그인 사용자에게도 남겨 두는 이유: 데모는 숨길 남의 데이터가 아니라
+ * **제품이 스스로를 보여주는 화면**이고, 로그인했다고 그것이 사라지면 "로그인하면
+ * 잃는다"가 또 하나 생긴다(ADR 0007).
  */
 export const GET = withRoute(async (request: NextRequest) => {
   const db = await getDb();
@@ -28,8 +40,18 @@ export const GET = withRoute(async (request: NextRequest) => {
   const where: string[] = [];
   const binds: unknown[] = [];
 
+  // 소유권 판정을 **같은 문 안**에서 한다 — 세션을 따로 조회하면 요청당 D1 왕복이
+  // 하나 늘고, 콘솔은 화면 하나에 여러 API를 연속으로 부른다(BE-13 ⑥).
+  // 토큰이 없거나 만료면 서브쿼리가 NULL이라 무소유(데모) 행만 남는다.
+  where.push(`(owner_id IS NULL OR owner_id = ${sessionUserIdSql(binds.length + 1)})`);
+  binds.push((await sessionTokenHash(request)) ?? '');
+
   if (q) {
-    where.push('(title LIKE ?1 OR brand LIKE ?1 OR venue LIKE ?1)');
+    // 자리번호를 **계산해서** 쓴다. 예전엔 `?1`이 하드코딩이었는데, 앞에 소유권
+    // 조건이 붙으면서 1번 자리의 주인이 바뀌었다 — 그대로 뒀다면 검색어가 아니라
+    // **사용자 id로 LIKE 검색**을 하게 된다.
+    const at = binds.length + 1;
+    where.push(`(title LIKE ?${at} OR brand LIKE ?${at} OR venue LIKE ?${at})`);
     binds.push(`%${q}%`);
   }
   if (status && status !== '전체') {
@@ -82,6 +104,12 @@ function str(v: unknown, field: string, required = false): string | null {
  *
  * slug를 넘기지 않으면 행사명·장소·날짜에서 만든다. 어느 쪽이든 중복은
  * 접미사로 피한다(ensureUniqueSlug).
+ *
+ * **로그인이 필요하다** (BE-13 ①). 예전에는 누구나 만들 수 있었고 비로그인이 만든
+ * 행은 `owner_id NULL`, 즉 **데모와 같은 무소유 행**이 됐다 — 자정 리셋이 지우는
+ * 대상이라 만든 사람은 하룻밤 뒤 잃고, 그때까지는 **아무나 고치고 지울 수 있었다**
+ * (`assertCanEdit`가 무소유를 통과시킨다). 게스트의 작업을 지키는 장치는 로컬
+ * 워크스페이스와 가져오기(BE-15)이지 서버에 무소유 행을 쌓는 것이 아니다.
  */
 export const POST = withRoute(async (request: NextRequest) => {
   const db = await getDb();
@@ -91,6 +119,25 @@ export const POST = withRoute(async (request: NextRequest) => {
   // JSON 리터럴 null은 파싱에 성공하므로 위 catch에 안 걸린다.
   if (body === null || typeof body !== 'object') {
     throw new BadRequest('요청 본문은 JSON 객체여야 합니다.');
+  }
+
+  // 소유자를 정하지 못하면 이 요청은 시작할 이유가 없다 — 본문 검증보다 먼저 끊는다.
+  const owner = await requireUser(db, request);
+
+  // 속도(rate limit)와 총량(계정당 이벤트 수)은 다른 것을 막는다 — 하루 한도씩
+  // 꾸준히 만들면 총량은 계속 는다(BE-13 ⑦). 둘을 한 batch로 읽어 왕복을 늘리지 않는다.
+  const now = Date.now();
+  const keys = await userRateKeys(request, owner.id, now);
+  const [rateRes, countRes] = await db.batch([
+    rateCounterStatement(db, keys, EVENT_WRITE_RATE_POLICY, 0, now),
+    db.prepare('SELECT COUNT(*) AS n FROM events WHERE owner_id = ?').bind(owner.id),
+  ]);
+  evaluateRateLimit(rateRes.results as never, keys, EVENT_WRITE_RATE_POLICY, 0, 1, now);
+  const owned = Number((countRes.results[0] as { n?: number } | undefined)?.n ?? 0);
+  if (owned >= MAX_EVENTS_PER_USER) {
+    throw new BadRequest(
+      `계정당 이벤트는 ${MAX_EVENTS_PER_USER}개까지입니다. 쓰지 않는 이벤트를 지우고 다시 시도해 주세요.`,
+    );
   }
 
   const brand = str(body.brand, 'brand', true)!;
@@ -118,24 +165,22 @@ export const POST = withRoute(async (request: NextRequest) => {
   const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
   const slug = await ensureUniqueSlug(db, requested);
 
-  // 로그인했으면 소유자를 박고, 아니면 NULL로 둔다 — NULL은 데모 이벤트라는 뜻이고
-  // 자정 Cron의 리셋 대상이 된다(lib/seed.ts). **여기서 로그인을 요구하지는 않는다** —
-  // 게스트를 401로 막는 것은 BE-13의 일이고, 이 커밋에서 함께 잠그면 참가자·데모
-  // 경로의 회귀를 한 번에 판정해야 해서 위험이 섞인다.
-  //
-  // 이 한 줄이 없으면 owner_id를 가진 행이 **아예 생길 수 없어**, 0010이 만든 컬럼도
-  // 시드 가드(`WHERE owner_id IS NULL`)도 CASCADE도 지킬 대상이 없는 채로 남는다.
-  const owner = await getSessionUser(db, request);
 
-  const row = await db
-    .prepare(
-      `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status, owner_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING *`,
-    )
-    .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status, owner?.id ?? null)
-    .first<EventRow>();
+  // 카운터 증가를 삽입과 **같은 batch**에 싣는다(ADR 0008) — 요청마다 올리면 400으로
+  // 튕긴 요청까지 D1 쓰기 티어를 태우고, 따로 올리면 삽입만 성공한 채 카운터가
+  // 빠질 수 있다.
+  const [insertRes] = await db.batch<EventRow>([
+    db
+      .prepare(
+        `INSERT INTO events (slug, brand, title, venue, event_date, host, capacity, status, owner_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         RETURNING *`,
+      )
+      .bind(slug, brand, title, venue, date, host, body.capacity ?? null, status, owner.id),
+    ...rateUsageStatements(db, keys, EVENT_WRITE_RATE_POLICY, 0, 1, now),
+  ]);
 
+  const row = insertRes.results[0];
   if (!row) throw new Error('이벤트 생성 후 행을 돌려받지 못했습니다.');
   return json(toEventDTO(row), 201);
 });

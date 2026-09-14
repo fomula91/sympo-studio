@@ -14,7 +14,7 @@ import {
   type IdCtx,
   type SessionRow,
 } from '@/lib/db';
-import { assertCanEdit } from '@/lib/auth';
+import { assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 
 /**
@@ -30,19 +30,34 @@ import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
  * 저장이 다른 쪽의 편집을 지운다.
  *
  * 세 쿼리를 batch로 묶어 왕복 1회. Promise.all은 왕복이 3회다.
+ *
+ * **소유자만 볼 수 있다** (BE-24). 예전에는 이 라우트에 **인증 호출이 0건**이었고
+ * (`_request`가 쓰이지도 않았다) `owner_id`가 채워지기 시작한 뒤에도 그대로라,
+ * **남의 이벤트 상세가 id만 알면 열렸다.** 남의 것이면 403이 아니라 **404**다 —
+ * "있지만 네 것이 아니다"를 알려주면 존재가 샌다(BE-7·BE-13이 채택한 규칙).
+ *
+ * 판정을 조회와 **같은 문**에 넣어 왕복을 늘리지 않는다(BE-13 ⑥) — 세션을 따로
+ * 조회했다면 batch 1회가 2회가 된다.
  */
-export const GET = withRoute(async (_request: NextRequest, ctx: IdCtx) => {
+export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
+  const tokenHash = (await sessionTokenHash(request)) ?? '';
 
   const [eventRes, sessionRes, documentRes] = await db.batch([
-    db.prepare('SELECT * FROM events WHERE id = ?').bind(id),
+    db
+      .prepare(
+        `SELECT *, (owner_id IS NULL OR owner_id = ${sessionUserIdSql(2)}) AS can_read
+           FROM events WHERE id = ?1`,
+      )
+      .bind(id, tokenHash),
     db.prepare('SELECT * FROM sessions WHERE event_id = ? ORDER BY sort_order, id').bind(id),
     db.prepare('SELECT * FROM documents WHERE event_id = ? ORDER BY sort_order, id').bind(id),
   ]);
 
-  const event = eventRes.results[0] as EventRow | undefined;
-  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  const event = eventRes.results[0] as (EventRow & { can_read: number }) | undefined;
+  // 없는 것과 남의 것을 **같은 404**로 돌려준다.
+  if (!event || !event.can_read) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
   return json({
     ...toEventDTO(event),

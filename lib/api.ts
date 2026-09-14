@@ -118,8 +118,24 @@ export interface EventOps {
   documents: { documentId: number; visitors: number; hits: number }[];
 }
 
+/**
+ * 운영자용 집계 — **로그인한 소유자만** 받을 수 있다(BE-24). 남의 것이면 404다.
+ * 참가자 공개 리포트는 `fetchPublicReport`를 쓴다.
+ */
 export async function fetchEventOps(eventId: number): Promise<EventOps> {
   const res = await fetchWithTimeout(`/api/events/${eventId}/ops`);
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  return (await res.json()) as EventOps;
+}
+
+/**
+ * 공개 행사의 실측 집계 — 무인증이고 **slug로** 지목한다 (BE-24).
+ *
+ * `/[slug]/report`가 쓰던 `/api/events/[id]/ops`가 소유자 전용이 되면서 갈라졌다.
+ * 이벤트 id를 알 필요가 없어진 것이 부수 효과다 — 공개 페이지가 이미 slug를 쥐고 있다.
+ */
+export async function fetchPublicReport(slug: string): Promise<EventOps> {
+  const res = await fetchWithTimeout(`/api/public/${slug}/report`, { cache: 'no-store' });
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
   return (await res.json()) as EventOps;
 }

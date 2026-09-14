@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountLinkConflict, matchOAuthState, upsertUser } from './auth';
+import { AccountLinkConflict, assertCanRead, matchOAuthState, requireUser, sessionUserIdSql, upsertUser } from './auth';
 
 /**
  * BE-26의 두 가지를 고정한다.
@@ -98,5 +98,70 @@ describe('matchOAuthState', () => {
     expect(matchOAuthState('abc.ver', null)).toBeNull();
     expect(matchOAuthState('abc', 'abc')).toBeNull(); // verifier 없음
     expect(matchOAuthState('.ver', '')).toBeNull();
+  });
+});
+
+/**
+ * BE-13 · BE-24 — 읽기 경계.
+ *
+ * `owner_id`가 채워지기 시작한 뒤(BE-12)에도 이벤트 상세·운영 지표에는 **인증 호출이
+ * 0건**이었다. 소유권 모델을 도입해 놓고 읽기가 뚫려 있으면 그 모델이 성립하지 않는다.
+ */
+function sessionDb(user: { id: number; email: string } | null) {
+  return {
+    prepare: () => ({
+      bind: () => ({
+        first: async () =>
+          user ? { id: user.id, email: user.email, name: null, avatar_url: null } : null,
+      }),
+    }),
+  } as unknown as D1Database;
+}
+
+const withCookie = (token?: string) =>
+  new Request('http://x/', token ? { headers: { cookie: `sympo_session=${token}` } } : undefined);
+
+describe('assertCanRead', () => {
+  it('소유자가 없는 이벤트(데모)는 누구나 본다', async () => {
+    // 게스트 체험 경로가 여기에 기댄다 — 잠그면 데모가 사라진다.
+    await expect(assertCanRead(sessionDb(null), withCookie(), null)).resolves.toBeUndefined();
+  });
+
+  it('소유자 본인은 본다', async () => {
+    const db = sessionDb({ id: 7, email: 'a@example.com' });
+    await expect(assertCanRead(db, withCookie('t'), 7)).resolves.toBeUndefined();
+  });
+
+  it('남의 것이면 403이 아니라 404다 — 존재를 흘리지 않는다', async () => {
+    const db = sessionDb({ id: 7, email: 'a@example.com' });
+    await expect(assertCanRead(db, withCookie('t'), 9)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('비로그인은 소유자가 있는 이벤트를 못 본다', async () => {
+    await expect(assertCanRead(sessionDb(null), withCookie(), 7)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+describe('requireUser', () => {
+  it('비로그인은 401이다 — 생성 경로만 404가 아닌 이유는 숨길 존재가 없어서다', async () => {
+    await expect(requireUser(sessionDb(null), withCookie())).rejects.toMatchObject({ status: 401 });
+  });
+
+  it('로그인했으면 사용자를 돌려준다', async () => {
+    const db = sessionDb({ id: 7, email: 'a@example.com' });
+    await expect(requireUser(db, withCookie('t'))).resolves.toMatchObject({ id: 7 });
+  });
+});
+
+describe('sessionUserIdSql', () => {
+  it('만료를 본다 — 빠지면 죽은 세션으로 남의 것이 열린다', () => {
+    expect(sessionUserIdSql(2)).toMatch(/expires_at > datetime\('now'\)/);
+  });
+
+  it('자리번호를 호출부가 정한다 — 하드코딩하면 바인딩 순서가 어긋난다', () => {
+    expect(sessionUserIdSql(2)).toContain('?2');
+    expect(sessionUserIdSql(5)).toContain('?5');
   });
 });
