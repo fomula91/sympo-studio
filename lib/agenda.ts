@@ -21,8 +21,13 @@ const TAG_MAX = 40;
 /** 0001_init.sql의 sessions.kind 주석과 같은 목록. 화이트리스트 밖은 400. */
 const SESSION_KINDS = ['OPENING', 'LECTURE', 'PANEL', 'QA', 'CASE', 'CLOSING'];
 
-/** documents.status — 'ready'는 파일이 있는 상태다(BE-6). */
-const DOCUMENT_STATUSES = ['pending', 'ready'];
+/**
+ * documents.status — 'ready'는 파일이 있는 상태다(BE-6).
+ *
+ * **이 값은 더 이상 입력이 아니다** (BE-27). `r2_key` 유무에서 파생된다 —
+ * 아래 `validateDocumentsBody` 주석 참조.
+ */
+export const DOCUMENT_STATUSES = ['pending', 'ready'] as const;
 
 /** 'HH:MM' 24시간. 자정 넘김(24:00)은 없다 — 다음 날짜의 행사다. */
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -41,7 +46,6 @@ export interface DocumentInput {
   sessionId: number | null;
   displayName: string;
   tag: string | null;
-  status: string;
 }
 
 function asObject(v: unknown, field: string): Record<string, unknown> {
@@ -130,32 +134,31 @@ export function validateSessionsBody(raw: unknown): SessionInput[] {
   return items;
 }
 
-/** PUT /api/events/[id]/documents 본문 → 정리된 자료 목록. 파일 자체는 BE-6 소관. */
+/**
+ * PUT /api/events/[id]/documents 본문 → 정리된 자료 목록. 파일 자체는 BE-6 소관.
+ *
+ * **`status`를 입력으로 받지 않는다** (BE-27). 예전에는 받아서 **신규 생성만**
+ * 검사했고(`id === null && status === 'ready'` → 400), 기존 항목 수정 경로에는
+ * 검사가 없어서 **`r2_key`가 NULL인 자료를 메타 저장 한 번으로 `ready`로 올릴 수
+ * 있었다.** 그러면 참가자 화면에 **열 수 없는 자료가 "준비됨"으로 뜬다.**
+ *
+ * 검사를 한 군데 더 넣는 대신 **값의 출처를 없앴다** — 라우트가 `r2_key` 유무에서
+ * 파생시키므로 두 값이 어긋날 수 없다. 검사는 잊을 수 있지만 파생은 잊을 수 없다.
+ * FE가 `status`를 실어 보내도 조용히 무시되고, 응답에는 파생된 값이 실려 나간다.
+ */
 export function validateDocumentsBody(raw: unknown): DocumentInput[] {
   const list = pickList(raw, 'documents', MAX_DOCUMENTS);
 
   const items = list.map((entry, i) => {
     const o = asObject(entry, `documents[${i}]`);
     const id = rowId(o.id, `documents[${i}].id`);
-    const status = text(o.status, `documents[${i}].status`, 16, false) ?? 'pending';
-    if (!DOCUMENT_STATUSES.includes(status)) {
-      throw new BadRequest(
-        `documents[${i}].status는 ${DOCUMENT_STATUSES.join('|')} 중 하나여야 합니다.`,
-      );
-    }
-    // 새 자료는 파일이 아직 없다(r2_key NULL) — 'ready'로 시작할 수 없다.
-    // 이걸 막지 않으면 참가자 화면이 열 수 없는 자료를 "준비됨"으로 그린다.
-    if (id === null && status === 'ready') {
-      throw new BadRequest(
-        `documents[${i}]: 새 자료는 pending으로만 만들 수 있습니다(파일 업로드는 BE-6).`,
-      );
-    }
+    // **status는 읽지 않는다** (BE-27). 본문에 있어도 무시한다 — 라우트가
+    // `r2_key` 유무에서 파생시키므로 여기서 받으면 두 값이 어긋날 수 있다.
     return {
       id,
       sessionId: rowId(o.sessionId, `documents[${i}].sessionId`),
       displayName: text(o.displayName, `documents[${i}].displayName`, DOC_NAME_MAX, true)!,
       tag: text(o.tag, `documents[${i}].tag`, TAG_MAX, false),
-      status,
     };
   });
 
