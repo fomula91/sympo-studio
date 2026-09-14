@@ -360,20 +360,17 @@ export async function upsertUser(db: D1Database, who: GoogleIdentity): Promise<n
     // **이메일도 갱신한다** — 예전엔 최초 가입 시점 값이 굳어, 계정에 붙어 있는
     // 주소가 실제와 달라진 채로 화면에 표시됐다.
     //
-    // 다만 새 주소를 **다른 행이 이미 쓰고 있으면 옛 주소를 유지한다.** `email`이
-    // UNIQUE라 그대로 쓰면 제약 위반으로 **이미 링크된 사람의 로그인이 실패**한다 —
-    // 표시용 값 하나 때문에 로그인을 막을 수는 없다. 판정을 같은 문에 넣어 왕복을
-    // 늘리지 않는다(자기 행은 `o.id <> ?`로 제외).
+    // BE-26에는 "다른 행이 그 주소를 쓰고 있으면 옛 주소를 유지"하는 `CASE` 가드가
+    // 있었다. **UNIQUE 제약을 피하려고 넣은 것이라 0014와 함께 수명이 끝났다** —
+    // 그대로 뒀다면 같은 주소를 쓰는 계정이 둘 생기는 순간(BE-30이 지원하려던 바로
+    // 그 상황) **한쪽 이메일이 영원히 갱신되지 않고** 화면에 옛 주소가 남는다
+    // (`/code-review` 발견). 이제 겹치는 것이 정상이므로 그냥 쓴다.
     await db
       .prepare(
-        `UPDATE users
-            SET email = CASE
-                  WHEN EXISTS (SELECT 1 FROM users o WHERE o.email = ? AND o.id <> ?)
-                  THEN email ELSE ? END,
-                name = ?, avatar_url = ?, updated_at = datetime('now')
+        `UPDATE users SET email = ?, name = ?, avatar_url = ?, updated_at = datetime('now')
           WHERE id = ?`,
       )
-      .bind(who.email, linked.user_id, who.email, who.name, who.picture, linked.user_id)
+      .bind(who.email, who.name, who.picture, linked.user_id)
       .run();
     return linked.user_id;
   }

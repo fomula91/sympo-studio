@@ -111,6 +111,7 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   const sets: string[] = [];
   const binds: unknown[] = [];
+  let presetToCheck: string | null = null;
 
   for (const [key, column] of Object.entries(PATCHABLE)) {
     if (!(key in body)) continue;
@@ -129,6 +130,11 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (key === 'capacity' && value !== null && (typeof value !== 'number' || value < 0)) {
       throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
     }
+    // **남의 프리셋은 붙일 수 없다** (BE-25 경계의 구멍, `/code-review` 발견).
+    // 목록과 쓰기는 소유권으로 갈랐는데 이 경로만 FK에만 기대고 있었다 — 프리셋 id는
+    // 라벨에서 파생되고 `POST /api/presets`의 409가 존재를 확인해 주므로 **추측이
+    // 가능하고**, 붙이면 남의 브랜드 색이 내 행사 페이지에 렌더된다.
+    if (key === 'presetId' && typeof value === 'string') presetToCheck = value;
     sets.push(`${column} = ?`);
     binds.push(value ?? null);
   }
@@ -144,6 +150,20 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   }
 
   if (!sets.length) throw new BadRequest('수정할 필드가 없습니다.');
+
+  // 공용(내장) 프리셋이거나 내 것이어야 한다. 없는 id는 아래 FK가 400으로 접는다.
+  if (presetToCheck !== null) {
+    const usable = await db
+      .prepare(
+        `SELECT 1 FROM brand_presets
+          WHERE id = ?1 AND (owner_id IS NULL OR owner_id = ${sessionUserIdSql(2)})`,
+      )
+      .bind(presetToCheck, (await sessionTokenHash(request)) ?? '')
+      .first();
+    if (!usable) {
+      throw new BadRequest('없는 프리셋입니다. POST /api/presets로 먼저 저장하세요.');
+    }
+  }
 
   sets.push("updated_at = datetime('now')");
   binds.push(id);

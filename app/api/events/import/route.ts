@@ -155,19 +155,32 @@ export const POST = withRoute(async (request: NextRequest) => {
         ...(presetDropped ? { presetDropped: true } : {}),
       });
     } catch (e) {
-      // **한 건의 실패가 나머지를 막지 않는다**(②). 사유는 재시도 판단에 필요하므로 싣는다.
+      // **한 건의 실패가 나머지를 막지 않는다**(②).
+      //
+      // 사유는 **다듬어서** 싣는다 — `e.message`를 그대로 보내면
+      // `D1_ERROR: UNIQUE constraint failed: events.slug` 같은 내부가 화면에 뜬다
+      // (FE는 `error`를 그대로 보여준다, [[API-Guide-FE]]). 원문은 로그에만 남긴다.
+      console.error('[import] event failed', ev.clientRef, e);
       results.push({
         clientRef: ev.clientRef,
         status: 'failed',
-        error: e instanceof Error ? e.message : '저장하지 못했습니다.',
+        error: '저장하지 못했습니다. 이 항목만 다시 시도해 주세요.',
       });
     }
   }
 
   // 카운터는 **실제로 만든 수만큼** 올린다 — 이미 있던 것(멱등 재시도)과 실패분까지
   // 세면 재시도가 한도를 태운다(ADR 0008).
+  //
+  // **여기서 터져도 결과는 돌려준다** (`/code-review` 발견). 이벤트는 이미 만들어졌는데
+  // 카운터 갱신 실패로 500을 주면 **성공한 가져오기가 실패로 보이고** `results`를 잃어
+  // 화면이 무엇이 올라갔는지 알 수 없게 된다. 한도를 한 번 덜 세는 쪽이 훨씬 싸다.
   if (created > 0) {
-    await db.batch(rateUsageStatements(db, keys, EVENT_WRITE_RATE_POLICY, 0, created, now));
+    try {
+      await db.batch(rateUsageStatements(db, keys, EVENT_WRITE_RATE_POLICY, 0, created, now));
+    } catch (e) {
+      console.error('[import] rate counter bump failed', e);
+    }
   }
 
   return json({ results }, 201);

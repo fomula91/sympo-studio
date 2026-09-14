@@ -30,6 +30,9 @@ export const GET = withRoute(async (request: NextRequest) => {
     .all<PresetRow>();
   return json({ presets: results.map(toPresetDTO) }, 200, {
     'Cache-Control': 'private, max-age=30',
+    // `private`만으로는 **브라우저 자신의 캐시**를 못 막는다 — URL로만 키를 잡으므로
+    // 게스트로 받은 목록이 로그인 후에도 30초 동안 그대로 나온다(`/code-review` 발견).
+    Vary: 'Cookie',
   });
 });
 

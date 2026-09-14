@@ -49,7 +49,7 @@ function fakeDb(rows: Rows = {}) {
 const who = { sub: 'google-sub-1', email: 'a@example.com', name: '김', picture: null };
 
 describe('upsertUser', () => {
-  it('oauth 링크가 있으면 그 계정을 쓰고, 충돌하지 않을 때만 이메일을 갱신한다', async () => {
+  it('oauth 링크가 있으면 그 계정을 쓰고 이메일을 조건 없이 갱신한다', async () => {
     const { db, sql } = fakeDb({ linked: { user_id: 42 } });
 
     await expect(upsertUser(db, who)).resolves.toBe(42);
@@ -57,11 +57,11 @@ describe('upsertUser', () => {
     const update = sql.find((q) => /^UPDATE users\b/i.test(q));
     expect(update).toBeDefined();
     // 이메일이 빠지면 계정에 붙은 주소가 최초 가입 시점에 굳는다.
-    expect(update).toMatch(/SET email = CASE/i);
-    // 다만 **다른 행이 그 주소를 쓰고 있으면 옛 주소를 유지**해야 한다 — 그냥 덮어쓰면
-    // `email` UNIQUE 위반으로 이미 링크된 사람의 로그인이 실패한다. 자기 행 제외(`o.id <> ?`)가
-    // 빠지면 자기 주소를 자기가 막아 이메일이 영영 갱신되지 않는다.
-    expect(update).toMatch(/EXISTS \(SELECT 1 FROM users o WHERE o\.email = \? AND o\.id <> \?\)/i);
+    expect(update).toMatch(/SET email = \?/i);
+    // **조건 없이 쓴다.** BE-26의 `CASE` 가드는 UNIQUE를 피하려던 것이라 0014와 함께
+    // 수명이 끝났고, 남겨 두면 같은 주소를 쓰는 계정이 둘 생기는 순간 한쪽 이메일이
+    // 영원히 갱신되지 않는다(`/code-review` 발견).
+    expect(update).not.toMatch(/CASE/i);
   });
 
   it('같은 이메일의 계정이 있어도 붙지 않고 별개 계정을 만든다', async () => {

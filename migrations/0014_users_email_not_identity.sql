@@ -42,6 +42,16 @@
 -- `auth_sessions`는 대피시키지 않고 버려도 됐지만(다시 로그인하면 된다) 굳이 로그아웃을
 -- 강제할 이유가 없어 함께 옮긴다.
 
+-- **재실행 가능하게 둔다.** 임시 테이블이 남아 있으면 재시도가 `table … already exists`로
+-- 즉사하는데, 그 상태는 하필 **모든 사용자 이벤트가 owner_id NULL**인 순간일 수 있다
+-- (원자성 덕에 정상 경로에서는 안 생기지만, 원격 적용이 다른 방식으로 끊길 가능성까지
+-- 배제할 근거는 없다 — 실측한 것은 로컬이다). 값이 비싼 쪽으로 기울여 둔다.
+-- **원격에 적용하기 전에 백업을 뜬다**(`wrangler d1 export`).
+DROP TABLE IF EXISTS tmp_event_owner;
+DROP TABLE IF EXISTS tmp_preset_owner;
+DROP TABLE IF EXISTS tmp_oauth_accounts;
+DROP TABLE IF EXISTS tmp_auth_sessions;
+
 -- 1) 떼어 둘 수 있는 참조를 내려놓는다.
 CREATE TABLE tmp_event_owner AS SELECT id, owner_id FROM events WHERE owner_id IS NOT NULL;
 UPDATE events SET owner_id = NULL;
