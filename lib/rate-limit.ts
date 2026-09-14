@@ -99,6 +99,16 @@ export interface RatePolicy {
   /** IP 총량 상한 — 전역(이벤트를 가리지 않는다). */
   ipMaxPerWindow: number;
   ipMaxPerDay: number;
+  /**
+   * 토큰 버킷의 범위. 기본은 이벤트별(`'event'`)이다 — "사람의 제출 속도"라
+   * 행사가 바뀌면 다시 세는 게 자연스럽다(BE-19).
+   *
+   * **업로드만 `'global'`이다**(Codex 교차 리뷰): 거기서 아끼는 자원은 이 행사의
+   * D1 행이 아니라 **R2 전체**라, 이벤트별로 두면 이벤트를 갈아타는 것만으로 토큰
+   * 한도가 초기화된다. 익명으로도 이벤트를 만들 수 있어 재현이 쉽고, 남는 방어선이
+   * IP 상한뿐이라 실질 한도가 2배로 늘어난다.
+   */
+  tokenScope?: 'event' | 'global';
   /** 429 본문에 그대로 담는 사람이 읽을 사유. FE가 이 문구를 그대로 보여준다. */
   messages: { window: string; day: string; ipWindow: string; ipDay: string };
 }
@@ -135,7 +145,9 @@ function windowKeys(policy: RatePolicy, now: number) {
  * (이벤트별이면 봇이 이벤트를 여러 개 만들어 한도를 곱한다).
  */
 function scopes(policy: RatePolicy, eventId: number) {
-  return { token: `${policy.scope}:e${eventId}`, ip: policy.scope };
+  const token =
+    policy.tokenScope === 'global' ? `${policy.scope}:all` : `${policy.scope}:e${eventId}`;
+  return { token, ip: policy.scope };
 }
 
 interface CounterRow {

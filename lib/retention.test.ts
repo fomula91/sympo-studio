@@ -11,18 +11,27 @@ import { purgeOrphanDocuments } from './retention';
  * 유예(ORPHAN_GRACE_MS)도 함께 고정한다 — 빠지면 R2 put과 D1 커밋 사이에 Cron이
  * 겹쳤을 때 **방금 올린 자료가 지워진다.**
  */
-function fakeBucket(objects: { key: string; ageMs: number }[]) {
+/** `pageSize`를 주면 여러 페이지로 나눠 돌려준다 — cursor 페이징 경로를 태우기 위해서다. */
+function fakeBucket(objects: { key: string; ageMs: number }[], pageSize = objects.length || 1) {
   const deleted: string[] = [];
+  const pages: number[] = [];
   const bucket = {
-    list: async () => ({
-      objects: objects.map((o) => ({ key: o.key, uploaded: new Date(Date.now() - o.ageMs) })),
-      truncated: false,
-    }),
+    list: async ({ cursor }: { cursor?: string } = {}) => {
+      const start = cursor ? Number(cursor) : 0;
+      const slice = objects.slice(start, start + pageSize);
+      const end = start + slice.length;
+      pages.push(slice.length);
+      return {
+        objects: slice.map((o) => ({ key: o.key, uploaded: new Date(Date.now() - o.ageMs) })),
+        truncated: end < objects.length,
+        cursor: String(end),
+      };
+    },
     delete: async (keys: string[]) => {
       deleted.push(...keys);
     },
   };
-  return { bucket: bucket as unknown as R2Bucket, deleted };
+  return { bucket: bucket as unknown as R2Bucket, deleted, pages };
 }
 
 function fakeDb(keys: string[]) {
@@ -65,5 +74,33 @@ describe('purgeOrphanDocuments', () => {
     const { bucket, deleted } = fakeBucket([{ key: 'events/not-a-number/x.pdf', ageMs: DAY }]);
     await purgeOrphanDocuments(fakeDb([]), bucket);
     expect(deleted).toEqual([]);
+  });
+});
+
+describe('페이징', () => {
+  it('여러 페이지에 걸친 고아를 전부 지운다', async () => {
+    // 예전 가짜 버킷은 항상 단일 페이지라 cursor 경로가 한 번도 안 돌았다
+    // (Codex 교차 리뷰 하드닝 지적). 1000개를 넘기는 버킷에서 2페이지째가
+    // 통째로 누락돼도 테스트는 초록이었다.
+    const objects = Array.from({ length: 5 }, (_, i) => ({
+      key: `events/1/${i}-old.pdf`,
+      ageMs: DAY,
+    }));
+    const { bucket, deleted, pages } = fakeBucket(objects, 2);
+    await purgeOrphanDocuments(fakeDb([]), bucket);
+
+    expect(pages.length).toBeGreaterThan(1);
+    expect(deleted).toHaveLength(5);
+  });
+
+  it('페이징 중에도 참조된 키는 남긴다', async () => {
+    const objects = [
+      { key: 'events/1/a-old.pdf', ageMs: DAY },
+      { key: 'events/1/b-live.pdf', ageMs: DAY },
+      { key: 'events/1/c-old.pdf', ageMs: DAY },
+    ];
+    const { bucket, deleted } = fakeBucket(objects, 1);
+    await purgeOrphanDocuments(fakeDb(['events/1/b-live.pdf']), bucket);
+    expect(deleted).toEqual(['events/1/a-old.pdf', 'events/1/c-old.pdf']);
   });
 });

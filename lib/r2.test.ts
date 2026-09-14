@@ -41,7 +41,7 @@ describe('assertEventCapacity', () => {
 describe('UPLOAD_RATE_POLICY', () => {
   const keys: RateKeys = { ipHash: 'ip0000', tokenHash: 'tok000' };
   const rows = (count: number) => [
-    { key_hash: 'tok000', scope: 'upload:e1', window_key: windowKey(), count },
+    { key_hash: 'tok000', scope: 'upload:all', window_key: windowKey(), count },
   ];
   // rate-limit.ts의 windowKeys()와 같은 규칙 — **정책의 창 길이로 내림**한다.
   // 예전 테스트는 여기에 분 단위를 박아 둬서, 창이 5분인데 1분마다 리셋되던
@@ -69,3 +69,22 @@ describe('UPLOAD_RATE_POLICY', () => {
     ).toThrow(/200MB/);
   });
 });
+
+describe('업로드 토큰 버킷의 범위', () => {
+  it('이벤트를 갈아타도 같은 버킷이다', () => {
+    // 이벤트별이면 이벤트를 하나 더 만드는 것만으로 한도가 초기화된다 —
+    // 익명 이벤트 생성이 가능하던 시절에는 그게 곧 무제한이었다(Codex 교차 리뷰).
+    const rows = [
+      { key_hash: 'tok000', scope: 'upload:all', window_key: windowKeyFor(), count: 200 },
+    ];
+    const keys: RateKeys = { ipHash: 'ip0000', tokenHash: 'tok000' };
+    // 이벤트 1에서 한도를 채웠다면 이벤트 2에서도 막혀야 한다.
+    expect(() => evaluateRateLimit(rows, keys, UPLOAD_RATE_POLICY, 2, 1)).toThrow(RateLimited);
+  });
+});
+
+function windowKeyFor() {
+  const span = UPLOAD_RATE_POLICY.windowSeconds * 1000;
+  const kst = Date.now() + 9 * 60 * 60 * 1000;
+  return `m:${new Date(Math.floor(kst / span) * span).toISOString().slice(0, 16)}`;
+}

@@ -53,6 +53,11 @@ export const UPLOAD_RATE_POLICY: RatePolicy = {
   maxPerDay: 1000,
   ipMaxPerWindow: 400,
   ipMaxPerDay: 2000,
+  // **토큰 버킷이 전역이다** — 여기서 아끼는 자원은 이 행사의 D1 행이 아니라 R2
+  // 전체다. 이벤트별로 두면 **이벤트를 갈아타는 것만으로 한도가 초기화되고**
+  // (익명 생성이 가능해 재현이 쉽다) 남는 방어선이 IP 상한뿐이라 실질 한도가
+  // 2배가 된다(Codex 교차 리뷰).
+  tokenScope: 'global',
   messages: {
     window: '업로드가 잠시 몰렸습니다. 5분에 200MB까지 올릴 수 있습니다.',
     day: '오늘 올릴 수 있는 용량(1GB)을 모두 사용했습니다.',
