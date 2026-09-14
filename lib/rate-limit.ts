@@ -110,7 +110,7 @@ export class RateLimited extends ApiError {
  * 판정 구조는 그대로 쓰고 cost의 의미만 정책이 정한다(`uploadCostMb()`).
  */
 export interface RatePolicy {
-  scope: 'questions' | 'survey' | 'logs' | 'upload';
+  scope: 'questions' | 'survey' | 'logs' | 'upload' | 'events';
   windowSeconds: number;
   /** 브라우저(또는 토큰 없는 IP) 버킷 한도 — 이 이벤트 안에서. */
   maxPerWindow: number;

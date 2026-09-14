@@ -46,5 +46,8 @@ export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     // 중간 캐시가 한 사람의 응답을 다른 사람에게 줄 수 있다(참가자용 공개 리포트
     // 쪽은 누구에게나 같은 응답이라 `public`을 쓴다).
     'Cache-Control': 'private, max-age=5',
+    // `private`만으로는 **브라우저 자신의 캐시**를 못 막는다 — 그건 URL로만 키를
+    // 잡으므로 로그인 전에 받은 응답이 로그인 후에도 그대로 나온다(`/code-review` 발견).
+    Vary: 'Cookie',
   });
 });

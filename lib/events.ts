@@ -15,8 +15,14 @@ import type { RatePolicy } from './rate-limit';
 export const EVENT_WRITE_RATE_POLICY: RatePolicy = {
   scope: 'events',
   windowSeconds: 60,
-  // 사람이 손으로 만드는 속도가 아니다 — 이 한도에 닿는 것은 가져오기(BE-15)나 봇이다.
-  maxPerWindow: 15,
+  // **가져오기 한 번이 통째로 들어갈 수 있어야 한다.** 한도를 `MAX_IMPORT_EVENTS`(20)보다
+  // 낮게 잡았더니 로컬 이벤트가 16개 이상인 게스트는 **로그인해도 영원히 가져오지 못하고**
+  // 재시도해도 같은 429를 받았다(`/code-review` 발견) — 가져오기가 막으려던 "로그인은 잃는
+  // 행동"을 가져오기 자신이 만들어 낸 셈이다. 두 상수는 함께 움직여야 한다.
+  //
+  // 사람이 손으로 만드는 속도가 아니다 — 이 한도에 닿는 것은 가져오기나 봇이다.
+  // 계정당 총량(20)이 별도로 있으므로 창 한도가 총량을 넘어도 무한 생성은 안 된다.
+  maxPerWindow: 25,
   maxPerDay: 60,
   ipMaxPerWindow: 40,
   ipMaxPerDay: 200,
