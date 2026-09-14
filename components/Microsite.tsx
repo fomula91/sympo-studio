@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
 import SurveyPanel from '@/components/SurveyPanel';
@@ -9,6 +10,9 @@ import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib
 import { useOnlineStatus } from '@/lib/useOnlineStatus';
 
 const MONO = 'ui-monospace, monospace';
+
+// PDF.js 번들(무겁다)이 초기 로딩에 안 실리도록 뷰어를 여는 시점에만 가져온다(FE-6).
+const PdfViewer = dynamic(() => import('@/components/PdfViewer'), { ssr: false });
 
 interface MicrositeProps {
   theme: Theme;
@@ -28,9 +32,10 @@ interface MicrositeProps {
 }
 
 // 참가자 공개 페이지가 documents를 안 넘길 때(스튜디오 미리보기)만 쓰는 대표 예시.
+// url은 가상 강의자료(FE-6)를 가리켜 미리보기에서도 뷰어를 실제로 열어볼 수 있다.
 const DEMO_DOCUMENTS: DocumentInfo[] = [
-  { id: -1, name: 'Early Intervention Strategies with ATELOVAN', status: 'ready', pages: 24 },
-  { id: -2, name: 'Long-Term Adherence: RWE Review', status: 'ready', pages: 18 },
+  { id: -1, name: 'Early Intervention Strategies with ATELOVAN', status: 'ready', pages: 24, url: '/demo/sample-lecture.pdf' },
+  { id: -2, name: 'Long-Term Adherence: RWE Review', status: 'ready', pages: 18, url: '/demo/sample-lecture.pdf' },
 ];
 
 export default function Microsite({
@@ -49,7 +54,16 @@ export default function Microsite({
   const online = useOnlineStatus();
   const [qaOpen, setQaOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
+  const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
   const docs = documents ?? DEMO_DOCUMENTS;
+
+  function openDocument(doc: DocumentInfo) {
+    if (doc.status === 'pending' || !doc.url) return;
+    setOpenDoc(doc);
+    if (!preview && eventId != null) {
+      sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
+    }
+  }
   const agendaRef = useRef<HTMLOListElement>(null);
   // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
   // seen을 effect 안에 두면 그때마다 초기화돼 이미 본 세션을 다시 화면에 노출된 것으로 오인해
@@ -351,7 +365,16 @@ export default function Microsite({
               return (
                 <div
                   key={f.id}
+                  role="button"
+                  tabIndex={pending ? -1 : 0}
                   aria-disabled={pending}
+                  onClick={() => openDocument(f)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openDocument(f);
+                    }
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -522,6 +545,9 @@ export default function Microsite({
             </button>
           ))}
       </div>
+      {openDoc && openDoc.url ? (
+        <PdfViewer theme={t} url={openDoc.url} title={openDoc.name} onClose={() => setOpenDoc(null)} />
+      ) : null}
     </div>
   );
 }

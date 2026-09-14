@@ -67,8 +67,11 @@ export interface EventInfo {
 export interface DocumentInfo {
   id: number;
   name: string;
-  status: string; // 'pending'이면 아직 준비 중(FE-6 업로드 전)
+  status: string; // 'pending'이면 아직 준비 중
   pages: number | null;
+  // 파일이 붙은 자료만 값이 있다(서명 URL, 10분 TTL) — 스튜디오 미리보기의
+  // DEMO_DOCUMENTS는 실제 파일이 없으므로 null.
+  url: string | null;
 }
 
 export interface StudioState {
