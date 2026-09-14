@@ -33,18 +33,23 @@ export function toPresetDTO(row: PresetRow) {
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
-const ORIGINS = ['builtin', 'extracted'];
 
 export interface PresetInput {
   id: string;
   label: string;
   hue: number;
   chroma: number;
-  origin: string;
   sourceKey: string | null;
 }
 
-/** POST /api/presets 본문 검증. hue·chroma 범위는 OKLCH가 실제로 받는 값이다. */
+/**
+ * POST /api/presets 본문 검증. hue·chroma 범위는 OKLCH가 실제로 받는 값이다.
+ *
+ * **`origin`은 받지 않는다** (BE-25). 예전에는 본문에서 받아 `builtin|extracted`
+ * 중 하나인지만 봤는데, 그러면 **아무나 자기 프리셋을 `builtin`으로 선언**할 수 있다.
+ * 내장은 마이그레이션(0006)으로만 생기고 이 경로가 만드는 것은 항상 추출본이라,
+ * 검사하는 대신 **입력에서 없앴다**(BE-27과 같은 판단).
+ */
 export function validatePresetBody(raw: unknown): PresetInput {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new BadRequest('요청 본문은 JSON 객체여야 합니다.');
@@ -66,14 +71,10 @@ export function validatePresetBody(raw: unknown): PresetInput {
     throw new BadRequest('chroma는 0 이상 0.4 이하여야 합니다.');
   }
 
-  const origin = typeof o.origin === 'string' ? o.origin : 'extracted';
-  if (!ORIGINS.includes(origin)) {
-    throw new BadRequest(`origin은 ${ORIGINS.join('|')} 중 하나여야 합니다.`);
-  }
   const sourceKey = o.sourceKey === undefined || o.sourceKey === null ? null : o.sourceKey;
   if (sourceKey !== null && (typeof sourceKey !== 'string' || sourceKey.length > 300)) {
     throw new BadRequest('sourceKey는 300자 이하 문자열이어야 합니다.');
   }
 
-  return { id: o.id, label: o.label.trim(), hue: o.hue, chroma: o.chroma, origin, sourceKey };
+  return { id: o.id, label: o.label.trim(), hue: o.hue, chroma: o.chroma, sourceKey };
 }
