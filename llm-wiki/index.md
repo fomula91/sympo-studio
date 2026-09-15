@@ -59,7 +59,6 @@
 | [[0007-sso-and-account-model]] | Google SSO + 개인 계정 소유권 (게스트 경로 유지, 0001 개정) |
 | [[0008-rate-limit-counter]] | rate limit 판정을 (키, 창) 카운터로 (0006 부분 개정) |
 | [[0009-event-status-axes]] | 이벤트 상태를 발행 상태·행사 시점 두 축으로 |
-| [[0010-studio-d1-slug-designation]] | 스튜디오↔D1 연결은 워크스페이스 대신 id 지목 경로로 (FE-30) |
 
 ## Reviews
 
