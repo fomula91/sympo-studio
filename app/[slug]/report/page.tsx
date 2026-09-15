@@ -1,13 +1,15 @@
 'use client';
 
-// 운영자용 실측 리포트 — slug로 GET /api/public/[slug](이벤트 정보) + GET /api/events/[id]/ops(BE-5 집계)를 받아 그린다.
+// 공개 실측 리포트 — slug로 GET /api/public/[slug](이벤트 정보) + GET /api/public/[slug]/report(BE-5 집계)를 받아 그린다.
 // 스튜디오(app/(studio)/report)는 로컬 목업 이벤트를 미리보기용 샘플로 그리는 별개 화면이다 —
 // 목업 이벤트는 D1과 연결된 적이 없어(FE-19/BE-20) 실측을 낼 수 없다. 이 페이지는 실제 공개
-// 이벤트 하나를 slug로 지목해 그 실측만 보여준다. 아직 운영자 인증이 없어 슬러그를 아는 사람은
-// 누구나 열 수 있다(BE-12 이후 잠글 사안, [[Next-Tasks]] BE-19 참고).
+// 이벤트 하나를 slug로 지목해 그 실측만 보여준다. **슬러그를 아는 사람은 누구나 열 수 있고, 그게 의도다** —
+// "리포트가 샘플이 아니라 실측"이 이 제품의 논지라 로그인 뒤로 숨기면 보여줄 화면이 사라진다. 대신 BE-24가
+// 운영자 집계(/api/events/[id]/ops)를 소유자 전용으로 잠그고 이 공개 경로를 따로 갈랐다 — 여기 담기는 것은
+// 공개된 행사의 집계 수치뿐이고, 개별 방문자·질문 본문·설문 응답은 실리지 않는다.
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { type EventOps, fetchEventOps, fetchWithTimeout } from '@/lib/api';
+import { type EventOps, fetchPublicReport, fetchWithTimeout } from '@/lib/api';
 import { MONO, UI } from '@/lib/ui';
 
 interface ReportEvent {
@@ -41,7 +43,7 @@ export default function LiveReportPage() {
         }
         if (!evRes.ok) throw new Error(`요청이 실패했습니다 (${evRes.status})`);
         const ev = (await evRes.json()) as ReportEvent;
-        const ops = await fetchEventOps(ev.id);
+        const ops = await fetchPublicReport(slug);
         if (cancelled) return;
         setState({ status: 'ready', ev, ops });
       } catch (e) {

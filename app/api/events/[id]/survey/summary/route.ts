@@ -1,4 +1,6 @@
+import type { NextRequest } from 'next/server';
 import { eventId, getDb, json, withRoute, type IdCtx } from '@/lib/db';
+import { sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
 
 interface AnswerCountRow {
   question_key: string;
@@ -12,9 +14,18 @@ interface AnswerCountRow {
  *
  * 운영자 리포트(FE-5)의 입력이다. **운영자용이라 공개 상태 게이트(BE-16)를
  * 걸지 않는다** — 초안 상태에서 시험 응답을 넣어 보고 집계를 확인하는 것이
- * 정상 흐름이라, 공개 상태만 허용하면 그 경로가 막힌다. 대신 인가 검사가 붙기
- * 전까지(BE-13) 이 집계는 누구나 조회할 수 있다는 것을 알고 쓴다. 문항별 답변 분포와 응답자 수, capacity 대비
- * 응답률을 한 번에 돌려준다 — 리포트 화면이 문항 수만큼 요청을 반복하지 않게.
+ * 정상 흐름이라, 공개 상태만 허용하면 그 경로가 막힌다. 문항별 답변 분포와
+ * 응답자 수, capacity 대비 응답률을 한 번에 돌려준다 — 리포트 화면이 문항 수만큼
+ * 요청을 반복하지 않게.
+ *
+ * **소유자만 볼 수 있다** (BE-13 ④ · BE-24, Codex 교차 리뷰가 누락을 지적).
+ * BE-24가 상세와 `/ops`를 잠글 때 **이 세 번째 운영자 읽기 경로를 빠뜨렸다** —
+ * 여기엔 인증 호출이 0건이었고(`_request`가 쓰이지도 않았다) 캐시까지 `public`이라,
+ * 이벤트 id만 알면 **남의 비공개 행사 응답자 수와 문항별 답변 분포**를 읽을 수 있었고
+ * 중간 캐시가 그 응답을 다른 사람에게 줄 수도 있었다.
+ *
+ * `/ops`와 달리 **참가자용으로 가르지 않는다** — 이 경로를 부르는 화면이 아직 없어
+ * 공개 쪽 수요가 없다. 생기면 `/api/public/[slug]/report`처럼 따로 낸다.
  *
  * respondents가 곧 "그 문항에 답한 사람 수"다 — idx_survey_once(UNIQUE)가
  * (응답자, 문항)당 1행을 보장하므로 답변 카운트의 합이 그대로 인원이 된다.
@@ -27,12 +38,18 @@ interface AnswerCountRow {
  * 리포트를 열어두고 갱신하면 시청자 한 명이 읽기 티어의 상당 부분을 쓴다.
  * 5초는 "행사 중 실시간 응답률"이라는 용도를 해치지 않는 선이다.
  */
-export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
+export const GET = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
+  const tokenHash = await sessionTokenHash(request);
 
   const [eventRes, respondentRes, distRes] = await db.batch([
-    db.prepare('SELECT capacity FROM events WHERE id = ?').bind(id),
+    db
+      .prepare(
+        `SELECT capacity, (owner_id IS NULL OR owner_id = ${sessionUserIdSql(2)}) AS can_read
+           FROM events WHERE id = ?1`,
+      )
+      .bind(id, tokenHash),
     db
       .prepare('SELECT COUNT(DISTINCT respondent) AS n FROM survey_responses WHERE event_id = ?')
       .bind(id),
@@ -47,8 +64,11 @@ export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
       .bind(id),
   ]);
 
-  const event = eventRes.results[0] as { capacity: number | null } | undefined;
-  if (!event) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  const event = eventRes.results[0] as
+    | { capacity: number | null; can_read: number }
+    | undefined;
+  // 없는 것과 남의 것을 **같은 404**로 돌려준다(BE-7·BE-13의 규칙).
+  if (!event || !event.can_read) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
 
   const respondents = (respondentRes.results[0] as { n: number }).n;
 
@@ -93,5 +113,11 @@ export const GET = withRoute(async (_request: Request, ctx: IdCtx) => {
       ? Math.max(0, Math.min(1, Math.round((respondents / event.capacity) * 1000) / 1000))
       : null,
     questions,
-  }, 200, { 'Cache-Control': 'public, max-age=5' });
+  }, 200, {
+    // 소유자별로 달라지는 응답이라 **`public`이면 안 된다** — 중간 캐시가 한 사람의
+    // 집계를 다른 사람에게 준다. `private`도 브라우저 캐시는 URL로만 키를 잡으므로
+    // `Vary: Cookie`가 함께 있어야 로그인 전후가 섞이지 않는다.
+    'Cache-Control': 'private, max-age=5',
+    Vary: 'Cookie',
+  });
 });

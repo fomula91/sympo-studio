@@ -102,6 +102,25 @@ export function safeNextPath(raw: string | null | undefined, fallback = '/consol
   return path.startsWith('/') ? path : fallback;
 }
 
+/**
+ * 이 콜백이 **이 브라우저가 시작한 로그인의 것인지** 가린다 (BE-26 ④).
+ *
+ * 단기 쿠키에는 `state.verifier`가 한 문자열로 들어 있다. 쿼리의 state와 쿠키의
+ * state가 같아야만 통과하고, 통과하면 PKCE verifier를 함께 돌려준다.
+ *
+ * 콜백에서 **이 판정이 가장 먼저 와야 한다.** 쿠키를 만료시키는 실패 경로가 이보다
+ * 먼저 돌면, 남이 띄운 콜백 한 번으로 진행 중인 정상 로그인을 깨뜨릴 수 있다.
+ */
+export function matchOAuthState(
+  stored: string | null | undefined,
+  state: string | null | undefined,
+): { verifier: string } | null {
+  if (!stored || !state) return null;
+  const [expectedState, verifier] = stored.split('.');
+  if (!expectedState || !verifier) return null;
+  return expectedState === state ? { verifier } : null;
+}
+
 function base64url(bytes: Uint8Array): string {
   let s = '';
   for (const b of bytes) s += String.fromCharCode(b);
@@ -274,6 +293,38 @@ export async function getSessionUser(
   return row ? { id: row.id, email: row.email, name: row.name, avatarUrl: row.avatar_url } : null;
 }
 
+/**
+ * 세션 쿠키의 토큰 해시. 없으면 null이다 (BE-13 ⑥).
+ *
+ * `getSessionUser`와 달리 **D1을 건드리지 않는다** — 판정을 SQL 안으로 넣기 위한
+ * 재료만 만든다. 아래 `sessionUserIdSql()`과 짝이다.
+ */
+export async function sessionTokenHash(request: Request): Promise<string | null> {
+  const token = readCookie(request, cookieNames(isSecureRequest(request)).session);
+  return token ? await sha256hex(token) : null;
+}
+
+/**
+ * "이 토큰의 사용자 id" 서브쿼리 (BE-13 ⑥).
+ *
+ * 읽기 경로가 소유권을 보려면 세션을 알아야 하는데, `getSessionUser`를 먼저 부르면
+ * **요청당 D1 왕복이 하나 는다.** 콘솔 화면은 여러 API를 연속으로 부르므로 그 하나가
+ * 화면 하나당 여러 번이 된다(ADR 0007이 "batch로 묶는다"고 적어 둔 지점).
+ *
+ * 그래서 판정을 SQL 안으로 넣는다 — 대상 조회와 **같은 문**에서 평가되므로 왕복이
+ * 늘지 않는다. 토큰이 없거나 만료면 서브쿼리가 NULL이고, `owner_id = NULL`은 참이
+ * 되지 않으므로 **게스트는 무소유(데모) 행만** 통과한다.
+ *
+ * **토큰이 없으면 빈 문자열이 아니라 NULL을 바인딩한다**(Codex 교차 리뷰 하드닝).
+ * 지금은 세션 id가 항상 64자리 해시라 `''`로도 뚫리지 않지만, `s.id = NULL`은
+ * **어떤 행과도 절대 같지 않다** — 실수로 빈 id 행이 생겨도 인증되지 않는다.
+ *
+ * `n`은 바인딩 자리번호다 — 호출부가 자기 바인딩 순서에 맞춰 넘긴다.
+ */
+export function sessionUserIdSql(n: number): string {
+  return `(SELECT s.user_id FROM auth_sessions s WHERE s.id = ?${n} AND s.expires_at > datetime('now'))`;
+}
+
 export async function deleteSession(db: D1Database, request: Request): Promise<void> {
   const name = cookieNames(isSecureRequest(request)).session;
   const token = readCookie(request, name);
@@ -281,42 +332,78 @@ export async function deleteSession(db: D1Database, request: Request): Promise<v
   await db.prepare('DELETE FROM auth_sessions WHERE id = ?').bind(await sha256hex(token)).run();
 }
 
-/** Google이 돌아온 신원으로 사용자를 찾거나 만든다. 같은 이메일이면 같은 계정이다. */
+/**
+ * Google이 돌아온 신원으로 사용자를 찾거나 만든다.
+ *
+ * **연결 키는 `oauth_accounts(provider, provider_account_id)` 하나뿐이다** (BE-26 ①).
+ * 이전 구현은 같은 이메일의 `users` 행이 있으면 거기에 제공자를 이었다 — "나중에
+ * GitHub을 붙일 때 같은 사람이 계정 두 개로 갈리지 않게"라는 의도였지만, 그건
+ * **계정 탈취 경로**다. Google 문서는 이메일이 바뀔 수 있으니 계정 식별자로 쓰지
+ * 말라고 하고(Workspace에서 주소가 회수·재발급된다), `email_verified`를 보는
+ * 것으로는 막지 못한다 — 검증된 주소라도 "지금 그 주소를 가진 사람"이 예전 계정의
+ * 주인과 같다는 보장이 없기 때문이다(Codex 교차 리뷰, [[log]] 2026-09-11).
+ *
+ * **이메일이 겹치면 별개 계정을 만든다** (BE-30). BE-26은 여기서 거절할 수밖에 없었다 —
+ * `users.email`이 UNIQUE라 두 번째 행을 못 만들었고, 그래서 그 주소를 가진 사람은
+ * 로그인이 막다른 길이었다. 0014가 그 제약을 떼면서 모델이 제자리를 찾았다:
+ * **이메일은 표시용 속성이고, 계정을 가리키는 것은 `oauth_accounts`뿐이다**
+ * ([[Decisions/0011-account-link-key]]).
+ *
+ * 신규 생성은 **`batch` 하나로 원자적이다** (BE-26 ②). 이전에는 `INSERT users`와
+ * `INSERT oauth_accounts`가 따로 돌아, 사이에서 실패하면 **oauth 링크 없는 고아
+ * user 행**이 남았다 — 그리고 그 행이 남으면 다음 로그인이 이메일 매칭으로 흘러가
+ * ①이 막으려는 상황을 스스로 만들어냈다.
+ */
 export async function upsertUser(db: D1Database, who: GoogleIdentity): Promise<number> {
   const linked = await db
     .prepare('SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_account_id = ?')
     .bind('google', who.sub)
     .first<{ user_id: number }>();
   if (linked) {
-    // 이름·아바타는 Google 쪽에서 바뀔 수 있으니 로그인마다 맞춰 둔다.
+    // 이름·아바타·이메일은 Google 쪽에서 바뀔 수 있으니 로그인마다 맞춰 둔다.
+    // **이메일도 갱신한다** — 예전엔 최초 가입 시점 값이 굳어, 계정에 붙어 있는
+    // 주소가 실제와 달라진 채로 화면에 표시됐다.
+    //
+    // BE-26에는 "다른 행이 그 주소를 쓰고 있으면 옛 주소를 유지"하는 `CASE` 가드가
+    // 있었다. **UNIQUE 제약을 피하려고 넣은 것이라 0014와 함께 수명이 끝났다** —
+    // 그대로 뒀다면 같은 주소를 쓰는 계정이 둘 생기는 순간(BE-30이 지원하려던 바로
+    // 그 상황) **한쪽 이메일이 영원히 갱신되지 않고** 화면에 옛 주소가 남는다
+    // (`/code-review` 발견). 이제 겹치는 것이 정상이므로 그냥 쓴다.
     await db
-      .prepare("UPDATE users SET name = ?, avatar_url = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(who.name, who.picture, linked.user_id)
+      .prepare(
+        `UPDATE users SET email = ?, name = ?, avatar_url = ?, updated_at = datetime('now')
+          WHERE id = ?`,
+      )
+      .bind(who.email, who.name, who.picture, linked.user_id)
       .run();
     return linked.user_id;
   }
 
-  // 같은 이메일의 계정이 이미 있으면 거기에 제공자를 잇는다 — 나중에 GitHub 등을
-  // 붙일 때 같은 사람이 계정 두 개로 갈리지 않게.
-  const existing = await db
-    .prepare('SELECT id FROM users WHERE email = ?')
-    .bind(who.email)
-    .first<{ id: number }>();
+  // 이 sub로는 처음 보는 사람이다 — 같은 이메일의 계정이 있어도 **다른 사람**이다.
+  //
+  // `users` 행과 그 링크를 한 트랜잭션에 넣는다. batch는 바인딩이 먼저 끝나 첫 문의
+  // `RETURNING id`를 둘째 문에 넣을 수 없으므로 `last_insert_rowid()`로 집는다.
+  //
+  // **BE-26에서는 이메일 서브쿼리로 집었는데 그 수법이 0014로 깨졌다** — `email`이
+  // 더 이상 UNIQUE가 아니라서 같은 주소의 다른 계정을 가리킬 수 있다. 그때
+  // `last_insert_rowid()`를 피했던 이유는 "D1 batch가 문 사이에 보존한다는 보장을
+  // 문서로 확인할 수 없어서"였는데, **이번에 로컬 D1로 직접 재봤다**: 같은 batch에서
+  // INSERT 뒤 `last_insert_rowid()`가 방금 넣은 행의 id를 정확히 돌려준다. batch는
+  // 한 트랜잭션이라 사이에 다른 쓰기가 끼어들 수도 없다.
+  const [created] = await db.batch<{ id: number }>([
+    db
+      .prepare('INSERT INTO users (email, name, avatar_url) VALUES (?, ?, ?) RETURNING id')
+      .bind(who.email, who.name, who.picture),
+    db
+      .prepare(
+        `INSERT INTO oauth_accounts (user_id, provider, provider_account_id)
+         VALUES (last_insert_rowid(), ?, ?)`,
+      )
+      .bind('google', who.sub),
+  ]);
 
-  const userId =
-    existing?.id ??
-    (
-      await db
-        .prepare('INSERT INTO users (email, name, avatar_url) VALUES (?, ?, ?) RETURNING id')
-        .bind(who.email, who.name, who.picture)
-        .first<{ id: number }>()
-    )?.id;
+  const userId = created?.results?.[0]?.id;
   if (!userId) throw new ApiError('계정을 만들지 못했습니다.', 500);
-
-  await db
-    .prepare('INSERT INTO oauth_accounts (user_id, provider, provider_account_id) VALUES (?, ?, ?)')
-    .bind(userId, 'google', who.sub)
-    .run();
   return userId;
 }
 
@@ -329,6 +416,50 @@ export async function purgeExpiredSessions(db: D1Database): Promise<number> {
 }
 
 // ── 인가 ────────────────────────────────────────────────────────────────────
+
+/**
+ * 이 이벤트를 **볼** 수 있는가 (BE-24).
+ *
+ * 판정은 `assertCanEdit`와 같다 — 소유자가 없으면(데모) 누구나, 있으면 본인만,
+ * 아니면 **404**다. 쓰기와 읽기의 경계를 굳이 다르게 둘 이유가 없고, 다르게 두면
+ * "고칠 수는 없지만 볼 수는 있다"는 애매한 상태가 생겨 설명해야 할 규칙이 하나 는다.
+ *
+ * **왜 읽기에도 필요한가**: `owner_id`가 채워지기 시작한 뒤(BE-12) 이벤트 상세와
+ * 운영 지표는 **인증 호출이 아예 0건**이었다(`_request`가 쓰이지도 않았다). 소유권
+ * 모델을 도입해 놓고 읽기가 뚫려 있으면 그 모델이 성립하지 않는다.
+ *
+ * **참가자 경로는 이걸 쓰지 않는다** — 공개 상태(`assertPublicEvent`)로 판정하는
+ * 별개 경계다. 참가자에게 로그인을 요구하면 제품이 깨진다.
+ *
+ * 이미 이벤트 행을 읽은 라우트를 위해 `owner_id`를 직접 받는 형태다 — 조회를
+ * 한 번 더 하면 요청당 D1 왕복이 는다(BE-13 ⑥).
+ */
+export async function assertCanRead(
+  db: D1Database,
+  request: Request,
+  ownerId: number | null,
+): Promise<void> {
+  if (ownerId === null) return;
+  const user = await getSessionUser(db, request);
+  if (!user || user.id !== ownerId) throw eventNotFound();
+}
+
+/**
+ * 로그인한 사용자를 돌려주고, 없으면 **401**이다 (BE-13 ①).
+ *
+ * 게스트에게 401을 주는 유일한 자리는 **새 이벤트를 서버에 만드는 경로**다. 나머지
+ * 운영자 경로는 "없는 것"으로 404를 주는데(존재 비노출), 생성은 가리킬 대상이 없어
+ * 숨길 존재도 없다 — 여기서 404를 주면 "왜 안 되는지" 알 길이 없어진다.
+ *
+ * 게스트가 만든 것을 잃지 않게 하는 장치는 로컬 워크스페이스와 가져오기(BE-15)이지
+ * 서버에 무소유 행을 쌓는 것이 아니다 — 무소유 행은 **자정 리셋이 지우는 데모의 몫**이라,
+ * 게스트가 거기에 만들면 하룻밤 뒤 사라진다(ADR 0007 결정 1).
+ */
+export async function requireUser(db: D1Database, request: Request): Promise<SessionUser> {
+  const user = await getSessionUser(db, request);
+  if (!user) throw new ApiError('로그인이 필요합니다.', 401);
+  return user;
+}
 
 /**
  * 이 이벤트를 고치거나 지울 수 있는가 (BE-12 리뷰 #5, Codex 교차 리뷰 #2).

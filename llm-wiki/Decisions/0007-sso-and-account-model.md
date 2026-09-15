@@ -102,6 +102,8 @@ auth_sessions    (id = SHA-256(세션 토큰), user_id → users CASCADE, expire
 events.owner_id  INTEGER REFERENCES users(id) ON DELETE CASCADE   -- NULL = 데모
 ```
 
+> **부분 개정 (2026-09-14, [[0011-account-link-key]])** — `users.email`이 UNIQUE라는 스키마는 그대로지만, **이메일로 계정을 잇는 규칙은 폐기**했다. 연결 키는 `oauth_accounts(provider, provider_account_id)` 하나뿐이다.
+
 **이름 충돌 주의**: 이 저장소의 `sessions` 테이블은 **아젠다 세션**([[0005-d1-schema]])이다. 인증 세션은 반드시 `auth_sessions`로 쓴다 — 같은 이름을 재사용하면 스키마·쿼리·타입 전반에서 조용히 뒤섞인다.
 
 세션 원문 토큰은 저장하지 않고 SHA-256 해시를 PK로 쓴다. D1 내용이 유출돼도 세션을 탈취할 수 없다. 해싱 패턴 자체는 이미 `client_hash`/`token_hash`([[0006-rate-limit-key]])에서 쓰던 것이라 새로운 개념이 아니다.

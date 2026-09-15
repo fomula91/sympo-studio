@@ -60,6 +60,8 @@
 | [[0008-rate-limit-counter]] | rate limit 판정을 (키, 창) 카운터로 (0006 부분 개정) |
 | [[0009-event-status-axes]] | 이벤트 상태를 발행 상태·행사 시점 두 축으로 |
 | [[0010-studio-d1-slug-designation]] | 스튜디오↔D1 연결은 워크스페이스 대신 id 지목 경로로 (FE-30) |
+| [[0011-account-link-key]] | 계정 연결 키는 `oauth_accounts` 하나, 이메일은 식별자가 아니다 (0007 부분 개정) |
+| [[0012-upload-admission]] | 업로드 한도를 예약으로 판정 (0008의 증가 시점을 업로드에 한해 개정) |
 
 ## Reviews
 

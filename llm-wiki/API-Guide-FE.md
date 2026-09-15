@@ -27,7 +27,7 @@ FE가 호출하는 경로 **16개**를 아래 표에 먼저 둔다(라우트 파
 | `/api/events/[id]` | GET · PATCH · DELETE | 운영자 | 단건(+아젠다+자료) / 부분 수정 / 삭제 |
 | `/api/events/[id]/sessions` | PUT | 운영자 | 아젠다 목록 저장(diff) |
 | `/api/events/[id]/documents` | PUT | 운영자 | 자료 목록(메타) 저장(diff) |
-| `/api/events/[id]/documents/[docId]/upload` | PUT | 운영자 | 자료 파일 업로드(PDF·20MB) |
+| `/api/events/[id]/documents/[docId]/upload` | PUT | 운영자 | 자료 파일 업로드(PDF·20MB, rate limit 있음) |
 | `/api/events/[id]/questions/[qid]` | PATCH | 운영자 | 질문 숨김/복구 |
 | `/api/events/[id]/survey/summary` | GET | 운영자 | 설문 집계 |
 | `/api/events/[id]/ops` | GET | 운영자 | 운영 지표 집계 |
@@ -215,19 +215,29 @@ if (!token) {
 
 본문은 **파일 바이트 그대로**(multipart 아님), `Content-Type: application/pdf`.
 
+**`x-client-token`을 반드시 실어 주세요**(BE-29) — Q&A·설문과 같은 익명 토큰입니다. 없어도 동작하지만 rate limit이 **IP 단독 버킷으로 강등**돼, 같은 네트워크(행사장 Wi-Fi는 단일 egress IP입니다)의 다른 사람과 한도를 나눠 쓰게 됩니다.
+
 ```js
 await fetch(`/api/events/${eventId}/documents/${docId}/upload`, {
-  method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: file,
+  method: 'PUT',
+  headers: { 'Content-Type': 'application/pdf', 'x-client-token': clientToken },
+  body: file,
 });
 ```
 
-| | 제약 |
-|---|---|
-| 형식 | `application/pdf`만 |
-| 크기 | **20MB 이하** |
-| 성공 | `201 { id, status: 'ready', sizeBytes }` |
+| | 제약 | 초과하면 |
+|---|---|---|
+| 형식 | `application/pdf`만 | `400` |
+| 파일 크기 | **20MB 이하** | `400` |
+| **이벤트 총량** | **300MB** (그 이벤트 자료 전체의 합) | `400` + 현재 사용량이 문구에 포함 |
+| **업로드 속도** | **5분에 200MB · 하루 1GB** (브라우저 토큰 기준) | `429` |
+| 성공 | `201 { id, status: 'ready', sizeBytes }` | |
 
-같은 자료에 다시 올리면 **교체**된다(옛 파일은 지워지고 URL도 바뀐다).
+**속도 한도의 단위가 건수가 아니라 MB입니다.** 4MB짜리 50개와 20MB짜리 10개가 같은 비용입니다 — 지키려는 자원이 R2 저장량이라 그렇습니다. 실무 강의자료가 1~4MB라 정상 현장 시나리오(자료 몇 개를 연달아 올림)는 닿지 않습니다.
+
+**429·400 본문의 `error` 문구를 그대로 보여주세요** — 사유가 서로 다릅니다("5분에 200MB까지", "이벤트 하나에 올릴 수 있는 총 용량(300MB)을 넘습니다. 현재 N MB를 사용 중입니다"). "업로드 실패"로 뭉뚱그리면 사용자가 기다려야 할지 파일을 지워야 할지 알 수 없습니다.
+
+같은 자료에 다시 올리면 **교체**된다(옛 파일은 지워지고 URL도 바뀐다). **교체분은 이벤트 총량에서 옛 크기를 돌려받으므로**, 300MB를 거의 채운 상태에서도 기존 자료를 같은 크기로 바꾸는 것은 막히지 않습니다.
 
 ### 열람 — 서명 URL
 
