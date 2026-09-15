@@ -42,32 +42,35 @@ const FEATURES = [
 
 // 기존 DESIGN_ROWS 7건 중 대표성 있는 3건만 선정 — context-notes.md 결정 3
 const COMPARISONS = [
-  { what: '행사 식별', before: '제목 한 문자열 + URL 재사용', after: '필드 분해 + 회차별 고유 슬러그', why: '주소가 회차마다 달라져 공유 캐시가 꼬이지 않는다.' },
-  { what: '아젠다', before: '이미지 슬라이드', after: '구조화된 세션 레코드', why: '이미지를 다시 받아 올리는 왕복이 사라진다.' },
-  { what: '프리뷰', before: '별도 구현', after: '참가자 화면과 같은 컴포넌트', why: '"프리뷰와 실물이 다르다"를 구조적으로 없앤다.', highlight: true },
+  { what: '행사 식별', before: '제목 한 문자열 + URL 재사용', after: '필드 분해 + 회차별 고유 슬러그', why: '회차마다 주소가 달라지니 공유 캐시가 꼬일 일이 없어요.' },
+  { what: '아젠다', before: '이미지 슬라이드', after: '구조화된 세션 레코드', why: '자료를 다시 받고 다시 올리는 번거로운 과정이 사라져요.' },
+  { what: '프리뷰', before: '별도 구현', after: '참가자 화면과 같은 컴포넌트', why: '프리뷰와 실제 화면이 다를 수가 없어요 — 같은 컴포넌트거든요.', highlight: true },
 ];
 
+// 각 이미지는 실제 화면 캡처다(스튜디오 미리보기·실제 참가자 페이지)를 3:4
+// 비율로 미리 잘라둔 것 — 신규 캡처 없이 기존 자산을 재사용하던 이전 버전을
+// 디자인 리뷰 반영으로 교체했다.
 const EXPERIENCE_STEPS = [
-  { n: '01', title: '아젠다 확인', body: '시간·연자·세션 종류를 훑는다. 지금 진행 중인 세션이 강조된다.' },
-  { n: '02', title: '강의자료 열람', body: '카드를 누르면 PDF.js 뷰어가 즉시 열린다. 자료가 아직 없으면 "준비 중"으로 그린다.' },
-  { n: '03', title: '참여 화면', body: 'Q&A·설문에 참여한다. 외부 링크·QR 없이 같은 페이지 안에서 끝난다.' },
+  { n: '01', title: '아젠다 확인', body: '시간·연자·세션 종류를 한눈에 훑어볼 수 있어요. 지금 진행 중인 세션은 강조돼서 바로 눈에 띄어요.', src: '/screens/mobile-agenda.jpg' },
+  { n: '02', title: '강의자료 열람', body: '카드를 누르면 PDF.js 뷰어가 바로 열려요. 아직 자료가 없으면 "준비 중"이라고 알려줘요.', src: '/screens/mobile-document.jpg' },
+  { n: '03', title: '참여 화면', body: 'Q&A와 설문에 참여할 수 있어요. 외부 링크나 QR 없이 같은 페이지 안에서 전부 끝나요.', src: '/screens/mobile-qa.jpg' },
 ];
 
 const IMPLEMENTED = [
-  { label: '아젠다·자료 구조화', body: '이미지 대신 필드로 편집, D1에 저장.' },
-  { label: '프리뷰 = 실물 동일 컴포넌트', body: '에디터 프리뷰와 참가자 화면이 같은 컴포넌트를 렌더한다.' },
-  { label: 'Google 로그인 · 소유권', body: '로그인 이벤트는 소유자만 수정, 게스트 경로도 유지.' },
-  { label: '테마 프리셋 → OKLCH 파생', body: '색상 두 값에서 팔레트 전체를 유도, WCAG 대비비 게이트.' },
+  { label: '아젠다·자료 구조화', body: '이미지 대신 필드로 편집하고, D1에 바로 저장돼요.' },
+  { label: '프리뷰 = 실물 동일 컴포넌트', body: '에디터 프리뷰와 참가자 화면이 똑같은 컴포넌트를 보여줘요.' },
+  { label: 'Google 로그인 · 소유권', body: '로그인한 이벤트는 소유자만 수정할 수 있고, 게스트 경로도 그대로 남겨뒀어요.' },
+  { label: '테마 프리셋 → OKLCH 파생', body: '색상 두 값만으로 팔레트 전체를 만들고, WCAG 대비비 기준도 함께 확인해요.' },
 ];
 
 const NOT_IMPLEMENTED = [
-  { label: '이미지 자동 색상 추출', body: '브랜드 이미지에서 색을 뽑는 흐름은 아직 없다.' },
-  { label: '오프라인 폴백', body: '현장 네트워크 단절 대응은 설계에 없다.' },
+  { label: '이미지 자동 색상 추출', body: '브랜드 이미지에서 색을 자동으로 뽑아내는 기능은 아직 없어요.' },
+  { label: '오프라인 폴백', body: '현장에서 네트워크가 끊겼을 때의 대응은 아직 설계하지 못했어요.' },
 ];
 
 const NOT_VERIFIED = [
-  { label: '고령 사용자 접근성', body: '글자 크기·터치 타깃을 별도로 검증하지 않았다.' },
-  { label: '자동 테스트 커버리지', body: '순수 함수 다수에 테스트가 없다.' },
+  { label: '고령 사용자 접근성', body: '글자 크기나 터치 영역을 별도로 검증하지는 않았어요.' },
+  { label: '자동 테스트 커버리지', body: '순수 함수가 많은데 아직 테스트를 붙이지 못했어요.' },
 ];
 
 export default function IntroPage() {
@@ -81,6 +84,7 @@ export default function IntroPage() {
       }}
     >
       <header
+        className="intro-header"
         style={{
           position: 'sticky',
           top: 0,
@@ -88,8 +92,6 @@ export default function IntroPage() {
           height: 84,
           display: 'flex',
           alignItems: 'center',
-          padding: '0 32px',
-          gap: 32,
           background: T.bg,
           backdropFilter: 'blur(10px)',
           borderBottom: `1px solid ${T.border}`,
@@ -99,7 +101,11 @@ export default function IntroPage() {
         <div style={{ flex: 1 }} />
         <IntroNav anchors={NAV_ANCHORS} />
         <ThemeToggle size={38} />
-        <Link href="/" style={{ ...ctaBtn, height: 54, padding: '0 26px', fontSize: 15.5 }}>
+        <Link
+          href="/"
+          className="intro-header-cta"
+          style={{ ...ctaBtn, height: 54, padding: '0 26px', fontSize: 15.5 }}
+        >
           데모 열기
         </Link>
       </header>
@@ -203,7 +209,7 @@ export default function IntroPage() {
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 13, color: T.body, marginTop: 12 }}>⚠ 샘플 데이터입니다. 어떤 지표를 봐야 하는지 보여주는 화면입니다.</div>
+          <div style={{ fontSize: 13, color: T.body, marginTop: 12 }}>⚠ 샘플 데이터예요. 실제 운영에서 어떤 지표를 보게 될지 미리 보여드리는 화면이에요.</div>
         </div>
       </section>
 
@@ -211,7 +217,7 @@ export default function IntroPage() {
       <section id="product" style={sectionStyle}>
         <SectionEyebrow n="01" label="제품 둘러보기" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 36 }}>
-          운영자가 쓰는 네 화면이다. 항목을 눌러 실제 화면을 확인할 수 있다.
+          운영자가 매일 쓰는 네 화면이에요. 왼쪽 항목을 눌러보면 실제 화면이 바로 나타나요.
         </p>
         <Reveal>
           <FeatureShowcase items={FEATURES} />
@@ -222,7 +228,7 @@ export default function IntroPage() {
       <section id="problem" style={sectionStyle}>
         <SectionEyebrow n="02" label="현장의 문제와 설계 판단" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, maxWidth: 760, marginBottom: 36 }}>
-          제약 심포지엄 마이크로사이트를 만들고 현장에서 운영하며 겪은 문제를, 도구를 다시 설계해 풀었다.
+          제약 심포지엄 마이크로사이트를 만들고 현장에서 운영하며 겪었던 문제들이에요. 도구를 다시 설계해서 하나씩 풀어봤어요.
         </p>
         <Reveal>
           <div
@@ -259,25 +265,29 @@ export default function IntroPage() {
       <section id="experience" style={sectionStyle}>
         <SectionEyebrow n="03" label="참가자 경험" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 36 }}>
-          같은 컴포넌트가 모바일·태블릿에서 그대로 반응형으로 렌더된다.
+          아젠다 확인부터 강의자료 열람, Q&A·설문 참여까지 — 세 화면 모두 실제로 동작하는 참가자 페이지를 그대로 캡처했어요.
         </p>
         <Reveal>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(480px,100%),1fr))', gap: 32, alignItems: 'center' }}>
-            <div style={{ borderRadius: 20, overflow: 'hidden', border: `1px solid ${T.border}` }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/screens/viewer.png" alt="참가자 뷰 — 모바일·태블릿 동시 렌더" style={{ width: '100%', display: 'block' }} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              {EXPERIENCE_STEPS.map((s) => (
-                <div key={s.n} style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px,100%),1fr))', gap: 20 }}>
+            {EXPERIENCE_STEPS.map((s) => (
+              <div key={s.n}>
+                <div style={{ borderRadius: 20, overflow: 'hidden', border: `1px solid ${T.border}`, aspectRatio: '3 / 4', marginBottom: 16 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={s.src}
+                    alt={s.title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                   <div style={{ fontFamily: MONO, fontSize: 20, fontWeight: 700, color: T.accent, lineHeight: 1, flex: '0 0 auto' }}>{s.n}</div>
                   <div>
                     <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>{s.title}</div>
                     <div style={{ fontSize: 14.5, color: T.body, lineHeight: 1.6 }}>{s.body}</div>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         </Reveal>
       </section>
@@ -287,7 +297,7 @@ export default function IntroPage() {
         <SectionEyebrow n="04" label="라이트·다크와 브랜드 테마" accent={T.accent} />
         <Reveal>
           <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 28 }}>
-            같은 UI가 두 모드를 모두 지원한다. 오른쪽 위 토글로 지금 바로 바꿔볼 수 있다.
+            같은 화면이 라이트·다크 모드를 모두 지원해요. 오른쪽 위 토글을 눌러서 지금 바로 바꿔보세요.
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px,100%),1fr))', gap: 16, marginBottom: 28 }}>
             {(['light', 'dark'] as const).map((mode) => (
@@ -300,7 +310,7 @@ export default function IntroPage() {
               <div key={c} style={{ width: 40, height: 40, borderRadius: 12, background: c, border: `1px solid ${T.border}` }} />
             ))}
           </div>
-          <div style={{ fontSize: 13, color: T.body, marginTop: 12 }}>⚠ 장식용 예시 색상입니다. 실제 프리셋 목록과는 무관합니다.</div>
+          <div style={{ fontSize: 13, color: T.body, marginTop: 12 }}>⚠ 장식용 예시 색상이에요. 실제 프리셋 목록과는 관련이 없어요.</div>
         </Reveal>
       </section>
 
@@ -416,8 +426,8 @@ function ScopeColumn({ title, items }: { title: string; items: { label: string; 
       <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.08em', color: T.accent, marginBottom: 14 }}>{title}</div>
       <div style={{ borderTop: `1px solid ${T.border}` }}>
         {items.map((it) => (
-          <div key={it.label} className="intro-limit-row" style={{ padding: '14px 0', borderBottom: `1px solid ${T.border}` }}>
-            <div style={{ width: 160, flex: '0 0 160px', fontSize: 14.5, fontWeight: 650 }}>{it.label}</div>
+          <div key={it.label} style={{ padding: '14px 0', borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ fontSize: 14.5, fontWeight: 650, marginBottom: 4 }}>{it.label}</div>
             <div style={{ fontSize: 13.5, color: T.body, lineHeight: 1.6 }}>{it.body}</div>
           </div>
         ))}

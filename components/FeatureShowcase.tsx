@@ -1,6 +1,9 @@
 'use client';
 
-// 인트로 페이지 전용 — 왼쪽 기능 목록을 클릭하면 오른쪽 스크린샷이 바뀌는 탭형 쇼케이스.
+// 인트로 페이지 전용 — 기능 목록을 선택하면 스크린샷이 바뀌는 쇼케이스.
+// 데스크톱(>=1024px)은 왼쪽 세로 목록 + 오른쪽 화면, 태블릿·모바일은
+// 위쪽 가로 탭 + 아래 전체 폭 화면으로 바뀐다(디자인 리뷰 — 좁은 화면에서
+// 목록이 320px를 차지해 화면이 지나치게 작아지는 문제).
 import { useState } from 'react';
 
 interface FeatureItem {
@@ -15,13 +18,16 @@ export default function FeatureShowcase({ items }: { items: FeatureItem[] }) {
 
   return (
     <div className="feature-showcase" style={{ gap: 32, alignItems: 'start' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="feature-tabs">
         {items.map((it, i) => {
           const isActive = i === active;
           return (
             <button
               key={it.key}
               onClick={() => setActive(i)}
+              aria-pressed={isActive}
+              aria-controls="feature-showcase-panel"
+              className="feature-tab"
               style={{
                 textAlign: 'left',
                 border: 'none',
@@ -36,12 +42,15 @@ export default function FeatureShowcase({ items }: { items: FeatureItem[] }) {
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: isActive ? 'var(--intro-accent)' : 'var(--intro-title)' }}>
                 {it.label}
               </div>
-              <div style={{ fontSize: 14, color: 'var(--intro-body)', lineHeight: 1.55 }}>{it.desc}</div>
+              <div className="feature-tab-desc" style={{ fontSize: 14, color: 'var(--intro-body)', lineHeight: 1.55 }}>
+                {it.desc}
+              </div>
             </button>
           );
         })}
       </div>
       <div
+        id="feature-showcase-panel"
         style={{
           borderRadius: 20,
           overflow: 'hidden',
@@ -55,7 +64,9 @@ export default function FeatureShowcase({ items }: { items: FeatureItem[] }) {
             key={it.key}
             src={it.src}
             alt={it.label}
-            style={{ width: '100%', display: i === active ? 'block' : 'none' }}
+            width={1440}
+            height={900}
+            style={{ width: '100%', height: 'auto', display: i === active ? 'block' : 'none' }}
           />
         ))}
       </div>
