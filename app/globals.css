@@ -38,6 +38,29 @@
   --hover-border: oklch(0.42 0.01 250);
 }
 
+/* 인트로 페이지(app/intro) 전용 토큰. 앱 나머지 화면(콘솔·에디터·뷰어·리포트)이
+   공유하는 --brand 등 위 토큰과는 색 계열이 다르므로 별도 접두사로 분리한다 —
+   여기를 바꿔도 다른 화면은 영향받지 않는다. */
+:root {
+  --intro-bg: #f7f9f8;
+  --intro-card: #ffffff;
+  --intro-border: #dde5e0;
+  --intro-title: #17231d;
+  --intro-body: #5d6d63;
+  --intro-accent: #087f70;
+  --intro-on-accent: #ffffff;
+}
+
+:root[data-theme='dark'] {
+  --intro-bg: #101413;
+  --intro-card: #191f1d;
+  --intro-border: #34423b;
+  --intro-title: #f2f6f3;
+  --intro-body: #acbab1;
+  --intro-accent: #5edbc5;
+  --intro-on-accent: #10231f;
+}
+
 html,
 body {
   margin: 0;
@@ -151,6 +174,12 @@ input.inp:focus {
   .intro-limit-row > :first-child {
     width: auto !important;
     flex: initial !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .feature-showcase {
+    grid-template-columns: 1fr !important;
   }
 }
 

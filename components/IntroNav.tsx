@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { UI } from '@/lib/ui';
 
 interface Anchor {
   id: string;
@@ -50,7 +49,7 @@ export default function IntroNav({ anchors }: { anchors: Anchor[] }) {
           href={`#${a.id}`}
           style={{
             fontSize: 15,
-            color: active === a.id ? UI.brand : UI.muted,
+            color: active === a.id ? 'var(--intro-accent)' : 'var(--intro-body)',
             textDecoration: 'none',
             fontWeight: active === a.id ? 700 : 600,
           }}
