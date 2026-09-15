@@ -55,7 +55,7 @@ function positiveInt(v: string, field: string): number {
  * **읽고 → R2에 쓰고 → 올리는** 순서라 동시 요청이 같은 값을 읽고 전부 통과했다
  * (Codex 교차 리뷰가 16개 동시 업로드로 재현 경로를 제시). 넘친 만큼 R2 연산·대역폭이
  * 샜다. 지금은 `reserveRateLimit`이 **판정과 증가를 한 문장으로** 묶어 R2에 넣기 직전에
- * 예약하므로 그 창이 없다([[0011-upload-admission]]).
+ * 예약하므로 그 창이 없다([[0012-upload-admission]]).
  *
  * 예약을 되돌리는 기준은 하나다 — **R2 `put`이 실제로 일어났는가.** 일어나지 않았으면
  * (put이 던짐) 되돌리고, 일어난 뒤의 실패(D1 갱신 실패·`changes === 0`)는 되돌리지

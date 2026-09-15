@@ -73,7 +73,7 @@ describe('evaluateRateLimit', () => {
  *
  * 여기서 고정하는 것은 **SQL 의미가 아니라 호출 규약**이다(가짜 D1은 SQL을 실행하지
  * 않는다). SQL 쪽(게이트가 거짓이면 어떤 버킷도 안 오른다 / 참이면 전부 정확히 cost만큼
- * 오른다)은 로컬 D1 실측으로 확인했고 근거는 [[0011-upload-admission]]에 있다.
+ * 오른다)은 로컬 D1 실측으로 확인했고 근거는 [[0012-upload-admission]]에 있다.
  */
 function fakeDb(granted: { key_hash: string; scope: string; window_key: string }[]) {
   const calls: { sql: string; params: unknown[] }[] = [];

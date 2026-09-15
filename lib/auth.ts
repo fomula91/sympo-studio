@@ -347,7 +347,7 @@ export async function deleteSession(db: D1Database, request: Request): Promise<v
  * `users.email`이 UNIQUE라 두 번째 행을 못 만들었고, 그래서 그 주소를 가진 사람은
  * 로그인이 막다른 길이었다. 0014가 그 제약을 떼면서 모델이 제자리를 찾았다:
  * **이메일은 표시용 속성이고, 계정을 가리키는 것은 `oauth_accounts`뿐이다**
- * ([[Decisions/0010-account-link-key]]).
+ * ([[Decisions/0011-account-link-key]]).
  *
  * 신규 생성은 **`batch` 하나로 원자적이다** (BE-26 ②). 이전에는 `INSERT users`와
  * `INSERT oauth_accounts`가 따로 돌아, 사이에서 실패하면 **oauth 링크 없는 고아

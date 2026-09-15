@@ -3,7 +3,7 @@ source: "BE-26 착수(2026-09-14) — lib/auth.ts `upsertUser` 전수 확인 + C
 verified: 2026-09-14
 ---
 
-# 0010 — 계정 연결 키는 `oauth_accounts` 하나이고, 이메일은 식별자가 아니다
+# 0011 — 계정 연결 키는 `oauth_accounts` 하나이고, 이메일은 식별자가 아니다
 
 ## 상태
 채택 — [[0007-sso-and-account-model]]의 계정 모델을 **부분 개정**한다.

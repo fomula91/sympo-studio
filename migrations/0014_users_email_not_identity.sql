@@ -3,7 +3,7 @@
 -- BE-26이 계정 연결 키를 `oauth_accounts(provider, provider_account_id)` 하나로
 -- 좁히면서 **이메일이 겹치는 사용자는 로그인하지 못하는 막다른 길**을 남겼다
 -- (409로 거절). 별개 계정을 만들어 주는 것이 옳은 모델인데, `users.email`이
--- `NOT NULL UNIQUE`라 두 번째 행을 못 만들었다([[Decisions/0010-account-link-key]]).
+-- `NOT NULL UNIQUE`라 두 번째 행을 못 만들었다([[Decisions/0011-account-link-key]]).
 --
 -- ---------------------------------------------------------------------------
 -- 왜 이 순서인가 — 실측으로 확인한 D1의 두 가지
