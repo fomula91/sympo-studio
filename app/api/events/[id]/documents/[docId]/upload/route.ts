@@ -5,7 +5,7 @@ import {
   assertEventCapacity, assertUploadable, documentKey, MAX_EVENT_BYTES, MAX_FILE_BYTES,
   uploadCostMb, UPLOAD_RATE_POLICY,
 } from '@/lib/r2';
-import { evaluateRateLimit, rateCounterStatement, rateKeys, rateUsageStatements } from '@/lib/rate-limit';
+import { evaluateRateLimit, rateCounterStatement, rateKeys, reserveRateLimit } from '@/lib/rate-limit';
 
 type UploadCtx = { params: Promise<{ id: string; docId: string }> };
 
@@ -49,18 +49,17 @@ function positiveInt(v: string, field: string): number {
  *    생성**이고, 옛 객체 삭제는 실패해도 넘어가는(best-effort) 경로다. 1·2만으로는
  *    이 반복이 안 막힌다.
  *
- * ## 남아 있는 것 (정직하게)
+ * ## 셋 다 실제 천장이다 (BE-31에서 닫았다)
  *
- * **2는 실제 천장이지만 3은 아니다.** 이벤트 총량은 아래 `UPDATE`의 술어가 커밋 시점에
- * 평가하므로 동시 요청이 넘어설 수 없다. 반면 rate 카운터는 여전히 **읽고 → R2에 쓰고 →
- * 올리는** 순서라, 동시에 들어온 요청들이 모두 같은 카운터를 읽고 전부 통과할 수 있다
- * (Codex 교차 리뷰). 넘치는 양은 동시성만큼으로 제한되고 저장량은 2가 잡지만,
- * **연산·대역폭은 그만큼 샌다.** 원자적 예약(admission)으로 닫는 것이 정답이고
- * [[Next-Tasks]] BE-31로 등록했다 — 여기서 바로 고치지 않은 이유도 거기 적었다.
+ * 2는 아래 `UPDATE`의 술어가 커밋 시점에 평가해 동시 요청이 넘어설 수 없었고, 3은
+ * **읽고 → R2에 쓰고 → 올리는** 순서라 동시 요청이 같은 값을 읽고 전부 통과했다
+ * (Codex 교차 리뷰가 16개 동시 업로드로 재현 경로를 제시). 넘친 만큼 R2 연산·대역폭이
+ * 샜다. 지금은 `reserveRateLimit`이 **판정과 증가를 한 문장으로** 묶어 R2에 넣기 직전에
+ * 예약하므로 그 창이 없다([[0011-upload-admission]]).
  *
- * 또 하나: 아래에서 `changes === 0`이면 R2 객체를 되돌리고 404를 주지만, **카운터는
- * 같은 batch에서 이미 올라간 상태다.** R2 `put`이 실제로 일어났으므로 그 비용을
- * 청구하는 것이 맞다고 보고 그대로 둔다.
+ * 예약을 되돌리는 기준은 하나다 — **R2 `put`이 실제로 일어났는가.** 일어나지 않았으면
+ * (put이 던짐) 되돌리고, 일어난 뒤의 실패(D1 갱신 실패·`changes === 0`)는 되돌리지
+ * 않는다. Class A 연산은 이미 썼고 이 정책이 지키는 자원이 바로 그것이다.
  *
  * ## 이 라우트만 `Content-Length`를 요구하는 이유 (`/code-review` 발견)
  *
@@ -134,37 +133,45 @@ export const PUT = withRoute(async (request: NextRequest, ctx: UploadCtx) => {
 
   assertEventCapacity(otherBytes, bytes.byteLength);
   const cost = uploadCostMb(bytes.byteLength);
-  evaluateRateLimit(rateRes.results as never, keys, UPLOAD_RATE_POLICY, eventId, cost, now);
+
+  // **R2에 넣기 직전에 실제 크기로 예약한다**(BE-31). 위 사전 판정은 신고 크기로 하는
+  // 읽기라, 20MB를 버퍼에 담기 전에 걸러내는 최적화일 뿐 천장이 아니다. 천장은 여기다 —
+  // 판정과 증가가 한 문장이라 동시 요청이 같은 값을 읽고 전부 통과하는 창이 없다.
+  // 부작용 바로 앞이라 예약을 붙잡고 있는 시간도 짧다(본문 버퍼링은 이미 끝났다).
+  const reservation = await reserveRateLimit(db, keys, UPLOAD_RATE_POLICY, eventId, cost, now);
 
   const key = documentKey(eventId, documentId);
-  const object = await env.DOCS.put(key, bytes, { httpMetadata: { contentType } });
+  const object = await env.DOCS.put(key, bytes, { httpMetadata: { contentType } }).catch(
+    async (e: unknown) => {
+      // put이 던졌으면 R2 연산이 일어나지 않았다 — 예약을 되돌린다. 되돌리기 실패로
+      // 업로드 실패 사유를 덮지 않는다(카운터가 조금 보수적으로 남을 뿐이다).
+      await reservation.release().catch(() => {});
+      throw e;
+    },
+  );
 
   let updated: D1Result;
   try {
-    // 카운터는 쓰기가 성공한 뒤 같은 트랜잭션에서 올린다(ADR 0008) — 요청마다 올리면
-    // 무효 요청이 D1 쓰기 티어를 태운다.
+    // 카운터는 위 예약에서 이미 올랐다 — 여기서 또 올리면 이중 계상이다(BE-31).
     //
     // **총량 판정을 UPDATE의 WHERE에 한 번 더 넣는다.** 위의 `assertEventCapacity`는
     // 읽고-나서-쓰는 구조라, 같은 이벤트의 **다른 자료**에 동시에 올리면 둘 다 같은
     // `otherBytes`를 보고 통과해 상한을 넘긴다(`/code-review` 발견). D1은 쓰기를
     // 직렬화하므로 이 술어가 커밋 시점의 값으로 평가돼 **상한이 실제 천장이 된다.**
-    const [res] = await db.batch([
-      db
-        .prepare(
-          `UPDATE documents
-              SET r2_key = ?, content_type = ?, size_bytes = ?, status = 'ready',
-                  uploaded_at = datetime('now')
-            WHERE id = ? AND event_id = ?
-              AND (SELECT COALESCE(SUM(size_bytes), 0) FROM documents other
-                    WHERE other.event_id = ? AND other.id <> ?) + ? <= ?`,
-        )
-        .bind(
-          key, contentType, object.size, documentId, eventId,
-          eventId, documentId, object.size, MAX_EVENT_BYTES,
-        ),
-      ...rateUsageStatements(db, keys, UPLOAD_RATE_POLICY, eventId, cost, now),
-    ]);
-    updated = res;
+    updated = await db
+      .prepare(
+        `UPDATE documents
+            SET r2_key = ?, content_type = ?, size_bytes = ?, status = 'ready',
+                uploaded_at = datetime('now')
+          WHERE id = ? AND event_id = ?
+            AND (SELECT COALESCE(SUM(size_bytes), 0) FROM documents other
+                  WHERE other.event_id = ? AND other.id <> ?) + ? <= ?`,
+      )
+      .bind(
+        key, contentType, object.size, documentId, eventId,
+        eventId, documentId, object.size, MAX_EVENT_BYTES,
+      )
+      .run();
   } catch (e) {
     // D1 갱신이 실패하면 R2에 아무도 못 찾는 객체가 남는다 — 되돌린다.
     await env.DOCS.delete(key);
