@@ -38,6 +38,31 @@
   --hover-border: oklch(0.42 0.01 250);
 }
 
+/* 인트로 페이지(app/intro) 전용 토큰. 앱 나머지 화면(콘솔·에디터·뷰어·리포트)이
+   공유하는 --brand 등 위 토큰과는 색 계열이 다르므로 별도 접두사로 분리한다 —
+   여기를 바꿔도 다른 화면은 영향받지 않는다.
+   app/intro/page.tsx의 ThemeSample이 라이트+다크를 동시에 보여주려고 이 값을
+   손으로 복사한 리터럴 hex를 갖고 있다 — 여기를 바꾸면 그쪽도 같이 고칠 것. */
+:root {
+  --intro-bg: #f7f9f8;
+  --intro-card: #ffffff;
+  --intro-border: #dde5e0;
+  --intro-title: #17231d;
+  --intro-body: #5d6d63;
+  --intro-accent: #087f70;
+  --intro-on-accent: #ffffff;
+}
+
+:root[data-theme='dark'] {
+  --intro-bg: #101413;
+  --intro-card: #191f1d;
+  --intro-border: #34423b;
+  --intro-title: #f2f6f3;
+  --intro-body: #acbab1;
+  --intro-accent: #5edbc5;
+  --intro-on-accent: #10231f;
+}
+
 html,
 body {
   margin: 0;
@@ -132,9 +157,14 @@ input.inp:focus {
   display: flex;
 }
 
-.intro-limit-row {
-  display: flex;
-  gap: 20px;
+.intro-header {
+  padding: 0 32px;
+  gap: 32px;
+}
+
+.intro-header-cta {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 @media (max-width: 767px) {
@@ -143,14 +173,64 @@ input.inp:focus {
   }
 }
 
-@media (max-width: 640px) {
-  .intro-limit-row {
-    flex-direction: column;
-    gap: 4px;
+/* 767px 아래에서 내비가 사라져도 로고+토글+CTA 3개만으로 390px 폭에서
+   32px 패딩·32px 간격을 그대로 쓰면 CTA가 밀려 한 글자씩 줄바꿈된다
+   (코드 리뷰로 재현). 좁은 화면에서는 패딩·간격을 줄인다 — CTA 쪽은
+   위 .intro-header-cta의 nowrap이 이미 줄바꿈 자체는 막는다. */
+@media (max-width: 480px) {
+  .intro-header {
+    padding: 0 16px;
+    gap: 12px;
   }
-  .intro-limit-row > :first-child {
-    width: auto !important;
-    flex: initial !important;
+}
+
+/* 디자인 리뷰 — 768px(태블릿)에서 목록이 320px를 차지해 화면이 358px로
+   쪼그라들어 읽기 어려웠다. 1024px 아래에서는 목록을 위쪽 가로 탭으로
+   접고 화면을 전체 폭으로 보여준다. */
+.feature-showcase {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+}
+
+.feature-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.feature-tab-desc {
+  display: block;
+}
+
+@media (max-width: 1024px) {
+  .feature-showcase {
+    grid-template-columns: 1fr;
+  }
+  .feature-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+  }
+  .feature-tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .feature-tab-desc {
+    display: none;
+  }
+}
+
+/* 좁은 화면에서는 auto-fit 그리드가 열 1개로 줄어드는데, 그 상태에서
+   span 2를 그대로 두면 암시적 2번째 열이 생겨 가로 스크롤이 생긴다
+   (390px 뷰포트에서 실측 확인). 그리드가 실제로 2열 이상일 때만 병합한다.
+   #problem 섹션의 그리드는 minmax(min(320px,100%),1fr) + gap 16이고 섹션
+   좌우 패딩이 24px씩이다 — 2열이 되려면 콘텐츠 폭 >= 320*2+16 = 656px,
+   즉 뷰포트 >= 656+48 = 704px. 700px로 두면 700~703px 구간에서 그리드는
+   아직 1열인데 span 2만 켜져 같은 버그가 재발한다(코드 리뷰로 발견). */
+@media (min-width: 704px) {
+  .compare-highlight {
+    grid-column: span 2;
   }
 }
 
