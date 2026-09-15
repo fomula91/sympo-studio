@@ -24,6 +24,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
   const [state, setState] = useState<LoadState>('loading');
@@ -33,8 +34,29 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
+    // 배경이 시각적으로만 가려질 뿐이라, 트랩 없이는 Tab이 뒤에 가려진 Q&A/설문
+    // 버튼으로 새서 보이지 않는 요소를 조작할 수 있었다(PR #39 `/code-review` 발견).
+    // 경계(첫/마지막 컨트롤)에서만 방향을 되돌리고 중간은 기본 Tab 순서에 맡긴다 —
+    // 오버레이 안 컨트롤들은 전부 같은 컨테이너 아래 형제라 문서 순서가 이미 맞다.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const container = overlayRef.current;
+      if (!container) return;
+      const focusables = Array.from(container.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -42,6 +64,50 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose]);
+
+  // Tab 트랩은 물리적 Tab 키만 막는다 — 스크린리더의 가상 커서(화살표 키·스와이프)는
+  // 키보드 이벤트를 거치지 않아 그대로 통과해 배경 Q&A/설문 버튼에 닿을 수 있었다
+  // (`/code-review` 발견, PR #39가 지목한 것과 같은 부류의 문제). 오버레이가 포털
+  // 없이 형제로 렌더되므로, 다이얼로그 조상 경로를 제외한 나머지 형제 전체에
+  // `inert`를 걸어 포커스·가상 커서·클릭을 한 번에 차단한다(document.body까지 걷는
+  // "hide others" 패턴 — Radix·react-aria 등이 쓰는 것과 같은 방식). **아래 포커스
+  // 복원 이펙트보다 먼저 선언한다** — React는 언마운트 시 cleanup을 선언 순서대로
+  // 실행하므로, 이 inert 해제가 먼저 끝나야 다음 이펙트가 복원하려는 요소가 그
+  // 시점에 이미 포커스 가능한 상태다(반대 순서면 여전히 inert라 focus()가 조용히
+  // 무시된다 — 실측으로 확인한 버그).
+  useEffect(() => {
+    const dialog = overlayRef.current;
+    if (!dialog) return;
+    const hidden: HTMLElement[] = [];
+    let node: HTMLElement | null = dialog;
+    while (node && node !== document.body) {
+      const parent: HTMLElement | null = node.parentElement;
+      if (parent) {
+        for (const sibling of Array.from(parent.children)) {
+          if (sibling !== node && sibling instanceof HTMLElement && !sibling.hasAttribute('inert')) {
+            sibling.setAttribute('inert', '');
+            hidden.push(sibling);
+          }
+        }
+      }
+      node = parent;
+    }
+    return () => {
+      hidden.forEach((el) => el.removeAttribute('inert'));
+    };
+  }, []);
+
+  // 열리면 포커스를 오버레이 안 첫 컨트롤로 옮기고, 닫히면 열기 전 포커스였던
+  // 요소로 되돌린다 — 안 그러면 언마운트 후 포커스가 <body>로 리셋돼 키보드·
+  // 스크린리더 사용자가 원래 있던 자리(자료 카드)를 잃고 처음부터 다시 훑어야
+  // 한다(`/code-review` 발견 — 표준 대화상자 포커스 패턴의 절반만 구현돼 있었다).
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    overlayRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+    return () => {
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +193,10 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
 
   return (
     <div
+      ref={overlayRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       style={{
         position: 'fixed',
         inset: 0,
