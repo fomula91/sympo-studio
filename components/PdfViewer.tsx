@@ -24,6 +24,7 @@ type LoadState = 'loading' | 'ready' | 'error';
 
 export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
   const [state, setState] = useState<LoadState>('loading');
@@ -33,8 +34,29 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
+    // 배경이 시각적으로만 가려질 뿐이라, 트랩 없이는 Tab이 뒤에 가려진 Q&A/설문
+    // 버튼으로 새서 보이지 않는 요소를 조작할 수 있었다(PR #39 `/code-review` 발견).
+    // 경계(첫/마지막 컨트롤)에서만 방향을 되돌리고 중간은 기본 Tab 순서에 맡긴다 —
+    // 오버레이 안 컨트롤들은 전부 같은 컨테이너 아래 형제라 문서 순서가 이미 맞다.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const container = overlayRef.current;
+      if (!container) return;
+      const focusables = Array.from(container.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -42,6 +64,12 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
       window.removeEventListener('keydown', onKey);
     };
   }, [onClose]);
+
+  // 열리면 포커스를 오버레이 안 첫 컨트롤로 옮긴다 — 안 그러면 배경에 남아 있어
+  // 스크린리더·키보드 사용자가 대화상자가 열렸다는 것 자체를 놓친다.
+  useEffect(() => {
+    overlayRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +155,10 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
 
   return (
     <div
+      ref={overlayRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       style={{
         position: 'fixed',
         inset: 0,
