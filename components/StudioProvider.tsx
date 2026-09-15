@@ -85,11 +85,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // "loading"은 상태로 따로 안 두고 렌더마다 파생시킨다 — 이펙트 본문에서 곧바로
   // setState하면 react-hooks/set-state-in-effect가 걸린다(연쇄 렌더 유발 경고).
   const [notFoundId, setNotFoundId] = useState<number | null>(null);
-  const isKnownMockId = effectiveId != null && SEEDED_EVENTS.some((e) => e.id === effectiveId);
+  // 목업 시드(0~14)뿐 아니라 "새 이벤트"로 막 만든 로컬 전용 id(Date.now(), 서버에
+  // 저장된 적 없음)도 여기 해당한다 — 둘 다 이미 로컬에 보여줄 게 있어 서버 확인을
+  // 기다릴 필요가 없다. s.events를 렌더 중에 직접 훑는다(ref로 캐싱하면 값이 바뀌어도
+  // 리렌더를 안 일으켜 loadStatus가 갱신되지 않는다).
+  const isKnownLocally = effectiveId != null && s.events.some((e) => e.id === effectiveId);
   const loadStatus: 'idle' | 'loading' | 'notfound' =
     effectiveId != null && effectiveId === notFoundId
       ? 'notfound'
-      : effectiveId != null && !isKnownMockId && !serverIds.has(effectiveId)
+      : effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
         ? 'loading'
         : 'idle';
 
@@ -119,7 +123,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (effectiveId == null || serverIds.has(effectiveId)) return;
-    const isMockSeed = SEEDED_EVENTS.some((e) => e.id === effectiveId);
     let cancelled = false;
     fetchStudioEvent(effectiveId)
       .then((real) => {
@@ -135,17 +138,18 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        // 목업 시드 id는 서버에 없는 게 정상 경로라 조용히 목업으로 남는다.
-        // 그 밖의 id가 404면 정말 없는 이벤트다 — 화면에 notFound를 알린다.
+        // 로컬에 이미 있던 이벤트(목업 시드 또는 방금 만든 새 이벤트)는 서버에 없는 게
+        // 정상 경로라 조용히 로컬로 남는다. 그 밖의 id가 404면 정말 없는 이벤트다 —
+        // 화면에 notFound를 알린다.
         console.warn('스튜디오 이벤트 실측 조회 실패:', e);
-        if (!isMockSeed && e instanceof ApiClientError && e.status === 404) {
+        if (!isKnownLocally && e instanceof ApiClientError && e.status === 404) {
           setNotFoundId(effectiveId);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, serverIds]);
+  }, [effectiveId, serverIds, isKnownLocally]);
 
   useEffect(() => {
     // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
