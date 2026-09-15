@@ -104,26 +104,42 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
   // 매 키 입력마다 보내면 12글자 제목 하나에 요청 12번이 나간다(실측으로 확인). 짧은
   // 무입력 구간(SAVE_DEBOUNCE_MS)이 지난 뒤 누적된 델타 하나로 합쳐 한 번만 보낸다.
-  const pendingSaveRef = useRef<{ id: number; delta: PatchEvent } | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 이벤트 id별로 큐를 분리한다 — 단일 슬롯이면 A를 편집한 직후(700ms 안) B로 넘어가
+  // 편집할 때 B의 델타가 A의 대기 중이던 델타를 통째로 덮어써 A의 변경이 조용히
+  // 사라진다(교차 리뷰 발견 — Provider가 스튜디오 공용 레이아웃에 있어 이벤트 전환으로는
+  // 언마운트되지 않으므로 cleanup도 이걸 못 잡는다).
+  const pendingSavesRef = useRef<Map<number, PatchEvent>>(new Map());
+  const saveTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const SAVE_DEBOUNCE_MS = 700;
 
-  const flushServerSave = useCallback(() => {
-    const pending = pendingSaveRef.current;
-    pendingSaveRef.current = null;
-    if (!pending || !pending.delta) return;
-    patch({ saved: '변경 저장 중…' });
-    patchStudioEvent(pending.id, pending.delta)
-      .then(() => patch({ saved: '방금 저장됨' }))
-      .catch((e) => {
-        console.warn('스튜디오 이벤트 서버 저장 실패:', e);
-        patch({ saved: '저장 실패 — 다시 시도해주세요' });
-      });
-  }, [patch]);
+  const flushServerSave = useCallback(
+    (id: number) => {
+      const delta = pendingSavesRef.current.get(id);
+      pendingSavesRef.current.delete(id);
+      const timer = saveTimersRef.current.get(id);
+      if (timer) clearTimeout(timer);
+      saveTimersRef.current.delete(id);
+      if (!delta) return;
+      patch({ saved: '변경 저장 중…' });
+      patchStudioEvent(id, delta)
+        .then(() => patch({ saved: '방금 저장됨' }))
+        .catch((e) => {
+          console.warn('스튜디오 이벤트 서버 저장 실패:', e);
+          patch({ saved: '저장 실패 — 다시 시도해주세요' });
+        });
+    },
+    [patch],
+  );
 
-  // 화면을 떠나기 전(라우트 이동·언마운트) 아직 안 보낸 델타가 있으면 지금 보낸다 —
-  // 안 그러면 마지막 700ms 안의 편집이 화면 이동과 함께 조용히 유실된다.
-  useEffect(() => () => flushServerSave(), [flushServerSave]);
+  // 언마운트 시 대기 중인 이벤트 전부 즉시 보낸다 — 안 그러면 마지막 700ms 안의
+  // 편집이 화면 이동과 함께 조용히 유실된다. 이벤트별 타이머는 계속 살아 있는 동안
+  // 각자 알아서 flush되므로(전환만으로는 안 지워짐), 여기서는 진짜 언마운트만 처리한다.
+  useEffect(
+    () => () => {
+      for (const id of pendingSavesRef.current.keys()) flushServerSave(id);
+    },
+    [flushServerSave],
+  );
 
   useEffect(() => {
     if (effectiveId == null || serverIds.has(effectiveId)) return;
@@ -202,14 +218,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         // 아젠다(sessions)만 바뀐 델타는 detailPatchToBody가 null을 돌려준다 — 그런
         // 델타로는 저장을 예약하지 않는다(어차피 서버로 안 나간다).
         if (delta && detailPatchToBody(delta)) {
-          const prevPending = pendingSaveRef.current;
-          const mergedDelta: PatchEvent =
-            prevPending && prevPending.id === effectiveId && prevPending.delta
-              ? { ...prevPending.delta, ...delta }
-              : delta;
-          pendingSaveRef.current = { id: effectiveId, delta: mergedDelta };
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(flushServerSave, SAVE_DEBOUNCE_MS);
+          const prevDelta = pendingSavesRef.current.get(effectiveId);
+          const mergedDelta: PatchEvent = prevDelta ? { ...prevDelta, ...delta } : delta;
+          pendingSavesRef.current.set(effectiveId, mergedDelta);
+          const prevTimer = saveTimersRef.current.get(effectiveId);
+          if (prevTimer) clearTimeout(prevTimer);
+          saveTimersRef.current.set(
+            effectiveId,
+            setTimeout(() => flushServerSave(effectiveId), SAVE_DEBOUNCE_MS),
+          );
         }
       }
     },

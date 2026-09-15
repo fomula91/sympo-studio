@@ -93,7 +93,12 @@ export function detailPatchToBody(delta: Partial<EventDetail>): Record<string, u
   if (delta.mode !== undefined) body.mode = delta.mode;
   if (delta.iconSet !== undefined) body.iconSet = delta.iconSet;
   if (delta.density !== undefined) body.density = delta.density;
-  if (delta.keyVisual !== undefined) body.keyVisual = delta.keyVisual;
+  // blob: URL은 이 브라우저 탭에서만 유효하다 — 그대로 저장하면 참가자 브라우저에서는
+  // 절대 안 열리고 새로고침만 해도 깨진다(FE-19). 실제 업로드(R2)가 붙기 전까지는
+  // 지우는 것(빈 문자열)만 서버에 보내고 blob: 값 자체는 동기화에서 뺀다.
+  if (delta.keyVisual !== undefined && !delta.keyVisual.startsWith('blob:')) {
+    body.keyVisual = delta.keyVisual;
+  }
   if (delta.kvPattern !== undefined) body.kvPattern = delta.kvPattern;
   if (delta.engage !== undefined) body.engage = delta.engage;
   // sessions는 여기서 다루지 않는다 — 아젠다 쓰기는 PUT /api/events/[id]/sessions로
