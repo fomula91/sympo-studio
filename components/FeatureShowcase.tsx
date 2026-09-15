@@ -12,18 +12,9 @@ interface FeatureItem {
 
 export default function FeatureShowcase({ items }: { items: FeatureItem[] }) {
   const [active, setActive] = useState(0);
-  const current = items[active];
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(220px, 320px) 1fr',
-        gap: 32,
-        alignItems: 'start',
-      }}
-      className="feature-showcase"
-    >
+    <div className="feature-showcase" style={{ gap: 32, alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {items.map((it, i) => {
           const isActive = i === active;
@@ -58,8 +49,15 @@ export default function FeatureShowcase({ items }: { items: FeatureItem[] }) {
           background: 'var(--intro-card)',
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={current.src} alt={current.label} style={{ width: '100%', display: 'block' }} />
+        {items.map((it, i) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={it.key}
+            src={it.src}
+            alt={it.label}
+            style={{ width: '100%', display: i === active ? 'block' : 'none' }}
+          />
+        ))}
       </div>
     </div>
   );

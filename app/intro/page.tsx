@@ -99,7 +99,7 @@ export default function IntroPage() {
         <div style={{ flex: 1 }} />
         <IntroNav anchors={NAV_ANCHORS} />
         <ThemeToggle size={38} />
-        <Link href="/" style={{ ...ctaBtn(T), height: 54, padding: '0 26px', fontSize: 15.5 }}>
+        <Link href="/" style={{ ...ctaBtn, height: 54, padding: '0 26px', fontSize: 15.5 }}>
           데모 열기
         </Link>
       </header>
@@ -156,10 +156,10 @@ export default function IntroPage() {
             참가자 화면을 바로 확인하는 운영 도구입니다.
           </p>
           <div className="hero-in" style={{ animationDelay: '0.18s', display: 'flex', gap: 12, marginBottom: 48, flexWrap: 'wrap' }}>
-            <Link href="/" style={ctaBtn(T)}>
+            <Link href="/" style={ctaBtn}>
               데모 열기 ↗
             </Link>
-            <a href="#problem" style={ghostLink(T)}>
+            <a href="#problem" style={ghostLink}>
               설계 과정 보기
             </a>
           </div>
@@ -208,7 +208,7 @@ export default function IntroPage() {
       </section>
 
       {/* 2. 제품 둘러보기 (Features 01) */}
-      <section id="product" style={sectionStyle(T)}>
+      <section id="product" style={sectionStyle}>
         <SectionEyebrow n="01" label="제품 둘러보기" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 36 }}>
           운영자가 쓰는 네 화면이다. 항목을 눌러 실제 화면을 확인할 수 있다.
@@ -219,7 +219,7 @@ export default function IntroPage() {
       </section>
 
       {/* 3. 현장의 문제와 설계 판단 */}
-      <section id="problem" style={sectionStyle(T)}>
+      <section id="problem" style={sectionStyle}>
         <SectionEyebrow n="02" label="현장의 문제와 설계 판단" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.75, maxWidth: 760, marginBottom: 36 }}>
           제약 심포지엄 마이크로사이트를 만들고 현장에서 운영하며 겪은 문제를, 도구를 다시 설계해 풀었다.
@@ -237,7 +237,7 @@ export default function IntroPage() {
                 key={r.what}
                 className={r.highlight ? 'compare-highlight' : undefined}
                 style={{
-                  ...cardBase(T),
+                  ...cardBase,
                   border: `1px solid ${r.highlight ? T.accent : T.border}`,
                   boxShadow: r.highlight ? `0 0 0 3px color-mix(in oklab, ${T.accent} 12%, transparent)` : undefined,
                 }}
@@ -256,7 +256,7 @@ export default function IntroPage() {
       </section>
 
       {/* 4. 참가자 경험 (Features 03) */}
-      <section id="experience" style={sectionStyle(T)}>
+      <section id="experience" style={sectionStyle}>
         <SectionEyebrow n="03" label="참가자 경험" accent={T.accent} />
         <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 36 }}>
           같은 컴포넌트가 모바일·태블릿에서 그대로 반응형으로 렌더된다.
@@ -283,7 +283,7 @@ export default function IntroPage() {
       </section>
 
       {/* 5. 라이트·다크와 브랜드 테마 */}
-      <section id="theme" style={sectionStyle(T)}>
+      <section id="theme" style={sectionStyle}>
         <SectionEyebrow n="04" label="라이트·다크와 브랜드 테마" accent={T.accent} />
         <Reveal>
           <p style={{ fontSize: 16, color: T.body, lineHeight: 1.7, maxWidth: 720, marginBottom: 28 }}>
@@ -305,7 +305,7 @@ export default function IntroPage() {
       </section>
 
       {/* 6. 구현 범위·기술 선택 */}
-      <section id="stack" style={sectionStyle(T)}>
+      <section id="stack" style={sectionStyle}>
         <SectionEyebrow n="05" label="구현 범위·기술 선택" accent={T.accent} />
         <Reveal>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 32 }}>
@@ -316,9 +316,9 @@ export default function IntroPage() {
             ))}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px,100%),1fr))', gap: 32 }}>
-            <ScopeColumn title="구현됨" items={IMPLEMENTED} T={T} />
-            <ScopeColumn title="미구현" items={NOT_IMPLEMENTED} T={T} />
-            <ScopeColumn title="미검증" items={NOT_VERIFIED} T={T} />
+            <ScopeColumn title="구현됨" items={IMPLEMENTED} />
+            <ScopeColumn title="미구현" items={NOT_IMPLEMENTED} />
+            <ScopeColumn title="미검증" items={NOT_VERIFIED} />
           </div>
         </Reveal>
       </section>
@@ -333,10 +333,10 @@ export default function IntroPage() {
             직접 눌러보면 가장 빠릅니다
           </h2>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Link href="/" style={ctaBtn(T)}>
+            <Link href="/" style={ctaBtn}>
               데모 열기 →
             </Link>
-            <a href="https://github.com/fomula91/sympo-studio" style={ghostLink(T)}>
+            <a href="https://github.com/fomula91/sympo-studio" style={ghostLink}>
               GitHub
             </a>
           </div>
@@ -356,60 +356,50 @@ export default function IntroPage() {
   );
 }
 
-type Tokens = typeof T;
+const sectionStyle = {
+  maxWidth: 1200,
+  margin: '0 auto',
+  padding: 'clamp(64px, 8vw, 96px) 24px',
+  borderTop: `1px solid ${T.border}`,
+  scrollMarginTop: 104,
+} as const;
 
-function sectionStyle(T: Tokens) {
-  return {
-    maxWidth: 1200,
-    margin: '0 auto',
-    padding: 'clamp(64px, 8vw, 96px) 24px',
-    borderTop: `1px solid ${T.border}`,
-    scrollMarginTop: 104,
-  } as const;
-}
+const cardBase = {
+  background: T.card,
+  border: `1px solid ${T.border}`,
+  borderRadius: 16,
+  padding: 20,
+} as const;
 
-function cardBase(T: Tokens) {
-  return {
-    background: T.card,
-    border: `1px solid ${T.border}`,
-    borderRadius: 16,
-    padding: 20,
-  } as const;
-}
+const ctaBtn = {
+  height: 50,
+  padding: '0 24px',
+  borderRadius: 10,
+  border: 'none',
+  background: T.accent,
+  color: T.onAccent,
+  fontSize: 15,
+  fontWeight: 700,
+  cursor: 'pointer',
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+} as const;
 
-function ctaBtn(T: Tokens) {
-  return {
-    height: 50,
-    padding: '0 24px',
-    borderRadius: 10,
-    border: 'none',
-    background: T.accent,
-    color: T.onAccent,
-    fontSize: 15,
-    fontWeight: 700,
-    cursor: 'pointer',
-    textDecoration: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-  } as const;
-}
-
-function ghostLink(T: Tokens) {
-  return {
-    height: 50,
-    padding: '0 24px',
-    borderRadius: 10,
-    border: `1px solid ${T.border}`,
-    background: 'transparent',
-    color: T.title,
-    fontSize: 15,
-    fontWeight: 650,
-    cursor: 'pointer',
-    textDecoration: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-  } as const;
-}
+const ghostLink = {
+  height: 50,
+  padding: '0 24px',
+  borderRadius: 10,
+  border: `1px solid ${T.border}`,
+  background: 'transparent',
+  color: T.title,
+  fontSize: 15,
+  fontWeight: 650,
+  cursor: 'pointer',
+  textDecoration: 'none',
+  display: 'inline-flex',
+  alignItems: 'center',
+} as const;
 
 function SectionEyebrow({ n, label, accent }: { n: string; label: string; accent: string }) {
   return (
@@ -420,7 +410,7 @@ function SectionEyebrow({ n, label, accent }: { n: string; label: string; accent
   );
 }
 
-function ScopeColumn({ title, items, T }: { title: string; items: { label: string; body: string }[]; T: Tokens }) {
+function ScopeColumn({ title, items }: { title: string; items: { label: string; body: string }[] }) {
   return (
     <div>
       <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: '0.08em', color: T.accent, marginBottom: 14 }}>{title}</div>
@@ -437,6 +427,9 @@ function ScopeColumn({ title, items, T }: { title: string; items: { label: strin
 }
 
 // 라이트/다크 예시 카드 — 실제 페이지 테마와 무관하게 항상 두 모드를 함께 보여준다.
+// 그래서 CSS 변수(T, data-theme에 따라 값이 바뀜)가 아니라 리터럴 hex를 쓴다.
+// app/globals.css의 --intro-* 값과 손으로 맞춘 사본이므로, 팔레트를 조정하면
+// 여기도 같이 고칠 것 — 코드 리뷰로 드러난 드리프트 위험(자동 동기화 수단 없음).
 function ThemeSample({ mode }: { mode: 'light' | 'dark' }) {
   const light = mode === 'light';
   const bg = light ? '#f7f9f8' : '#101413';

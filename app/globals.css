@@ -40,7 +40,9 @@
 
 /* 인트로 페이지(app/intro) 전용 토큰. 앱 나머지 화면(콘솔·에디터·뷰어·리포트)이
    공유하는 --brand 등 위 토큰과는 색 계열이 다르므로 별도 접두사로 분리한다 —
-   여기를 바꿔도 다른 화면은 영향받지 않는다. */
+   여기를 바꿔도 다른 화면은 영향받지 않는다.
+   app/intro/page.tsx의 ThemeSample이 라이트+다크를 동시에 보여주려고 이 값을
+   손으로 복사한 리터럴 hex를 갖고 있다 — 여기를 바꾸면 그쪽도 같이 고칠 것. */
 :root {
   --intro-bg: #f7f9f8;
   --intro-card: #ffffff;
@@ -177,16 +179,25 @@ input.inp:focus {
   }
 }
 
+.feature-showcase {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+}
+
 @media (max-width: 700px) {
   .feature-showcase {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 1fr;
   }
 }
 
 /* 좁은 화면에서는 auto-fit 그리드가 열 1개로 줄어드는데, 그 상태에서
    span 2를 그대로 두면 암시적 2번째 열이 생겨 가로 스크롤이 생긴다
-   (390px 뷰포트에서 실측 확인). 그리드가 실제로 2열 이상일 때만 병합한다. */
-@media (min-width: 700px) {
+   (390px 뷰포트에서 실측 확인). 그리드가 실제로 2열 이상일 때만 병합한다.
+   #problem 섹션의 그리드는 minmax(min(320px,100%),1fr) + gap 16이고 섹션
+   좌우 패딩이 24px씩이다 — 2열이 되려면 콘텐츠 폭 >= 320*2+16 = 656px,
+   즉 뷰포트 >= 656+48 = 704px. 700px로 두면 700~703px 구간에서 그리드는
+   아직 1열인데 span 2만 켜져 같은 버그가 재발한다(코드 리뷰로 발견). */
+@media (min-width: 704px) {
   .compare-highlight {
     grid-column: span 2;
   }
