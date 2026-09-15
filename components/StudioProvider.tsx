@@ -90,12 +90,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 기다릴 필요가 없다. s.events를 렌더 중에 직접 훑는다(ref로 캐싱하면 값이 바뀌어도
   // 리렌더를 안 일으켜 loadStatus가 갱신되지 않는다).
   const isKnownLocally = effectiveId != null && s.events.some((e) => e.id === effectiveId);
+  // serverIds에 있다는 건 그 뒤 fetch가 성공했다는 뜻이다 — notFoundId가 예전에 이
+  // id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에 실제로 생긴 경우) 성공한 조회가
+  // 우선해야 한다. 그렇지 않으면 한 번 404였던 id는 나중에 생겨도 이 세션 내내
+  // notFound 화면에 영구히 갇힌다.
   const loadStatus: 'idle' | 'loading' | 'notfound' =
-    effectiveId != null && effectiveId === notFoundId
-      ? 'notfound'
-      : effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
-        ? 'loading'
-        : 'idle';
+    effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
+      ? effectiveId === notFoundId
+        ? 'notfound'
+        : 'loading'
+      : 'idle';
 
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
   // 매 키 입력마다 보내면 12글자 제목 하나에 요청 12번이 나간다(실측으로 확인). 짧은
