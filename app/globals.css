@@ -183,6 +183,15 @@ input.inp:focus {
   }
 }
 
+/* 좁은 화면에서는 auto-fit 그리드가 열 1개로 줄어드는데, 그 상태에서
+   span 2를 그대로 두면 암시적 2번째 열이 생겨 가로 스크롤이 생긴다
+   (390px 뷰포트에서 실측 확인). 그리드가 실제로 2열 이상일 때만 병합한다. */
+@media (min-width: 700px) {
+  .compare-highlight {
+    grid-column: span 2;
+  }
+}
+
 /* 소개 페이지 스크롤 등장 애니메이션 — reduced-motion이면 이 블록 전체가 적용되지
    않아 .reveal 요소가 처음부터 완전히 보인다(숨겼다가 못 보여주는 사고 방지).
    opacity/transform만 움직여서 리플로우가 없고, 값이 뷰포트 크기와 무관한 고정

@@ -41,6 +41,6 @@
 - [x] `npm run lint` 통과 (worktree에 `node_modules` 심볼릭 링크 후 재실행)
 - [x] `npm run build` 통과 (`/intro` 정적 프리렌더 확인)
 - [x] `npm run dev`로 라이트/다크 전환, `FeatureShowcase` 탭 전환 브라우저 실측 확인
-- [ ] 모바일 폭 리사이즈 브라우저 확인 — 브라우저 자동화 도구의 해상도 반영 실패로 미완 (context-notes 참조)
+- [x] 모바일 폭 확인 — `resize_window`가 실제 뷰포트에 반영 안 돼 iframe으로 직접 폭을 바꿔가며 360~1920px 스윕, 가로 스크롤 없음 확인. 이 과정에서 "현장의 문제" 하이라이트 카드의 `gridColumn: span 2`가 좁은 화면에서 오버플로우를 만드는 실제 버그를 찾아 미디어쿼리(`min-width:700px`)로 수정 (context-notes 참조)
 - [x] `llm-wiki/log.md` 오늘 날짜에 `[FE]` 기록
 - [x] 커밋 + PR

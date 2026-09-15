@@ -235,9 +235,9 @@ export default function IntroPage() {
             {COMPARISONS.map((r) => (
               <div
                 key={r.what}
+                className={r.highlight ? 'compare-highlight' : undefined}
                 style={{
                   ...cardBase(T),
-                  gridColumn: r.highlight ? 'span 2' : undefined,
                   border: `1px solid ${r.highlight ? T.accent : T.border}`,
                   boxShadow: r.highlight ? `0 0 0 3px color-mix(in oklab, ${T.accent} 12%, transparent)` : undefined,
                 }}

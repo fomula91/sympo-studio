@@ -44,7 +44,15 @@ Hero 01 원형은 "큰 제품 화면"이 제품의 핵심 가치를 보여주는
 - 브랜드 프리셋 스와치(섹션 5)는 실제 `lib`의 프리셋 데이터를 못 찾아(export 미확인) 하드코딩
   값으로 대체 — 실제 프리셋 로직과 무관한 장식용 예시임을 명시.
 - 모바일 폭 실측은 브라우저 자동화의 `resize_window`가 실제 CDP 스크린샷 해상도에 반영되지
-  않아(1568×710 고정) 완결하지 못했다 — 결정 2에서 인용한 것과 같은 이 저장소의 기존 실패 이력과
-  일치한다. 데스크톱 폭에서 라이트/다크·인터랙티브 탭 전환(FeatureShowcase)은 실측 확인 완료.
-  반응형 그리드(`repeat(auto-fit, minmax(...))`)와 미디어쿼리(767/700/640px)는 기존 페이지가
-  쓰던 것과 같은 패턴을 재사용했다. 모바일 실측이 필요하면 별도 라운드에서 재시도.
+  않아(1568×710 고정, `window.innerWidth`도 물리 화면 폭 그대로) 처음엔 완결하지 못했다 — 결정
+  2에서 인용한 것과 같은 이 저장소의 기존 실패 이력과 일치한다. **우회법**: 현재 탭에 `<iframe>`을
+  만들어 `style.width`를 직접 지정하면 iframe은 독립된 뷰포트를 가지므로 미디어쿼리·
+  `matchMedia`·레이아웃이 그 폭 기준으로 정확히 반영된다(브라우저 창 자체를 리사이즈할 필요가
+  없다). `javascript_tool`로 iframe을 만들고 `document.documentElement.scrollWidth`를
+  `contentWindow.innerWidth`와 비교해 가로 오버플로우를 코드로 직접 검증했다.
+  **이 방법으로 실제 버그 하나를 찾았다**: "현장의 문제" 섹션의 하이라이트 카드가
+  `gridColumn: 'span 2'`를 폭 조건 없이 인라인 스타일로 걸어둬서, 그리드가 auto-fit으로 1열까지
+  줄어드는 좁은 화면에서 암시적 2번째 열이 생겨 가로 스크롤이 발생했다(390px 뷰포트에서
+  scrollWidth 417px 실측). `.compare-highlight` 클래스 + `@media (min-width:700px)`로 옮겨
+  해결하고, 360~1920px 사이 9개 폭에서 재검증(전부 overflow 없음, `.feature-showcase`·
+  `.compare-highlight` 브레이크포인트도 정확히 700px에서 전환됨을 `getComputedStyle`로 확인).
