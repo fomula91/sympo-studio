@@ -16,6 +16,16 @@ export default function EditEventPage() {
   if (loadStatus === 'loading') {
     return <div style={{ padding: 40, color: UI.muted, fontSize: 14 }}>불러오는 중…</div>;
   }
+  // 404가 아닌 조회 실패(타임아웃·500 등) — 이전에는 이 경우가 계속 'loading'으로
+  // 남아 무한 스피너가 됐다. 사유를 화면에 드러내고, 재시도는 콘솔에서 다시 여는
+  // 것으로 유도한다(별도 재시도 버튼은 이번 범위 밖).
+  if (loadStatus === 'error') {
+    return (
+      <div style={{ padding: 40, color: UI.muted, fontSize: 14 }}>
+        이벤트를 불러오지 못했습니다. 콘솔에서 다시 열어보세요.
+      </div>
+    );
+  }
   if (ev.id !== Number(id)) notFound();
 
   return <EditorScreen s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} />;

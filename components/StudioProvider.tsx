@@ -36,7 +36,9 @@ interface StudioContextValue {
   resetSessions: () => void;
   // FE-30 — 목업 시드(0~14)에 없는 실제 D1 전용 id를 열람 중일 때의 로딩 상태.
   // 목업 id는 그 자리에 보여줄 게 이미 있어 'loading'을 띄우지 않는다(기존 UX 유지).
-  loadStatus: 'idle' | 'loading' | 'notfound';
+  // 'error'는 404가 아닌 조회 실패(타임아웃·500 등) — 예전엔 이 경우 계속 'loading'에
+  // 머물러 무한 스피너가 됐다(교차 리뷰 발견).
+  loadStatus: 'idle' | 'loading' | 'notfound' | 'error';
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -85,20 +87,25 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // "loading"은 상태로 따로 안 두고 렌더마다 파생시킨다 — 이펙트 본문에서 곧바로
   // setState하면 react-hooks/set-state-in-effect가 걸린다(연쇄 렌더 유발 경고).
   const [notFoundId, setNotFoundId] = useState<number | null>(null);
+  // 404가 아닌 조회 실패(타임아웃·500 등)를 확인한 id — notFoundId와 마찬가지로
+  // 비동기 콜백 안에서만 갱신한다.
+  const [errorId, setErrorId] = useState<number | null>(null);
   // 목업 시드(0~14)뿐 아니라 "새 이벤트"로 막 만든 로컬 전용 id(Date.now(), 서버에
   // 저장된 적 없음)도 여기 해당한다 — 둘 다 이미 로컬에 보여줄 게 있어 서버 확인을
   // 기다릴 필요가 없다. s.events를 렌더 중에 직접 훑는다(ref로 캐싱하면 값이 바뀌어도
   // 리렌더를 안 일으켜 loadStatus가 갱신되지 않는다).
   const isKnownLocally = effectiveId != null && s.events.some((e) => e.id === effectiveId);
-  // serverIds에 있다는 건 그 뒤 fetch가 성공했다는 뜻이다 — notFoundId가 예전에 이
-  // id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에 실제로 생긴 경우) 성공한 조회가
-  // 우선해야 한다. 그렇지 않으면 한 번 404였던 id는 나중에 생겨도 이 세션 내내
-  // notFound 화면에 영구히 갇힌다.
-  const loadStatus: 'idle' | 'loading' | 'notfound' =
+  // serverIds에 있다는 건 그 뒤 fetch가 성공했다는 뜻이다 — notFoundId·errorId가 예전에
+  // 이 id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에 실제로 생긴 경우) 성공한 조회가
+  // 우선해야 한다. 그렇지 않으면 한 번 404·에러였던 id는 나중에 성공해도 이 세션
+  // 내내 그 화면에 영구히 갇힌다.
+  const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
     effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
       ? effectiveId === notFoundId
         ? 'notfound'
-        : 'loading'
+        : effectiveId === errorId
+          ? 'error'
+          : 'loading'
       : 'idle';
 
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
@@ -115,17 +122,27 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const flushServerSave = useCallback(
     (id: number) => {
       const delta = pendingSavesRef.current.get(id);
-      pendingSavesRef.current.delete(id);
       const timer = saveTimersRef.current.get(id);
       if (timer) clearTimeout(timer);
       saveTimersRef.current.delete(id);
       if (!delta) return;
       patch({ saved: '변경 저장 중…' });
       patchStudioEvent(id, delta)
-        .then(() => patch({ saved: '방금 저장됨' }))
+        .then(() => {
+          // 이 델타를 큐에서 뺀다 — 단, 응답을 기다리는 사이 같은 이벤트에 새 편집이
+          // 들어와 이미 다른(더 최신) 델타로 교체됐다면 그건 건드리지 않는다(이미
+          // 예약된 다음 타이머가 그 최신 값을 마저 보낸다).
+          if (pendingSavesRef.current.get(id) === delta) pendingSavesRef.current.delete(id);
+          patch({ saved: '방금 저장됨' });
+        })
         .catch((e) => {
           console.warn('스튜디오 이벤트 서버 저장 실패:', e);
           patch({ saved: '저장 실패 — 다시 시도해주세요' });
+          // 실패한 델타는 큐에서 지우지 않고 남겨둔다(위에서 이미 지우지 않음) —
+          // 이전엔 요청 보내기 전에 먼저 비웠어서, 실패한 필드는 재시도 수단 없이
+          // 그대로 사라지고 이어서 다른 필드를 수정하면 그 필드만 나가 "방금 저장됨"이
+          // 뜨는 동안 실패한 필드는 계속 서버에 반영 안 된 채 묻혔다(교차 리뷰 발견).
+          // 이제 같은 이벤트를 한 번 더 편집하면 남은 델타와 합쳐져 함께 재전송된다.
         });
     },
     [patch],
@@ -159,11 +176,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       .catch((e) => {
         if (cancelled) return;
         // 로컬에 이미 있던 이벤트(목업 시드 또는 방금 만든 새 이벤트)는 서버에 없는 게
-        // 정상 경로라 조용히 로컬로 남는다. 그 밖의 id가 404면 정말 없는 이벤트다 —
-        // 화면에 notFound를 알린다.
+        // 정상 경로라 조용히 로컬로 남는다. 그 밖의 id는 조회가 실패한 이유에 따라
+        // 갈린다 — 404면 정말 없는 이벤트, 그 밖(타임아웃·500 등)은 존재 여부를 모르는
+        // 것뿐이라 notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에
+        // 계속 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
         console.warn('스튜디오 이벤트 실측 조회 실패:', e);
-        if (!isKnownLocally && e instanceof ApiClientError && e.status === 404) {
+        if (isKnownLocally) return;
+        if (e instanceof ApiClientError && e.status === 404) {
           setNotFoundId(effectiveId);
+        } else {
+          setErrorId(effectiveId);
         }
       });
     return () => {
@@ -215,11 +237,23 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       });
       if (isServerEvent && effectiveId != null) {
         const delta: PatchEvent = typeof p === 'function' ? p(ev) : p;
+        // 로컬 전용 커스텀 프리셋(색 추출, POST /api/presets로 등록된 적 없음)의 id를
+        // 그대로 보내면 events.preset_id FK 위반으로 PATCH 전체가 400 나서 같은
+        // 델타에 합쳐진 다른 필드까지 함께 실패한다(교차 리뷰 발견). 서버가 실제로
+        // 아는 내장 프리셋(PRESETS)일 때만 그 필드를 보낸다.
+        let serverDelta = delta;
+        if (serverDelta?.presetId !== undefined) {
+          const { presetId } = serverDelta;
+          if (!PRESETS.some((preset) => preset.id === presetId)) {
+            serverDelta = { ...serverDelta };
+            delete serverDelta.presetId;
+          }
+        }
         // 아젠다(sessions)만 바뀐 델타는 detailPatchToBody가 null을 돌려준다 — 그런
         // 델타로는 저장을 예약하지 않는다(어차피 서버로 안 나간다).
-        if (delta && detailPatchToBody(delta)) {
+        if (serverDelta && detailPatchToBody(serverDelta)) {
           const prevDelta = pendingSavesRef.current.get(effectiveId);
-          const mergedDelta: PatchEvent = prevDelta ? { ...prevDelta, ...delta } : delta;
+          const mergedDelta: PatchEvent = prevDelta ? { ...prevDelta, ...serverDelta } : serverDelta;
           pendingSavesRef.current.set(effectiveId, mergedDelta);
           const prevTimer = saveTimersRef.current.get(effectiveId);
           if (prevTimer) clearTimeout(prevTimer);
