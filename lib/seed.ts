@@ -27,6 +27,33 @@ const DEMO_DATE = '2026-08-15';
  * 같은 slug로 이벤트를 만들면 **신뢰된 공개 주소가 통째로 넘어가고**, 이후 매일 밤
  * 리셋이 `UNIQUE constraint failed: events.slug`로 터져 R2 고아 정리까지 멈춘다.
  */
+/**
+ * 데모 이벤트의 테마 초기값 (BE-28).
+ *
+ * **INSERT와 UPDATE 두 경로가 같은 값을 보게 하려고 상수로 뽑는다.** 예전에는 INSERT가
+ * 이 컬럼들을 아예 안 써서 스키마 DEFAULT가 채웠고, UPDATE는 SET 목록에서 빠져 있었다 —
+ * 그래서 **행이 없을 때(INSERT)는 맞고, 매일 자정의 정상 경로(UPDATE)에서는 방문자가
+ * 바꾼 테마가 그대로 남았다.** 데모는 `owner_id IS NULL`이라 누구든 편집할 수 있어
+ * (게스트 체험이 여기 기댄다) 그 값이 다음 방문자에게 그대로 보였다. 리셋의 존재 이유가
+ * "데모는 매일 같은 상태로 시작한다"인데 그게 깨져 있었다.
+ *
+ * 값 자체는 스키마 DEFAULT와 같지만 **거기 기대지 않는다.** 데모가 어떻게 보이는지는
+ * 다른 행을 위한 테이블 기본값이 아니라 여기서 정할 일이고, 두 경로가 같은 상수를 보면
+ * 한쪽만 바뀌는 비대칭이 애초에 생기지 않는다.
+ *
+ * `keyVisual`이 NULL이어도 R2에 고아가 생기지 않는다 — 키비주얼은 아직 R2로 가는 경로가
+ * 없고(FE-19가 `blob:` URL 문제로 열려 있다) 지금은 문자열 컬럼일 뿐이다. 그 경로가
+ * 생기면 여기서 지울 객체가 함께 생기므로 그때 고아 정리와 맞춰야 한다.
+ */
+const DEMO_THEME = {
+  presetId: null,
+  mode: 'light',
+  iconSet: 'geo',
+  density: '기본',
+  keyVisual: null,
+  kvPattern: 'stripe',
+} as const;
+
 export const DEMO_SLUG = autoSlug(DEMO_TITLE, DEMO_VENUE, DEMO_DATE);
 
 export async function resetDemoData(db: D1Database): Promise<void> {
@@ -60,11 +87,18 @@ export async function resetDemoData(db: D1Database): Promise<void> {
         .prepare(
           `INSERT INTO events
              (slug, brand, title, venue, event_date, host, capacity, status,
+              preset_id, mode, icon_set, density, key_visual, kv_pattern,
               engage_qa, engage_survey, engage_chat, engage_cert)
-           VALUES (?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개', 1, 1, 0, 1)
+           VALUES (?, 'MERIDIAN', ?, ?, ?, '좌장 서정우', 120, '공개',
+                   ?, ?, ?, ?, ?, ?,
+                   1, 1, 0, 1)
            RETURNING id`,
         )
-        .bind(DEMO_SLUG, DEMO_TITLE, DEMO_VENUE, DEMO_DATE)
+        .bind(
+          DEMO_SLUG, DEMO_TITLE, DEMO_VENUE, DEMO_DATE,
+          DEMO_THEME.presetId, DEMO_THEME.mode, DEMO_THEME.iconSet,
+          DEMO_THEME.density, DEMO_THEME.keyVisual, DEMO_THEME.kvPattern,
+        )
         .first<{ id: number }>()
     )?.id;
 
@@ -80,11 +114,18 @@ export async function resetDemoData(db: D1Database): Promise<void> {
             SET owner_id = NULL,
                 brand = 'MERIDIAN', title = ?, venue = ?, event_date = ?, host = '좌장 서정우',
                 capacity = 120, status = '공개',
+                preset_id = ?, mode = ?, icon_set = ?, density = ?,
+                key_visual = ?, kv_pattern = ?,
                 engage_qa = 1, engage_survey = 1, engage_chat = 0, engage_cert = 1,
                 updated_at = datetime('now')
           WHERE id = ?`,
       )
-      .bind(DEMO_TITLE, DEMO_VENUE, DEMO_DATE, eventId),
+      .bind(
+        DEMO_TITLE, DEMO_VENUE, DEMO_DATE,
+        DEMO_THEME.presetId, DEMO_THEME.mode, DEMO_THEME.iconSet,
+        DEMO_THEME.density, DEMO_THEME.keyVisual, DEMO_THEME.kvPattern,
+        eventId,
+      ),
     // 자식은 전부 새로 깐다. events를 지우지 않으므로 CASCADE가 안 돌아 직접 지운다.
     db.prepare('DELETE FROM event_logs WHERE event_id = ?').bind(eventId),
     db.prepare('DELETE FROM survey_responses WHERE event_id = ?').bind(eventId),
