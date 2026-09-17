@@ -8,7 +8,8 @@
 
 제약사 심포지엄 마이크로사이트를 만들고 운영하는 스튜디오. 운영자가 콘솔에서 이벤트를 관리하고 에디터에서 아젠다·자료·참여·테마를 편집하면 참가자용 마이크로사이트(모바일/태블릿)에 반영된다.
 
-- 배포: https://sympo-studio.fomula91.workers.dev
+- 배포: https://sympo.superjacob.com (BE-22, 2026-09-17)
+  - 구 주소 https://sympo-studio.fomula91.workers.dev도 **함께 살아 있다**(`workers_dev: true`) — 옛 링크를 죽이지 않으려고 둘 다 둔다
 - 원격: https://github.com/fomula91/sympo-studio (public, main)
 - 디자인 원본: claude.ai/design `19de1b74-f6ac-4ef0-9fbc-f6ec958ccc9f` (`SYMPO STUDIO.dc.html`, `Microsite.dc.html`)
 

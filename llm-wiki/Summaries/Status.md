@@ -7,7 +7,8 @@
 
 제약 심포지엄 마이크로사이트를 만들고 운영하는 스튜디오. **참가자가 보는 쪽은 실제로 동작하고, 운영자 에디터는 기본 정보만 서버에 붙었다.**
 
-살아있는 링크 → https://sympo-studio.fomula91.workers.dev
+살아있는 링크 → https://sympo.superjacob.com
+(구 주소 https://sympo-studio.fomula91.workers.dev도 그대로 열린다)
 
 ## 지금 가장 중요한 사실
 

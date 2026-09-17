@@ -36,7 +36,8 @@ FE가 호출하는 경로 **16개**를 아래 표에 먼저 둔다(라우트 파
 
 | 환경 | URL | 비고 |
 |---|---|---|
-| 프로덕션 | `https://sympo-studio.fomula91.workers.dev` | 매일 00:00 KST 데이터 리셋(아래 주의사항) |
+| 프로덕션 | `https://sympo.superjacob.com` | 매일 00:00 KST 데이터 리셋(아래 주의사항) |
+| 프로덕션(구 주소) | `https://sympo-studio.fomula91.workers.dev` | **아직 살아 있다** — 옛 링크가 죽지 않게 유지한다. 새로 쓰는 코드는 위를 쓴다 |
 | 로컬 | `http://localhost:3000` (`npm run dev`) | 최초 1회 `npm run db:migrate` 필요 |
 
 ## 공통 규약

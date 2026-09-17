@@ -4,7 +4,7 @@
 
 운영자가 콘솔에서 행사를 관리하고, 에디터에서 아젠다·자료·참여·테마를 편집하면 참가자용 마이크로사이트에 즉시 반영된다.
 
-**라이브 데모** — <https://sympo-studio.fomula91.workers.dev> · 프로젝트 소개는 [/intro](https://sympo-studio.fomula91.workers.dev/intro)
+**라이브 데모** — <https://sympo.superjacob.com> · 프로젝트 소개는 [/intro](https://sympo.superjacob.com/intro)
 
 > 제약 심포지엄 마이크로사이트를 **만들고 현장에서 운영하는 일**을 했습니다. 대행사에서 아젠다·이미지·강의자료를 받아 사이트에 올리고, 행사 당일에는 태블릿을 세팅하고 운영했습니다.
 >
