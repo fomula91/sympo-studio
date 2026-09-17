@@ -32,7 +32,7 @@
 - **프론트**: Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 화면은 전부 클라이언트 컴포넌트.
 - **백엔드**: Cloudflare Workers + D1 + R2 + Cron. OpenNext(`@opennextjs/cloudflare`)로 빌드·배포.
 - **스타일**: 인라인 oklch 리터럴(디자인 원본 충실) + `app/globals.css`의 hover/focus 헬퍼 클래스. Pretendard.
-- **테스트**: vitest 23건 / 3파일(`lib/seed`·`lib/status`·`lib/theme` — 순수 함수만). 컴포넌트 테스트는 **없다**(FE-22에서 도입했다가 우선순위 판단으로 리젝, 번호 결번).
+- **테스트**: vitest **83건 / 11파일**(`lib/` 순수 함수 + 가짜 D1으로 **발행 SQL을 고정**하는 것들 — `agenda`·`auth`·`import`·`ops`·`presets`·`r2`·`rate-limit`·`retention`·`seed`·`status`·`theme`). 가짜 D1은 **SQL 문자열만 본다** — 의미 검증은 로컬 D1 실측으로 보완한다(BE-27·28·31이 그렇게 했다). 컴포넌트 테스트는 **없다**(FE-22에서 도입했다가 우선순위 판단으로 리젝, 번호 결번).
 - **CI/CD**: `.github/workflows/ci.yml`(PR 검증 `verify`) + `deploy.yml`(main 머지 시 자동 배포).
 
 ## 디렉터리
@@ -70,7 +70,7 @@
 
 ## 스키마 / 마이그레이션
 
-`migrations/0001`~`0010` (**0007은 결번** — BE-12가 묵는 사이 0008·0009가 먼저 적용돼 0010으로 옮겼다). 근거는 [[0005-d1-schema]].
+`migrations/0001`~`0015` (**0007·0011이 결번**). 둘 다 같은 이유다 — **미머지 브랜치에 묵는 사이 뒤 번호가 먼저 적용돼** 앞 번호를 두면 "적용된 0009 뒤에 0007이 적용되는" 이력이 남는다. 0007은 BE-12가 0010으로, 0011은 BE-27이 0015로 옮겼다. 근거는 [[0005-d1-schema]]. **번호를 다시 쓰지 않는다** — 결번이 그 사고의 기록이다.
 
 - `sessions`는 **아젠다 세션**이다. 인증 세션은 `auth_sessions` — 헷갈리지 말 것.
 - `events.owner_id` NULL = 데모 이벤트(게스트 체험이 여기 기댄다). 소유자가 있으면 세션 일치 필수이고 **불일치는 403이 아니라 404**.
@@ -112,7 +112,7 @@
 
 ```bash
 npm run lint                  # TS/TSX 고쳤으면 최소 이것
-npm run test                  # vitest 23건
+npm run test                  # vitest 83건
 npm run build                 # 라우팅·설정까지 건드렸으면 (타입 검사 포함)
 npm run dev                   # 브라우저 확인
 npm run db:migrate            # 로컬 D1 마이그레이션
