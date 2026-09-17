@@ -7,6 +7,20 @@
     // 매일 15:00 UTC = 00:00 KST — 데모 데이터 시드 리셋 (lib/seed.ts, BE-3)
     "crons": ["0 15 * * *"]
   },
+  // 커스텀 도메인 (BE-22). **존이 있어야 WAF·Rate Limiting Rules를 걸 수 있다** —
+  // workers.dev는 Cloudflare 소유 도메인이라 규칙을 걸 대상이 되지 못한다.
+  // `custom_domain: true`는 이 호스트의 DNS 레코드를 wrangler가 직접 만들고
+  // 워커에 연결한다(별도 DNS 작업 없음).
+  //
+  // **기존 sympo-studio.fomula91.workers.dev도 살려 둔다** — README·위키 9곳에
+  // 그 주소가 박혀 있고, 포트폴리오에서 가장 먼저 읽히는 것이 살아 있는 링크다
+  // (ADR 0002). 옮기는 것은 새 주소가 실측된 뒤에 한 번에 한다.
+  "routes": [
+    {
+      "pattern": "sympo.superjacob.com",
+      "custom_domain": true
+    }
+  ],
   "compatibility_date": "2026-08-15",
   // nodejs_compat: @opennextjs/cloudflare가 Next.js 런타임을 Workers에서 돌리는 데 필요하다.
   "compatibility_flags": ["nodejs_compat"],
