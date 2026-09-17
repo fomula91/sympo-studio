@@ -89,7 +89,7 @@ describe('resetDemoData', () => {
     const demoUpdate = updates.find((q) => /SET owner_id = NULL/i.test(q));
     expect(demoUpdate).toBeDefined();
     for (const col of THEME_COLUMNS) {
-      expect(demoUpdate).toMatch(new RegExp(`\\b${col}\\s*=`, 'i'));
+      expect(demoUpdate).toMatch(new RegExp(`\\b${col} = \\?`, 'i'));
     }
   });
 
@@ -106,7 +106,7 @@ describe('resetDemoData', () => {
     // 보이지 않는 비대칭이었다. 양쪽이 같은 컬럼을 들고 있어야 그 비대칭이 안 생긴다.
     for (const col of THEME_COLUMNS) {
       expect(insert).toMatch(new RegExp(`\\b${col}\\b`, 'i'));
-      expect(demoUpdate).toMatch(new RegExp(`\\b${col}\\s*=`, 'i'));
+      expect(demoUpdate).toMatch(new RegExp(`\\b${col} = \\?`, 'i'));
     }
   });
 
