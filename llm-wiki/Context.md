@@ -33,7 +33,7 @@
 - **프론트**: Next.js 16 (App Router, Turbopack) + React 19 + TypeScript. 화면은 전부 클라이언트 컴포넌트.
 - **백엔드**: Cloudflare Workers + D1 + R2 + Cron. OpenNext(`@opennextjs/cloudflare`)로 빌드·배포.
 - **스타일**: 인라인 oklch 리터럴(디자인 원본 충실) + `app/globals.css`의 hover/focus 헬퍼 클래스. Pretendard.
-- **테스트**: vitest **83건 / 11파일**(`lib/` 순수 함수 + 가짜 D1으로 **발행 SQL을 고정**하는 것들 — `agenda`·`auth`·`import`·`ops`·`presets`·`r2`·`rate-limit`·`retention`·`seed`·`status`·`theme`). 가짜 D1은 **SQL 문자열만 본다** — 의미 검증은 로컬 D1 실측으로 보완한다(BE-27·28·31이 그렇게 했다). 컴포넌트 테스트는 **없다**(FE-22에서 도입했다가 우선순위 판단으로 리젝, 번호 결번).
+- **테스트**: vitest **99건 / 12파일**(`lib/` 순수 함수 + 가짜 D1으로 **발행 SQL을 고정**하는 것들 — `agenda`·`auth`·`import`·`ops`·`presets`·`r2`·`rate-limit`·`rate-policy`·`retention`·`seed`·`status`·`theme`). 가짜 D1은 **SQL 문자열만 본다** — 의미 검증은 로컬 D1 실측으로 보완한다(BE-27·28·31이 그렇게 했다). 컴포넌트 테스트는 **없다**(FE-22에서 도입했다가 우선순위 판단으로 리젝, 번호 결번).
 - **CI/CD**: `.github/workflows/ci.yml`(PR 검증 `verify`) + `deploy.yml`(main 머지 시 자동 배포).
 
 ## 디렉터리
@@ -113,7 +113,7 @@
 
 ```bash
 npm run lint                  # TS/TSX 고쳤으면 최소 이것
-npm run test                  # vitest 83건
+npm run test                  # vitest 99건
 npm run build                 # 라우팅·설정까지 건드렸으면 (타입 검사 포함)
 npm run dev                   # 브라우저 확인
 npm run db:migrate            # 로컬 D1 마이그레이션

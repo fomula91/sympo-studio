@@ -30,7 +30,8 @@ FE가 호출하는 경로 **16개**를 아래 표에 먼저 둔다(라우트 파
 | `/api/events/[id]/documents/[docId]/upload` | PUT | 운영자 | 자료 파일 업로드(PDF·20MB, rate limit 있음) |
 | `/api/events/[id]/questions/[qid]` | PATCH | 운영자 | 질문 숨김/복구 |
 | `/api/events/[id]/survey/summary` | GET | 운영자 | 설문 집계 |
-| `/api/events/[id]/ops` | GET | 운영자 | 운영 지표 집계 |
+| `/api/public/[slug]/report` | GET | 참가자(공개) | **공개 행사 실측 집계** — 참가자 리포트는 이걸 쓴다 |
+| `/api/events/[id]/ops` | GET | 운영자 | 운영 지표 집계 (소유자 전용) |
 
 ## Base URL
 
@@ -331,7 +332,23 @@ await fetch('/api/auth/logout', { method: 'POST' });
 
 `x-client-token`을 실으면 **같은 사람의 열람이 하나로 세어진다**. 없어도 401/400이 아니라 그냥 저장되지만 `visitors` 집계에서 빠진다 — 로그는 참여 기능이 아니라 계측이라 토큰이 없다고 화면을 막지 않는다.
 
-### 집계 — `GET /api/events/[id]/ops`
+### 공개 집계 — `GET /api/public/[slug]/report`
+
+**참가자 공개 리포트(`/[slug]/report`)는 이 경로를 쓴다.** 아래 `/api/events/[id]/ops`는
+**소유자 전용**이라, 참가자 화면에서 부르면 404가 난다.
+
+BE-24가 `/ops`를 잠그면서 갈라 낸 경로다 — 그 전까지 두 화면이 같은 무인증 경로를 나눠 썼다.
+하나만 잠그면 참가자 리포트가 죽고, 열어 두면 남의 운영 지표가 id만 알면 열린다. **관객이
+다르므로 경로를 나눈 것이다.**
+
+- **경계는 소유권이 아니라 공개 상태다**(참가자 경로의 규칙). 초안·검수대기·보관은 **없는 slug와
+  똑같은 404** — 존재 여부를 흘리지 않는다.
+- **인증이 필요 없다.** 담기는 것은 집계 수치뿐이고 애초에 공개된 행사의 것이다 — 개별 방문자·
+  질문 본문·설문 응답은 실리지 않는다.
+- 응답 모양은 아래 `/ops`와 **같다**(`toOpsDTO` 공용). `Cache-Control: public, max-age=5`가
+  붙어 있어 짧게 캐시된다 — 폴링해도 괜찮다.
+
+### 집계(운영자) — `GET /api/events/[id]/ops`
 
 리포트(FE-5)의 입력. `visitors`(몇 명)와 `hits`(몇 번)를 함께 준다 — 두 수가 크게 벌어지면 토큰 없이 도는 클라이언트가 많다는 신호다.
 
