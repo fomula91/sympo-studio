@@ -15,6 +15,10 @@
   // **기존 sympo-studio.fomula91.workers.dev도 살려 둔다** — README·위키 9곳에
   // 그 주소가 박혀 있고, 포트폴리오에서 가장 먼저 읽히는 것이 살아 있는 링크다
   // (ADR 0002). 옮기는 것은 새 주소가 실측된 뒤에 한 번에 한다.
+  // **`routes`를 쓰면 wrangler가 workers.dev 서브도메인을 끈다**(명시적으로 켜지
+  // 않는 한). 실제로 이 값 없이 배포했더니 기존 주소가 전 경로 404(`error code:
+  // 1042`)가 됐다 — 실측으로 확인하고 되살린 것이다.
+  "workers_dev": true,
   "routes": [
     {
       "pattern": "sympo.superjacob.com",
