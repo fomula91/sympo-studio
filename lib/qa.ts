@@ -40,11 +40,22 @@ export const BODY_MIN = 2;
 export const BODY_MAX = 300;
 export const AUTHOR_MAX = 40;
 
+// **창 한도는 올리고 하루 한도는 그대로 둔다** (2026-09-17, [[0006-rate-limit-key]] 보충).
+//
+// 노출의 천장은 **하루 한도**다 — 창 한도를 올려도 하루에 쓸 수 있는 총량은 1도 늘지
+// 않는다. 반면 마찰을 만드는 것은 **창 한도**다: 데모를 눌러보는 사람이 질문을 연달아
+// 몇 개 던지면 4번째에서 429를 맞고 "고장났다"로 읽는다. 포트폴리오에서 그건
+// 남용 방어보다 비싼 손실이다.
+//
+// 0006이 재검토 트리거로 적어둔 "정상 사용에서 429가 관측되면 상한 재조정"에 해당한다.
 export const RATE_WINDOW_SECONDS = 60;
-export const RATE_MAX_PER_WINDOW = 3; // 브라우저(또는 토큰 없는 IP)당 60초
-export const RATE_MAX_PER_DAY = 30; // 브라우저(또는 토큰 없는 IP)당 하루
-export const IP_MAX_PER_WINDOW = 20; // IP 총량 60초 — 120명 행사의 Q&A 피크를 막지 않는 선
-export const IP_MAX_PER_DAY = 300; // IP 총량 하루 — 브라우저 일 한도의 10배, D1 쓰기 무료 티어의 0.3%
+export const RATE_MAX_PER_WINDOW = 10; // 브라우저당 60초 — 3이었다(데모 마찰)
+export const RATE_MAX_PER_DAY = 30; // 브라우저당 하루 — **바꾸지 않았다**(노출의 천장)
+// IP 창도 함께 올린다. 브라우저 창만 10으로 올리면 **열심히 눌러보는 한 사람이 행사장
+// 창 한도의 절반을 혼자 먹는다** — 0006이 IP 창 20을 "120명 행사의 Q&A 피크(분당
+// 10~20건)를 막지 않는 선"으로 잡았기 때문에, 브라우저 쪽만 올리면 그 여유가 사라진다.
+export const IP_MAX_PER_WINDOW = 60; // IP 총량 60초 — 20이었다
+export const IP_MAX_PER_DAY = 300; // IP 총량 하루 — **바꾸지 않았다**. D1 쓰기 무료 티어의 0.3%
 
 /** 질문 POST의 rate limit 정책 — 판정 구조는 lib/rate-limit.ts 공통. */
 export const QUESTION_RATE_POLICY: RatePolicy = {
