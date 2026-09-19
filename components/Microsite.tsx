@@ -61,6 +61,9 @@ export default function Microsite({
   const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const docs = documents ?? DEMO_DOCUMENTS;
+  // FE-28 — 같은 방문에서 doc_view를 중복 전송하지 않기 위한 열람 기록. seenSessionsRef와
+  // 같은 이유로 ref에 둔다: state로 두면 갱신마다 렌더가 다시 돌아 effect가 재실행될 수 있다.
+  const seenDocsRef = useRef<Set<number>>(new Set());
 
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
@@ -79,7 +82,14 @@ export default function Microsite({
       const fresh = data.documents.find((d) => d.id === doc.id)?.url;
       if (!fresh) throw new Error();
       setOpenDoc({ ...doc, url: fresh });
-      if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
+      // session_view(아래 seenSessionsRef)와 같은 패턴 — 같은 방문에서 같은 자료를 다시 열어도
+      // doc_view는 한 번만 센다. FE-28: 재열람마다 세면 /ops의 hits가 실제 순열람자 수를 왜곡한다.
+      if (eventId != null && !seenDocsRef.current.has(doc.id)) {
+        seenDocsRef.current.add(doc.id);
+        sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]).then((ok) => {
+          if (!ok) seenDocsRef.current.delete(doc.id);
+        });
+      }
     } catch {
       setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
     } finally {
