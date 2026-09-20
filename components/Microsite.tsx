@@ -67,11 +67,22 @@ export default function Microsite({
   // FE-28 — 같은 방문에서 doc_view를 중복 전송하지 않기 위한 열람 기록. seenSessionsRef와
   // 같은 이유로 ref에 둔다: state로 두면 갱신마다 렌더가 다시 돌아 effect가 재실행될 수 있다.
   const seenDocsRef = useRef<Set<number>>(new Set());
+  // openDocument 호출들이 네트워크 지연으로 뒤섞여 끝날 수 있다(문서 A를 열고 바로
+  // B를 여는 등) — 늦게 도착한 A의 실패가 이미 B를 보고 있는 화면에 잘못된 토스트를
+  // 띄우지 않도록, 실패 콜백이 "그 사이 다른 open 호출이 없었는지"를 이걸로 확인한다.
+  const activeDocIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!docLogError) return;
+    const timer = setTimeout(() => setDocLogError(false), 5000);
+    return () => clearTimeout(timer);
+  }, [docLogError]);
 
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
     setDocError(null);
     setDocLogError(false);
+    activeDocIdRef.current = doc.id;
     // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
     // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
     if (preview || !slug) {
@@ -93,7 +104,7 @@ export default function Microsite({
         sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]).then((ok) => {
           if (!ok) {
             seenDocsRef.current.delete(doc.id);
-            setDocLogError(true);
+            if (activeDocIdRef.current === doc.id) setDocLogError(true);
           }
         });
       }
