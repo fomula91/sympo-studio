@@ -60,6 +60,9 @@ export default function Microsite({
   const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
   const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
+  // 열람 자체(위 docError)와는 별개 실패 — 뷰어는 이미 열렸고 계측 전송만 실패한 경우다.
+  // 뷰어가 화면을 덮고 있어도 보이도록 아래에서 PdfViewer(zIndex 100)보다 높은 값을 쓴다.
+  const [docLogError, setDocLogError] = useState(false);
   const docs = documents ?? DEMO_DOCUMENTS;
   // FE-28 — 같은 방문에서 doc_view를 중복 전송하지 않기 위한 열람 기록. seenSessionsRef와
   // 같은 이유로 ref에 둔다: state로 두면 갱신마다 렌더가 다시 돌아 effect가 재실행될 수 있다.
@@ -68,6 +71,7 @@ export default function Microsite({
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
     setDocError(null);
+    setDocLogError(false);
     // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
     // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
     if (preview || !slug) {
@@ -87,7 +91,10 @@ export default function Microsite({
       if (eventId != null && !seenDocsRef.current.has(doc.id)) {
         seenDocsRef.current.add(doc.id);
         sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]).then((ok) => {
-          if (!ok) seenDocsRef.current.delete(doc.id);
+          if (!ok) {
+            seenDocsRef.current.delete(doc.id);
+            setDocLogError(true);
+          }
         });
       }
     } catch {
@@ -586,6 +593,24 @@ export default function Microsite({
       </div>
       {openDoc && openDoc.url ? (
         <PdfViewer theme={t} url={openDoc.url} title={openDoc.name} onClose={() => setOpenDoc(null)} />
+      ) : null}
+      {docLogError ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: 16,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 150,
+            background: t.ink,
+            color: t.bg,
+            fontSize: 12.5,
+            padding: '8px 14px',
+            borderRadius: 8,
+          }}
+        >
+          열람 기록 전송에 실패했습니다
+        </div>
       ) : null}
     </div>
   );
