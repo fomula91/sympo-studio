@@ -13,7 +13,8 @@ interface PdfViewerProps {
 }
 
 // 버전마다 export되는 타입 이름이 흔들릴 수 있어 실제 함수 시그니처에서 직접 뽑는다.
-type PDFDocumentProxy = Awaited<ReturnType<typeof PdfjsLib.getDocument>['promise']>;
+type PDFDocumentLoadingTask = ReturnType<typeof PdfjsLib.getDocument>;
+type PDFDocumentProxy = Awaited<PDFDocumentLoadingTask['promise']>;
 type RenderTask = ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']>;
 
 const MIN_SCALE = 0.5;
@@ -27,6 +28,10 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
+  // 다운로드가 끝나기 전(=`.promise`가 풀리기 전)에 언마운트되면 cleanup이 취소할
+  // 대상을 못 찾아 요청·워커가 그대로 살아남는다 — `getDocument()`가 반환하는 loading
+  // task 자체를 즉시 붙잡아 둔다(`pdfRef`는 문서가 실제로 로드된 뒤에만 채워진다).
+  const loadingTaskRef = useRef<PDFDocumentLoadingTask | null>(null);
   const [state, setState] = useState<LoadState>('loading');
   const [page, setPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
@@ -109,6 +114,15 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
     };
   }, []);
 
+  // FE-27 — 같은 문서를 닫았다 다시 열면 여기서 매번 새로 다운로드·파싱한다(마운트
+  // 간 `PDFDocumentProxy` 캐시 없음). 의도적으로 캐시를 안 둔다. 참가자 페이지의 `url`은
+  // 서명 URL이고(`lib/r2.ts` `signDocumentUrl`), `exp`가 호출 시각의 초 단위 타임스탬프라
+  // 다시 열 때마다(Microsite.openDocument가 "열기 직전에 새로 받는다") **사실상 거의
+  // 항상** 다른 문자열이 된다 — 다만 같은 초 안에 재요청하면 우연히 같을 수 있어 URL
+  // 자체를 캐시 키로 신뢰할 수는 없다(문서 id·파일 버전을 키로 쓰는 대안도 검토는
+  // 했으나 채택하지 않았다). 정적 URL(스튜디오 미리보기의 `DEMO_DOCUMENTS`)만 히트하는
+  // 캐시를 위해 마운트 밖(모듈 전역) 캐시 + 수명 관리(참조 카운트, destroy 시점 조율)를
+  // 들이는 비용이 이 경로의 실제 무게에 비해 크다고 판단해 지금은 넣지 않는다.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -118,10 +132,13 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
         'pdfjs-dist/build/pdf.worker.min.mjs',
         import.meta.url,
       ).toString();
+      if (cancelled) return; // 동적 import가 끝나기 전에 이미 언마운트됐으면 요청 자체를 시작하지 않는다.
+      const loadingTask = pdfjsLib.getDocument({ url });
+      loadingTaskRef.current = loadingTask;
       try {
-        const doc = await pdfjsLib.getDocument({ url }).promise;
+        const doc = await loadingTask.promise;
         if (cancelled) {
-          doc.loadingTask.destroy();
+          loadingTask.destroy();
           return;
         }
         pdfRef.current = doc;
@@ -134,7 +151,11 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
     })();
     return () => {
       cancelled = true;
-      pdfRef.current?.loadingTask.destroy();
+      // loadingTask는 다운로드 도중(아직 .promise가 안 풀린 상태)이라도 destroy()로
+      // 요청·워커를 즉시 정리한다 — resolve된 뒤에는 doc.loadingTask와 같은 객체라
+      // 이 한 호출로 두 경우 모두 덮는다.
+      loadingTaskRef.current?.destroy();
+      loadingTaskRef.current = null;
       pdfRef.current = null;
     };
   }, [url]);
@@ -173,6 +194,11 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
     })();
     return () => {
       cancelled = true;
+      // cancelled 플래그만으로는 이미 시작된 pdf.js 렌더를 막지 못한다 — 컴포넌트가
+      // 언마운트돼도(뷰어를 바로 닫는 등) 진행 중이던 렌더가 이미 분리된 canvas에
+      // 계속 그려진다(FE-27). 실제로 pdf.js 렌더 태스크를 취소해야 멈춘다 — 위
+      // catch가 이미 `RenderingCancelledException`을 정상 흐름으로 처리하므로 안전하다.
+      renderTaskRef.current?.cancel();
     };
   }, [state, page, scale]);
 
