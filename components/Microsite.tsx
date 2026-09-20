@@ -389,27 +389,27 @@ export default function Microsite({
               const unavailable = pending || !f.url;
               const loading = loadingDocId === f.id;
               return (
-                <div
+                <button
                   key={f.id}
-                  role="button"
-                  tabIndex={unavailable ? -1 : 0}
-                  aria-disabled={unavailable}
+                  type="button"
+                  // loading도 같이 막는다 — 서명 URL을 다시 받는 동안(fetchWithTimeout) 연타하면
+                  // openDocument가 중복 호출돼 네트워크 요청이 겹치고 상태 쓰기가 경합한다
+                  // (`/code-review` 발견 — 이 diff가 만든 회귀는 아니지만 disabled 로직을 만지는
+                  // 김에 완전하게 만든다).
+                  disabled={unavailable || loading}
                   onClick={() => openDocument(f)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openDocument(f);
-                    }
-                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
+                    width: '100%',
+                    textAlign: 'left',
+                    appearance: 'none',
                     background: t.surface,
                     border: `1px solid ${t.line}`,
                     borderRadius: 13,
                     padding: '12px 13px',
-                    cursor: unavailable ? 'not-allowed' : 'pointer',
+                    cursor: unavailable || loading ? 'not-allowed' : 'pointer',
                     opacity: unavailable ? 0.6 : loading ? 0.8 : 1,
                   }}
                 >
@@ -447,7 +447,7 @@ export default function Microsite({
                     </div>
                   </div>
                   <div style={{ color: t.muted, fontSize: 14 }}>{loading ? '…' : '→'}</div>
-                </div>
+                </button>
               );
             })
           )}
