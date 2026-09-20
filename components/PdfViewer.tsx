@@ -133,9 +133,12 @@ export default function PdfViewer({ theme: t, url, title, onClose }: PdfViewerPr
         import.meta.url,
       ).toString();
       if (cancelled) return; // 동적 import가 끝나기 전에 이미 언마운트됐으면 요청 자체를 시작하지 않는다.
-      const loadingTask = pdfjsLib.getDocument({ url });
-      loadingTaskRef.current = loadingTask;
       try {
+        // getDocument() 자체도 try 안에 둔다 — 밖에 두면 동기적으로 던지는 경우
+        // catch가 못 잡아 setState('error')가 영영 안 불리고 '불러오는 중…'에
+        // 멈춘다(`/code-review` 발견, 리팩터 중 생긴 회귀).
+        const loadingTask = pdfjsLib.getDocument({ url });
+        loadingTaskRef.current = loadingTask;
         const doc = await loadingTask.promise;
         if (cancelled) {
           loadingTask.destroy();
