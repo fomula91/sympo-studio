@@ -8,7 +8,7 @@ import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TextInput } from '@/components/ui/TextInput';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
-import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
+import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
 import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
   Density,
@@ -281,7 +281,7 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
             생성될 URL
           </div>
           <div style={{ fontFamily: MONO, fontSize: 13, color: UI.ink2, wordBreak: 'break-all' }}>
-            sympo.studio/{autoSlug(ev.title, ev.venue, ev.date)}
+            sympo.superjacob.com/{ev.slug}
           </div>
           <div
             style={{
