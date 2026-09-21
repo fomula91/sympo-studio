@@ -72,6 +72,12 @@ export default function ConsoleScreen({
         >
           <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.toneDangerFg, flex: '0 0 6px' }} />
           {AUTH_ERROR_MESSAGE[authError] ?? '로그인 중 문제가 발생했습니다.'}
+          <a
+            href="/api/auth/google?next=%2Fconsole"
+            style={{ color: UI.toneDangerFg, textDecoration: 'underline', fontWeight: 600, marginLeft: 2 }}
+          >
+            다시 시도
+          </a>
         </div>
       ) : null}
       {authStatus === 'ready' && !user ? (
