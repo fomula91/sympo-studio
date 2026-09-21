@@ -1,6 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
@@ -9,6 +10,13 @@ import { eventPhase } from '@/lib/status';
 import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
+// 로그인 라우트(/api/auth/google·/api/auth/callback/google)가 실패를 리다이렉트로
+// 알려줄 때 쓰는 사유 코드 → 화면 문구. URL엔 사유 코드만 싣고 문구는 여기서 정한다.
+const AUTH_ERROR_MESSAGE: Record<string, string> = {
+  cancelled: '로그인을 취소했습니다.',
+  failed: '로그인에 실패했습니다. 다시 시도해 주세요.',
+  config_error: 'Google 로그인이 아직 설정되지 않았습니다. 관리자에게 문의해 주세요.',
+};
 // 발행 상태 4종의 톤(BE-23) — 행사 시점('당일'·'종료')은 별도 축이라 배지를 나눠 그린다(phasePillStyle).
 // 초안은 이전 pillStyle과 정확히 같은 값(UI.muted)이고, 보관은 근접한 값(UI.faint, L 0.62 —
 // 이전 리터럴은 0.66)으로 통일했다 — 육안 차이 없음(/code-review 2026-09-21이 지적).
@@ -38,10 +46,34 @@ export default function ConsoleScreen({
   authStatus: 'checking' | 'ready';
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const authError = searchParams.get('auth');
+  // 문구를 보여준 뒤 URL에서 지운다 — 안 그러면 새로고침마다 같은 메시지가 다시 뜬다.
+  useEffect(() => {
+    if (authError) router.replace('/console');
+  }, [authError, router]);
   const list = filterEvents(s);
 
   return (
     <div style={{ padding: '24px 24px 120px', maxWidth: 1400 }}>
+      {authError ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 14,
+            padding: '10px 16px',
+            borderRadius: 12,
+            background: UI.toneDangerBg,
+            fontSize: 12.5,
+            color: UI.toneDangerFg,
+          }}
+        >
+          <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.toneDangerFg, flex: '0 0 6px' }} />
+          {AUTH_ERROR_MESSAGE[authError] ?? '로그인 중 문제가 발생했습니다.'}
+        </div>
+      ) : null}
       {authStatus === 'ready' && !user ? (
         <div
           style={{

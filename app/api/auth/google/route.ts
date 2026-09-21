@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server';
 import {
   authorizeUrl, cookieNames, googleConfig, isSecureRequest, OAUTH_TTL_SECONDS,
-  pkceChallenge, randomToken, safeNextPath, serializeCookie,
+  pkceChallenge, randomToken, safeNextPath, serializeCookie, type GoogleConfig,
 } from '@/lib/auth';
 import { getEnv, withRoute } from '@/lib/db';
 
@@ -14,10 +14,24 @@ import { getEnv, withRoute } from '@/lib/db';
  *
  * `?next=`로 돌아올 곳을 받되 **같은 출처의 경로만** 허용한다 — 외부 URL을
  * 그대로 두면 로그인 링크가 오픈 리다이렉터가 된다.
+ *
+ * 이 라우트는 `<a href>`로 브라우저를 직접 이동시키는 용도라, 설정 누락
+ * (`googleConfig`)을 `ApiError`로 던지면 `withRoute`가 raw JSON을 그대로
+ * 응답해 사용자 화면에 노출된다 — 콜백 라우트가 이미 쓰는 리다이렉트 패턴
+ * (`/console?auth=...`)을 여기도 맞춘다. 문구는 URL에 싣지 않고 사유
+ * 코드만 넘겨 콘솔 화면이 문구를 정한다.
  */
 export const GET = withRoute(async (request: NextRequest) => {
   const env = await getEnv();
-  const cfg = googleConfig(env);
+  let cfg: GoogleConfig;
+  try {
+    cfg = googleConfig(env);
+  } catch {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/console?auth=config_error' },
+    });
+  }
   const secure = isSecureRequest(request);
   const names = cookieNames(secure);
 
