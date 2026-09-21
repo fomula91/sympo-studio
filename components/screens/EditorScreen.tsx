@@ -87,12 +87,12 @@ function AgendaSection({
         arr.splice(to, 0, it);
         return { sessions: arr };
       });
-      patch({ dragIdx: to, saved: '변경 저장 중…' });
+      patch({ dragIdx: to, saved: '미리보기 반영 중…' });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      patch({ dragIdx: -1, saved: '방금 저장됨' });
+      patch({ dragIdx: -1, saved: '미리보기에만 반영됨' });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -108,7 +108,7 @@ function AgendaSection({
       arr.splice(to, 0, it);
       return { sessions: arr };
     });
-    patch({ saved: '방금 저장됨' });
+    patch({ saved: '미리보기에만 반영됨' });
     setMoveAnnouncement(`${moved.title}을(를) ${ev.sessions.length}개 중 ${to + 1}번째로 이동했습니다.`);
   };
 
@@ -135,7 +135,7 @@ function AgendaSection({
                 const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
                 return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
               });
-              patch({ saved: '방금 저장됨' });
+              patch({ saved: '미리보기에만 반영됨' });
             }}
             style={{ ...ghostBtn, fontWeight: 600 }}
           >
@@ -232,7 +232,7 @@ function AgendaSection({
               className="hv-x"
               onClick={() => {
                 patchEvent((curEv) => ({ sessions: curEv.sessions.filter((_, j) => j !== i) }));
-                patch({ saved: '방금 저장됨' });
+                patch({ saved: '미리보기에만 반영됨' });
               }}
               style={{
                 width: 44,
