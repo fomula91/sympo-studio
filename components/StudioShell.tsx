@@ -28,6 +28,17 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     patch({ viewerOpen: false });
   }, [pathname, patch]);
 
+  // createError는 StudioShell(레이아웃, 라우트 전환에도 안 사라짐)의 state라 그대로 두면
+  // 콘솔을 벗어났다 돌아왔을 때 새로 실패한 적이 없어도 옛 배너가 다시 보인다(/code-review
+  // 지적). effect 안 setState(캐스케이딩 렌더, react-hooks/set-state-in-effect)와 render 중
+  // ref 접근(react-hooks/refs) 둘 다 이 저장소 lint가 막아서, React가 권장하는 "prop 변화를
+  // state로 추적" 패턴을 쓴다.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    if (createError) setCreateError(null);
+  }
+
   const inEditor = pathname.startsWith('/events/');
   const screenKind: ScreenKind = s.viewerOpen
     ? 'viewer'
@@ -241,7 +252,9 @@ export default function StudioShell({ children }: { children: React.ReactNode })
           {screenKind === 'console' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {createError ? (
-                <div style={{ fontSize: 12, color: UI.toneDangerFg }}>{createError}</div>
+                <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+                  {createError}
+                </div>
               ) : null}
               <button
                 className="hv-bg965"
@@ -256,19 +269,25 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               </button>
               <button
                 className="hv-brandpress"
-                onClick={() => {
+                onClick={async () => {
                   setCreateError(null);
-                  createEvent()
-                    .then((id) => router.push(`/events/${id}/edit`))
-                    .catch((e) => {
-                      // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
-                      // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을
-                      // 눌러도 화면엔 아무 일도 없었던 것처럼 보인다 — FE-41).
-                      console.error('새 이벤트 생성 실패:', e);
-                      setCreateError(
-                        e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
-                      );
-                    });
+                  // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
+                  // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을 눌러도
+                  // 화면엔 아무 일도 없었던 것처럼 보인다 — FE-41). router.push는 이 try
+                  // 밖에서 불러 — 안에 있으면 생성은 성공했는데 이동만 실패한 경우까지
+                  // "생성 실패"로 오탐돼 사용자가 재시도해 중복 생성을 만들 수 있다
+                  // (/code-review 지적).
+                  let id: number;
+                  try {
+                    id = await createEvent();
+                  } catch (e) {
+                    console.error('새 이벤트 생성 실패:', e);
+                    setCreateError(
+                      e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
+                    );
+                    return;
+                  }
+                  router.push(`/events/${id}/edit`);
                 }}
                 style={primaryBtn}
               >
