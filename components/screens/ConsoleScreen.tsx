@@ -1,12 +1,16 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { Badge, type BadgeTone } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
 import type { PatchFn, SortKey, StudioState } from '@/lib/types';
 import { eventPhase } from '@/lib/status';
-import { MONO, phasePillStyle, pillStyle, seg, UI } from '@/lib/ui';
+import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
+// 발행 상태 4종의 톤(BE-23) — 행사 시점('당일'·'종료')은 별도 축이라 배지를 나눠 그린다(phasePillStyle).
+const STATUS_TONE: Record<string, BadgeTone> = { 공개: 'success', 검수대기: 'warning', 초안: 'muted', 보관: 'faint' };
 
 export function filterEvents(s: StudioState) {
   const q = s.query.trim().toLowerCase();
@@ -160,7 +164,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
                 ) : null}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                    <div style={pillStyle(e.status)}>{e.status}</div>
+                    <Badge tone={STATUS_TONE[e.status] ?? 'muted'}>{e.status}</Badge>
                     {(() => {
                       // 시점은 저장값이 아니라 event_date에서 파생된다(BE-23).
                       const phase = eventPhase(e.date);
@@ -228,11 +232,7 @@ export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: Pat
         })}
       </div>
 
-      {list.length === 0 ? (
-        <div style={{ padding: '80px 0', textAlign: 'center', color: UI.faint, fontSize: 14 }}>
-          조건에 맞는 이벤트가 없습니다.
-        </div>
-      ) : null}
+      {list.length === 0 ? <EmptyState>조건에 맞는 이벤트가 없습니다.</EmptyState> : null}
 
       <div
         style={{
