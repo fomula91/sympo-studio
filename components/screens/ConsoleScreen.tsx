@@ -31,13 +31,25 @@ function AuthErrorBanner() {
   // 지우는 순간 배너도 같이 사라진다(≈150ms만 노출, 팀원 실측). 첫 값을 state로
   // 붙잡아 URL 정리와 배너 노출을 분리한다.
   const [authError] = useState(() => searchParams.get('auth'));
+  // 콜백 실패 리다이렉트가 원래 복귀 경로를 next=로 함께 실어 보낸다 — 재시도
+  // 링크도 그 경로로 다시 로그인해야 에디터 등에서 실패한 사용자가 재시도 후
+  // 콘솔로 튕기지 않는다(팀원 리뷰).
+  const [returnTo] = useState(() => searchParams.get('next'));
   useEffect(() => {
     if (searchParams.get('auth')) router.replace('/console');
   }, [searchParams, router]);
   if (!authError) return null;
+  // 객체 리터럴을 authError로 바로 인덱싱하면 '__proto__' 같은 값이 상속된
+  // 프로퍼티(빈 객체가 아닌 Object.prototype)를 반환해 렌더가 깨진다(팀원 실측,
+  // /console?auth=__proto__) — 등록된 사유인지 먼저 확인한다.
+  const message = Object.hasOwn(AUTH_ERROR_MESSAGE, authError)
+    ? AUTH_ERROR_MESSAGE[authError]
+    : '로그인 중 문제가 발생했습니다.';
+  // 취소는 사용자의 선택이지 오류가 아니다 — 빨간 배너·role="alert"로 보이면 안 된다(팀원 리뷰).
+  const cancelled = authError === 'cancelled';
   return (
     <div
-      role="alert"
+      role={cancelled ? 'status' : 'alert'}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -45,16 +57,30 @@ function AuthErrorBanner() {
         marginBottom: 14,
         padding: '10px 16px',
         borderRadius: 12,
-        background: UI.toneDangerBg,
+        background: cancelled ? UI.soft : UI.toneDangerBg,
+        border: cancelled ? `1px solid ${UI.line}` : undefined,
         fontSize: 12.5,
-        color: UI.toneDangerFg,
+        color: cancelled ? UI.muted2 : UI.toneDangerFg,
       }}
     >
-      <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.toneDangerFg, flex: '0 0 6px' }} />
-      {AUTH_ERROR_MESSAGE[authError] ?? '로그인 중 문제가 발생했습니다.'}
+      <div
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 99,
+          background: cancelled ? UI.faint : UI.toneDangerFg,
+          flex: '0 0 6px',
+        }}
+      />
+      {message}
       <a
-        href={`/api/auth/google?next=${encodeURIComponent('/console')}`}
-        style={{ color: UI.toneDangerFg, textDecoration: 'underline', fontWeight: 600, marginLeft: 2 }}
+        href={`/api/auth/google?next=${encodeURIComponent(returnTo ?? '/console')}`}
+        style={{
+          color: cancelled ? UI.muted2 : UI.toneDangerFg,
+          textDecoration: 'underline',
+          fontWeight: 600,
+          marginLeft: 2,
+        }}
       >
         다시 시도
       </a>
