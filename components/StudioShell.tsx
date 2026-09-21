@@ -22,6 +22,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
   const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -269,7 +270,14 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               </button>
               <button
                 className="hv-brandpress"
+                disabled={creating}
                 onClick={async () => {
+                  // 가드 없이 연타(또는 더블탭)하면 첫 요청이 아직 안 끝난 사이 두 번째
+                  // 클릭이 createEvent()를 또 부른다 — 게스트는 Date.now() id 충돌,
+                  // 로그인 상태는 POST /api/events 중복 요청으로 서버에 이벤트가 두 개
+                  // 생겨 하나는 고아로 남는다(/code-review 지적).
+                  if (creating) return;
+                  setCreating(true);
                   setCreateError(null);
                   // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
                   // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을 눌러도
@@ -285,13 +293,18 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                     setCreateError(
                       e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
                     );
+                    setCreating(false);
                     return;
                   }
+                  // 성공해도 원복한다 — StudioShell은 라우트 전환에도 안 사라지는
+                  // 레이아웃이라, 여기서 안 풀면 에디터로 이동했다 콘솔로 돌아왔을 때
+                  // 버튼이 "생성 중…"에 영구히 멈춰 있다(실측으로 재발견).
+                  setCreating(false);
                   router.push(`/events/${id}/edit`);
                 }}
-                style={primaryBtn}
+                style={{ ...primaryBtn, opacity: creating ? 0.6 : 1, cursor: creating ? 'not-allowed' : 'pointer' }}
               >
-                새 이벤트
+                {creating ? '생성 중…' : '새 이벤트'}
               </button>
             </div>
           ) : null}
