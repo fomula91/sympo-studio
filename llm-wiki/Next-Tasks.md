@@ -38,7 +38,6 @@
 | # | 과제 | 한 줄 | 분류 |
 |---|---|---|---|
 | **FE-37** | **브랜드 자리에 프리셋 라벨이 나옴** | 추출 프리셋을 쓰면 이미지 파일명이 참가자에게 노출 | 🔴 **필수** |
-| **FE-28** | **`doc_view` 로그 중복** | 같은 자료를 다시 열 때마다 지표가 부풀음 | 🔴 **필수** |
 | FE-17 | 참가자 탭바가 장식 | `onClick`이 없어 탭 전환이 안 됨 | FE |
 | FE-14 | FSD 아키텍처 적용 | 평평한 구조를 레이어로 (매핑 ADR 선행) | FE |
 | FE-25 | 현장 업로드 UI | 서버는 다 됨. 운영자 화면만 없음 | FE |
@@ -75,11 +74,6 @@
 **무엇** — `app/[slug]/page.tsx:212`가 `brandLabel: preset.label`로 **색 프리셋의 이름을 브랜드 이름 자리에 넣는다**(`Microsite.tsx:233`이 그걸 상단에 그린다). `brandLabel: data.brand`로 바꾼다. `components/screens/ViewerScreen.tsx:19`·`EditorScreen.tsx:1044`도 같은 패턴이라 함께 고쳐야 스튜디오 미리보기와 실제 화면이 일치한다 — 셋 다 배선이 이미 있다(`GET /api/public/[slug]` 응답 최상위에 `brand`가 있고 `PublicEvent.brand`로 선언돼 있다, `page.tsx:14` / 스튜디오 쪽은 `EventItem.brand`, `lib/types.ts:34`). **BE는 할 일이 없다.**
 **왜** — `events.brand`는 이벤트 생성 시 **필수 입력**인데(`app/api/events/route.ts:143`) 참가자 화면에 한 번도 안 나오고, 운영자 콘솔의 검색 필터에서만 쓰인다(`ConsoleScreen.tsx:16`). 그 자리를 색 프리셋 라벨이 차지하고 있다. `derive()`는 preset에서 `h`·`c`만 쓰므로(`lib/theme.ts:36`) `label`이 화면으로 새는 경로는 여기 하나뿐이다. **FE-31 전까지는 추출 프리셋이 항상 slate로 폴백돼 "슬레이트 뉴트럴"이라는 무해한 고정값이 나왔지만, FE-31이 그 폴백을 걷어내면서 실제 프리셋 label이 그대로 노출된다** — 그리고 추출 프리셋의 label 초기값은 **업로드한 이미지의 파일명**이다(`EditorScreen.tsx:549`, `file.name.replace(/\.[^.]+$/, '')`). 실측으로 확인했다: `logo-final-v3` 프리셋을 건 이벤트의 참가자 화면 상단에 **`LOGO-FINAL-V3`**가 브랜드로 찍혔다(같은 이벤트의 `events.brand`는 `MERIDIAN`).
 **완료 기준** — 추출 프리셋이 걸린 이벤트의 참가자 화면 브랜드 자리에 `events.brand` 값이 나온다. 프리셋 이름만 바꿔도 브랜드 표시가 바뀌지 않는다. 스튜디오 미리보기(`ViewerScreen`·`EditorScreen`)도 같은 값을 보여준다.
-
-### FE-28. doc_view 로그 중복 방지
-**무엇** — `Microsite.tsx`의 `openDocument`가 열 때마다 조건 없이 `doc_view` 로그를 보낸다. `session_view`가 `seenSessionsRef`로 하는 것처럼 같은 방문 내 중복 열람을 한 번으로 셀지 결정하고 구현(또는 "매번 세는 게 의도"라면 그 판단을 기록).
-**왜** — 참가자가 같은 자료를 여러 번 다시 열 때마다 조회수가 부풀어 `/ops`의 자료별 `hits`가 실제 순유효 방문자 수를 왜곡한다(PR #39 `/code-review` 발견 — `Microsite.tsx`의 기존 주석이 이걸 "FE-6·FE-4가 붙일 때 판단할 것"으로 이미 표시해뒀었다).
-**완료 기준** — 같은 문서를 같은 방문에서 여러 번 열어도(또는 의도적으로 매번 세기로 했다면 그 근거와 함께) `/ops` 수치가 정한 정책과 일치함을 실측으로 확인.
 
 ## 열린 과제 — 프론트엔드(FE)
 
