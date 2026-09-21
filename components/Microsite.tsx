@@ -389,22 +389,18 @@ export default function Microsite({
               const unavailable = pending || !f.url;
               const loading = loadingDocId === f.id;
               return (
-                <div
+                <button
                   key={f.id}
-                  role="button"
-                  tabIndex={unavailable ? -1 : 0}
-                  aria-disabled={unavailable}
+                  type="button"
+                  disabled={unavailable}
                   onClick={() => openDocument(f)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openDocument(f);
-                    }
-                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
+                    width: '100%',
+                    textAlign: 'left',
+                    appearance: 'none',
                     background: t.surface,
                     border: `1px solid ${t.line}`,
                     borderRadius: 13,
@@ -447,7 +443,7 @@ export default function Microsite({
                     </div>
                   </div>
                   <div style={{ color: t.muted, fontSize: 14 }}>{loading ? '…' : '→'}</div>
-                </div>
+                </button>
               );
             })
           )}
