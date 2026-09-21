@@ -150,10 +150,11 @@ export default function PublicEventPage() {
   }
 
   const { data, stale } = state;
-  // 서버가 hue·chroma·label을 함께 내려주면(BE-20 — 빌트인 5종은 클라이언트에도 있지만
-  // origin='extracted' 추출 프리셋은 서버에만 있다) 그걸로 그대로 그린다. presetId
-  // 문자열만으로는 추출 프리셋을 여기서 재현할 수 없어, null일 때만(빌트인이거나 프리셋이
-  // 아예 없는 이벤트) 빌트인 5종에서 id로 찾는 기존 경로로 폴백한다.
+  // 서버가 hue·chroma·label을 함께 내려주면(BE-20 — brand_presets를 LEFT JOIN, 빌트인
+  // 5종도 마이그레이션 0006으로 그 테이블의 실제 행이라 마찬가지로 채워진다) 그걸로 그대로
+  // 그린다. presetId 문자열만으로는 origin='extracted' 추출 프리셋을 여기서 재현할 수
+  // 없으므로, preset이 null인 경우(preset_id 자체가 없는 이벤트)에만 빌트인 5종에서
+  // id로 찾는 기존 경로로 폴백한다.
   const preset = data.theme.preset ?? PRESETS.find((p) => p.id === data.theme.presetId) ?? PRESETS[0];
   const mode: Mode = data.theme.mode === 'dark' ? 'dark' : 'light';
   const iconSet: IconSetId = ICON_SET_IDS.includes(data.theme.iconSet as IconSetId)
