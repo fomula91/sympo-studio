@@ -27,23 +27,41 @@ export default function AccountMenu() {
 
   if (!user) {
     return (
+      // 이전엔 36px 원 안에 문자 `→` 하나뿐이라 title(호버)에만 "로그인"이라는 뜻이
+      // 있었다 — 스크린 리더에는 "→"로 읽히고, 터치 기기는 호버 자체가 없다(FE-44).
+      // aria-label로 목적을 알리고, 보이는 텍스트 라벨을 원 아래에 항상 띄워
+      // 호버 없이도 로그인 수단임을 알 수 있게 한다. 배선(href·next= 인코딩)은
+      // 그대로 둔다.
       <a
         href={`/api/auth/google?next=${encodeURIComponent(pathname)}`}
-        title="Google로 시작하기"
+        aria-label="Google 계정으로 로그인"
+        title="Google로 로그인"
         style={{
-          width: 36,
-          height: 36,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 4,
           marginTop: 8,
-          borderRadius: 99,
-          border: `1px solid ${UI.line}`,
-          display: 'grid',
-          placeItems: 'center',
-          fontSize: 14,
-          color: UI.muted2,
           textDecoration: 'none',
+          color: UI.muted2,
         }}
       >
-        →
+        <div
+          aria-hidden
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 99,
+            border: `1px solid ${UI.line}`,
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 14,
+            fontWeight: 700,
+          }}
+        >
+          G
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '-0.01em' }}>로그인</span>
       </a>
     );
   }
