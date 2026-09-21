@@ -61,16 +61,23 @@ export default function Microsite({
   const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const docs = documents ?? DEMO_DOCUMENTS;
+  // FE-32 — openDocument 호출마다 고유한 토큰을 매겨 "가장 최근 호출의 응답인가"를 판정한다.
+  // doc.id로 판정하면(이전 시도) 같은 문서를 A→B→A로 다시 열 때 낡은 A 요청과 새 A 요청을
+  // 구분 못 해, 낡은 쪽이 먼저 응답하면 그게 "최신"으로 오인되고 진짜 최신 응답은 반대로
+  // "낡음"으로 버려질 수 있었다(`/code-review` 발견). 호출마다 증가하는 카운터면 이 문제가
+  // 없다 — 항상 가장 마지막 호출의 토큰만 유효하다.
+  const requestIdRef = useRef(0);
 
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
-    setDocError(null);
     // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
     // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
     if (preview || !slug) {
       setOpenDoc(doc);
       return;
     }
+    const requestId = ++requestIdRef.current;
+    setDocError(null);
     setLoadingDocId(doc.id);
     try {
       const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
@@ -78,12 +85,15 @@ export default function Microsite({
       const data = (await res.json()) as { documents: { id: number; url: string | null }[] };
       const fresh = data.documents.find((d) => d.id === doc.id)?.url;
       if (!fresh) throw new Error();
+      // 응답을 기다리는 사이 다른 openDocument 호출이 있었다면(같은 문서 재클릭이든 다른
+      // 문서든) 이 응답은 이미 낡은 것이다 — 지금 화면을 덮어쓰지 않는다.
+      if (requestIdRef.current !== requestId) return;
       setOpenDoc({ ...doc, url: fresh });
       if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
     } catch {
-      setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
+      if (requestIdRef.current === requestId) setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
     } finally {
-      setLoadingDocId(null);
+      if (requestIdRef.current === requestId) setLoadingDocId(null);
     }
   }
   const agendaRef = useRef<HTMLOListElement>(null);
