@@ -10,6 +10,8 @@ import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
 // 발행 상태 4종의 톤(BE-23) — 행사 시점('당일'·'종료')은 별도 축이라 배지를 나눠 그린다(phasePillStyle).
+// 초안은 이전 pillStyle과 정확히 같은 값(UI.muted)이고, 보관은 근접한 값(UI.faint, L 0.62 —
+// 이전 리터럴은 0.66)으로 통일했다 — 육안 차이 없음(/code-review 2026-09-21이 지적).
 const STATUS_TONE: Record<string, BadgeTone> = { 공개: 'success', 검수대기: 'warning', 초안: 'muted', 보관: 'faint' };
 
 export function filterEvents(s: StudioState) {
