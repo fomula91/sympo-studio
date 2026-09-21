@@ -2,7 +2,7 @@
 
 > **에이전트용 고밀도 컨텍스트.** 사람이 읽을 요약은 [[Summaries/Status]].
 > 이 문서는 **이력이 아니라 현재 상태**다(이력은 [[log]]·[[Summaries/History]]). 낡으면 고친다.
-> 기준일 **2026-09-14** / main `6bdcd26`.
+> 기준일 **2026-09-21** / main `431db53`.
 
 ## 제품
 
@@ -40,8 +40,10 @@
 
 | 경로 | 역할 |
 |---|---|
-| `components/StudioApp.tsx` | 단일 상태 + patch 패턴, 네비·헤더·벌크바 |
-| `components/screens/*` | 스튜디오 4화면 (전부 목업) |
+| `components/StudioProvider.tsx` | 단일 상태 + `patch`/`patchEvent`, **서버 저장 700ms 디바운스**(이벤트 id별 큐) |
+| `components/StudioShell.tsx` | 스튜디오 공용 레이아웃 — 네비·헤더·벌크바 |
+| `components/screens/*` | 스튜디오 4화면. **`fetch` 호출은 0건**(서버 왕복은 전부 `StudioProvider`가 한다). 에디터의 기본 정보만 D1에 붙었고 아젠다·자료는 여전히 로컬 상태 |
+| `components/ui/*` | 공용 컴포넌트 5종 `Badge`·`Card`·`SectionTitle`·`EmptyState`·`TextInput` (FE-13). 의미색은 `--tone-{success,warning,danger}-{bg,fg}` 토큰이라 **다크 페어가 자동으로 따라온다** |
 | `components/Microsite.tsx` | **참가자 뷰 — 에디터 프리뷰와 공용(단일 렌더 경로)** |
 | `components/PdfViewer.tsx` | PDF.js canvas 뷰어. `next/dynamic(ssr:false)`로 lazy load |
 | `components/{QaPanel,SurveyPanel}.tsx` | Q&A·설문 패널 |
@@ -55,7 +57,7 @@
 | `lib/seed.ts` | 데모 데이터 리셋. **`DEMO_SLUG`는 예약어** |
 | `worker/index.ts` | OpenNext 워커를 감싼 커스텀 엔트리 — 자정 Cron |
 
-## API (18 라우트)
+## API (20 라우트)
 
 정본은 [[API-Guide-FE]]. 요약만:
 
