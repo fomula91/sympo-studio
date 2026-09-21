@@ -26,7 +26,9 @@ export const GET = withRoute(async (request: NextRequest) => {
   let cfg: GoogleConfig;
   try {
     cfg = googleConfig(env);
-  } catch {
+  } catch (e) {
+    // 콜백 라우트와 동일하게, 원인을 잃지 않도록 Workers 로그에는 남긴다.
+    console.error('[auth] google config', e);
     return new Response(null, {
       status: 302,
       headers: { Location: '/console?auth=config_error' },
