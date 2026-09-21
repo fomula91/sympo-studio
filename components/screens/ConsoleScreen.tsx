@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
-import type { PatchFn, SortKey, StudioState } from '@/lib/types';
+import type { AuthUser, PatchFn, SortKey, StudioState } from '@/lib/types';
 import { eventPhase } from '@/lib/status';
 import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
@@ -26,12 +26,41 @@ export function filterEvents(s: StudioState) {
   return list;
 }
 
-export default function ConsoleScreen({ s, patch }: { s: StudioState; patch: PatchFn }) {
+export default function ConsoleScreen({
+  s,
+  patch,
+  user,
+  authStatus,
+}: {
+  s: StudioState;
+  patch: PatchFn;
+  user: AuthUser | null;
+  authStatus: 'checking' | 'ready';
+}) {
   const router = useRouter();
   const list = filterEvents(s);
 
   return (
     <div style={{ padding: '24px 24px 120px', maxWidth: 1400 }}>
+      {authStatus === 'ready' && !user ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            marginBottom: 14,
+            padding: '10px 16px',
+            borderRadius: 12,
+            background: UI.soft,
+            border: `1px solid ${UI.line}`,
+            fontSize: 12.5,
+            color: UI.muted2,
+          }}
+        >
+          <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.faint, flex: '0 0 6px' }} />
+          체험 중 · 이 브라우저에만 저장됩니다
+        </div>
+      ) : null}
       <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <div

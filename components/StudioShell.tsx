@@ -2,11 +2,12 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import AccountMenu from '@/components/AccountMenu';
 import { LogoMark } from '@/components/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
-import { autoSlug, defaultEventDetail, NAV, uniqueSlug } from '@/lib/data';
+import { NAV } from '@/lib/data';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
@@ -16,7 +17,7 @@ const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, presets, patch, resetSessions } = useStudio();
+  const { s, ev, presets, patch, resetSessions, createEvent } = useStudio();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -162,22 +163,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         })}
         <div style={{ flex: 1 }} />
         <ThemeToggle size={36} />
-        <div
-          style={{
-            width: 36,
-            height: 36,
-            marginTop: 8,
-            borderRadius: 99,
-            background: UI.line,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 11,
-            fontWeight: 700,
-            color: UI.muted2,
-          }}
-        >
-          OP
-        </div>
+        <AccountMenu />
       </nav>
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -266,27 +252,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               <button
                 className="hv-brandpress"
                 onClick={() => {
-                  const id = Date.now();
-                  const detail = defaultEventDetail();
-                  patch((st) => ({
-                    events: [
-                      {
-                        id,
-                        brand: '',
-                        status: '초안',
-                        dateCode: detail.date.replace(/-/g, '').slice(2),
-                        slug: uniqueSlug(
-                          autoSlug(detail.title, detail.venue, detail.date),
-                          st.events.map((e) => e.slug),
-                        ),
-                        docs: 0,
-                        ...detail,
-                      },
-                      ...st.events,
-                    ],
-                    section: 'basic',
-                  }));
-                  router.push(`/events/${id}/edit`);
+                  void createEvent().then((id) => router.push(`/events/${id}/edit`));
                 }}
                 style={primaryBtn}
               >

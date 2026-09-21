@@ -1,7 +1,7 @@
 // FE-30 — 스튜디오(운영자 화면)가 실제 D1 이벤트를 읽고 쓰기 위한 클라이언트 헬퍼.
 // 참가자용 클라이언트(lib/api.ts)와 분리한다 — 인증·용도가 다르다.
 import { ApiClientError, fetchWithTimeout } from '@/lib/api';
-import type { EventDetail, EventItem, Session } from '@/lib/types';
+import type { AuthUser, EventDetail, EventItem, Session } from '@/lib/types';
 
 async function readError(res: Response): Promise<string> {
   try {
@@ -31,12 +31,13 @@ interface EventDTO {
     kvPattern: string;
   };
   engage: { qa: boolean; survey: boolean; chat: boolean; cert: boolean };
-  sessions: { id: number; time: string | null; title: string; speaker: string | null; kind: string }[];
+  // 단건 조회(GET /api/events/[id])만 세션을 함께 싣는다 — 목록·생성 응답엔 없다.
+  sessions?: { id: number; time: string | null; title: string; speaker: string | null; kind: string }[];
 }
 
 function dtoToEventItem(dto: EventDTO): EventItem {
   const dateCode = dto.date ? dto.date.replace(/-/g, '').slice(2) : '';
-  const sessions: Session[] = dto.sessions.map((s) => ({
+  const sessions: Session[] = (dto.sessions ?? []).map((s) => ({
     id: s.id,
     time: s.time ?? '',
     title: s.title,
@@ -119,4 +120,53 @@ export async function patchStudioEvent(id: number, delta: Partial<EventDetail>):
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
+ * GET /api/auth/me — 현재 로그인 사용자(FE-15). 비로그인은 200 + `user: null`이라
+ * 예외를 던지지 않는다(ADR 0007) — 게스트가 정상 상태다.
+ */
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  const res = await fetchWithTimeout('/api/auth/me', { cache: 'no-store' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { user: AuthUser | null };
+  return data.user;
+}
+
+/** POST /api/auth/logout — 세션을 지운다(FE-15). */
+export async function logoutStudioUser(): Promise<void> {
+  const res = await fetchWithTimeout('/api/auth/logout', { method: 'POST' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
+ * GET /api/events — 로그인한 사용자의 이벤트 목록(FE-15). 세션 배열은 없다(EventDTO
+ * 참조) — 콘솔 카드는 개수만 보여주므로 열 때(FE-30의 단건 조회)만 채워지면 된다.
+ */
+export async function fetchStudioEvents(): Promise<EventItem[]> {
+  const res = await fetchWithTimeout('/api/events', { cache: 'no-store' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { events: EventDTO[] };
+  return data.events.map(dtoToEventItem);
+}
+
+/**
+ * POST /api/events — 이벤트를 실제로 만든다(FE-15). 로그인 필수(서버가 401로 거절) —
+ * 게스트의 "새 이벤트"는 이 함수를 부르지 않고 로컬에만 만든다.
+ */
+export async function createStudioEvent(input: {
+  brand: string;
+  title: string;
+  venue?: string;
+  date?: string;
+  host?: string;
+}): Promise<EventItem> {
+  const res = await fetchWithTimeout('/api/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const dto = (await res.json()) as EventDTO;
+  return dtoToEventItem(dto);
 }
