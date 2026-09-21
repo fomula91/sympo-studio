@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
@@ -21,6 +21,46 @@ const AUTH_ERROR_MESSAGE: Record<string, string> = {
 // 초안은 이전 pillStyle과 정확히 같은 값(UI.muted)이고, 보관은 근접한 값(UI.faint, L 0.62 —
 // 이전 리터럴은 0.66)으로 통일했다 — 육안 차이 없음(/code-review 2026-09-21이 지적).
 const STATUS_TONE: Record<string, BadgeTone> = { 공개: 'success', 검수대기: 'warning', 초안: 'muted', 보관: 'faint' };
+
+// `useSearchParams()`를 쓰는 부분만 따로 떼어 Suspense 경계도 이 컴포넌트 하나로 좁힌다 —
+// ConsoleScreen 전체를 감싸면 정적 프리렌더가 통째로 빈 셸이 된다(팀원 리뷰, PR #59).
+function AuthErrorBanner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // authError를 렌더마다 searchParams에서 직접 파생시키면, 아래 effect가 쿼리를
+  // 지우는 순간 배너도 같이 사라진다(≈150ms만 노출, 팀원 실측). 첫 값을 state로
+  // 붙잡아 URL 정리와 배너 노출을 분리한다.
+  const [authError] = useState(() => searchParams.get('auth'));
+  useEffect(() => {
+    if (searchParams.get('auth')) router.replace('/console');
+  }, [searchParams, router]);
+  if (!authError) return null;
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 14,
+        padding: '10px 16px',
+        borderRadius: 12,
+        background: UI.toneDangerBg,
+        fontSize: 12.5,
+        color: UI.toneDangerFg,
+      }}
+    >
+      <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.toneDangerFg, flex: '0 0 6px' }} />
+      {AUTH_ERROR_MESSAGE[authError] ?? '로그인 중 문제가 발생했습니다.'}
+      <a
+        href={`/api/auth/google?next=${encodeURIComponent('/console')}`}
+        style={{ color: UI.toneDangerFg, textDecoration: 'underline', fontWeight: 600, marginLeft: 2 }}
+      >
+        다시 시도
+      </a>
+    </div>
+  );
+}
 
 export function filterEvents(s: StudioState) {
   const q = s.query.trim().toLowerCase();
@@ -46,40 +86,13 @@ export default function ConsoleScreen({
   authStatus: 'checking' | 'ready';
 }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const authError = searchParams.get('auth');
-  // 문구를 보여준 뒤 URL에서 지운다 — 안 그러면 새로고침마다 같은 메시지가 다시 뜬다.
-  useEffect(() => {
-    if (authError) router.replace('/console');
-  }, [authError, router]);
   const list = filterEvents(s);
 
   return (
     <div style={{ padding: '24px 24px 120px', maxWidth: 1400 }}>
-      {authError ? (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            marginBottom: 14,
-            padding: '10px 16px',
-            borderRadius: 12,
-            background: UI.toneDangerBg,
-            fontSize: 12.5,
-            color: UI.toneDangerFg,
-          }}
-        >
-          <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.toneDangerFg, flex: '0 0 6px' }} />
-          {AUTH_ERROR_MESSAGE[authError] ?? '로그인 중 문제가 발생했습니다.'}
-          <a
-            href="/api/auth/google?next=%2Fconsole"
-            style={{ color: UI.toneDangerFg, textDecoration: 'underline', fontWeight: 600, marginLeft: 2 }}
-          >
-            다시 시도
-          </a>
-        </div>
-      ) : null}
+      <Suspense fallback={null}>
+        <AuthErrorBanner />
+      </Suspense>
       {authStatus === 'ready' && !user ? (
         <div
           style={{
