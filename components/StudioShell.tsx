@@ -1,12 +1,13 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import AccountMenu from '@/components/AccountMenu';
 import { LogoMark } from '@/components/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
+import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
@@ -20,6 +21,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const { s, ev, presets, patch, resetSessions, createEvent } = useStudio();
   const router = useRouter();
   const pathname = usePathname();
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -238,6 +240,9 @@ export default function StudioShell({ children }: { children: React.ReactNode })
           ) : null}
           {screenKind === 'console' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {createError ? (
+                <div style={{ fontSize: 12, color: UI.toneDangerFg }}>{createError}</div>
+              ) : null}
               <button
                 className="hv-bg965"
                 onClick={() => patch((st) => ({ bulk: !st.bulk, sel: [] }))}
@@ -252,7 +257,18 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               <button
                 className="hv-brandpress"
                 onClick={() => {
-                  void createEvent().then((id) => router.push(`/events/${id}/edit`));
+                  setCreateError(null);
+                  createEvent()
+                    .then((id) => router.push(`/events/${id}/edit`))
+                    .catch((e) => {
+                      // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
+                      // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을
+                      // 눌러도 화면엔 아무 일도 없었던 것처럼 보인다 — FE-41).
+                      console.error('새 이벤트 생성 실패:', e);
+                      setCreateError(
+                        e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
+                      );
+                    });
                 }}
                 style={primaryBtn}
               >
