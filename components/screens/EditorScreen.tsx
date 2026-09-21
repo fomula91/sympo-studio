@@ -255,7 +255,17 @@ function AgendaSection({
   );
 }
 
-function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+function BasicSection({
+  ev,
+  patch,
+  patchEvent,
+  isServerEvent,
+}: {
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  isServerEvent: boolean;
+}) {
   return (
     <div style={{ maxWidth: 600 }}>
       <SectionTitle
@@ -272,7 +282,11 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
             maxLength={200}
             onChange={(v) => {
               patchEvent({ [f.k]: v });
-              patch({ saved: '변경 저장 중…' });
+              // 로컬 전용(서버 미연결) 이벤트는 flushServerSave가 안 걸려 "변경 저장
+              // 중…"이 다음 상태로 넘어갈 방법이 없다 — 영원히 그 문구에 멈춘다(FE-36).
+              // 서버로 안 나간다는 사실 자체를 문구로 바로 드러낸다(FE-34가 아젠다에
+              // 쓴 것과 같은 문구).
+              patch({ saved: isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨' });
             }}
           />
         ))}
@@ -392,7 +406,17 @@ function DocsSection() {
   );
 }
 
-function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+function EngageSection({
+  ev,
+  patch,
+  patchEvent,
+  isServerEvent,
+}: {
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  isServerEvent: boolean;
+}) {
   const [generating, setGenerating] = useState(false);
   const [certError, setCertError] = useState<string | null>(null);
 
@@ -420,7 +444,12 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
               className="hv-border80"
               onClick={() => {
                 patchEvent((curEv) => ({ engage: { ...curEv.engage, [t.k]: !curEv.engage[t.k] } }));
-                patch({ saved: '방금 저장됨' });
+                // 실제 PATCH는 700ms 디바운스 뒤에나 나가는데 여기서 "방금 저장됨"을
+                // 먼저 찍으면 문구 순서가 뒤집힌다(FE-38) — flushServerSave가 성공/실패로
+                // 정정할 때까지는 "저장 중"이 맞다. 로컬 전용 이벤트는 그 정정 자체가
+                // 안 걸려 "저장 중"에 영원히 멈추므로 미리 다른 문구를 쓴다(FE-36,
+                // BasicSection과 같은 판단).
+                patch({ saved: isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨' });
               }}
               style={{
                 display: 'flex',
@@ -961,12 +990,14 @@ export default function EditorScreen({
   presets,
   patch,
   patchEvent,
+  isServerEvent,
 }: {
   s: StudioState;
   ev: EventItem;
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  isServerEvent: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
@@ -1058,9 +1089,13 @@ export default function EditorScreen({
         {s.section === 'theme' ? (
           <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
         ) : null}
-        {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'basic' ? (
+          <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
         {s.section === 'docs' ? <DocsSection /> : null}
-        {s.section === 'engage' ? <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'engage' ? (
+          <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
       </div>
 
       <div

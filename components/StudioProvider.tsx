@@ -77,6 +77,9 @@ interface StudioContextValue {
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가(FE-36) — patchEvent가 실제로
+  // 서버에 쓰는지와 같은 판정. 화면이 "저장 중" 문구를 정직하게 고를 때 쓴다.
+  isServerEvent: boolean;
   resetSessions: () => void;
   // FE-30 — 목업 시드(0~14)에 없는 실제 D1 전용 id를 열람 중일 때의 로딩 상태.
   // 목업 id는 그 자리에 보여줄 게 이미 있어 'loading'을 띄우지 않는다(기존 UX 유지).
@@ -143,6 +146,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 서버로도 PATCH를 보낸다(그 밖은 지금처럼 로컬 목업으로 남는다). 세션(아젠다)
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가 — patchEvent 내부 판정과 같은
+  // 식이다(FE-36). 화면(EditorScreen)이 "변경 저장 중…"을 쓸지 "미리보기에만
+  // 반영됨"을 쓸지 이걸로 가른다.
+  const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
 
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
@@ -316,7 +323,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
-      const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
       setS((prev) => {
         const idx = prev.events.findIndex((e) => e.id === effectiveId);
         if (idx < 0) return prev;
@@ -374,7 +380,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave],
+    [effectiveId, ev, flushServerSave, isServerEvent],
   );
 
   const resetSessions = useCallback(() => {
@@ -450,6 +456,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       presets,
       patch,
       patchEvent,
+      isServerEvent,
       resetSessions,
       loadStatus,
       user,
@@ -457,7 +464,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       logout,
       createEvent,
     }),
-    [s, ev, presets, patch, patchEvent, resetSessions, loadStatus, user, authStatus, logout, createEvent],
+    [
+      s,
+      ev,
+      presets,
+      patch,
+      patchEvent,
+      isServerEvent,
+      resetSessions,
+      loadStatus,
+      user,
+      authStatus,
+      logout,
+      createEvent,
+    ],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
