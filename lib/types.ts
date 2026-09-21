@@ -36,6 +36,17 @@ export interface EventItem extends EventDetail {
   dateCode: string;
   slug: string;
   docs: number;
+  // 게스트가 로컬에서 만든 이벤트에만 있다(FE-15) — 로그인 시 가져오기(FE-39)가
+  // 이 값으로 멱등성을 잡는다. 서버 이벤트는 없음(undefined).
+  localRef?: string;
+}
+
+/** GET /api/auth/me가 돌려주는 로그인 사용자. 비로그인이면 null(에러 아님). */
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
 }
 
 export interface Session {

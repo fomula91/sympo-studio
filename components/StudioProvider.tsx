@@ -3,10 +3,54 @@
 import { useParams } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError } from '@/lib/api';
-import { autoSlug, seedEvents, uniqueSlug } from '@/lib/data';
-import { detailPatchToBody, fetchStudioEvent, patchStudioEvent } from '@/lib/studio-api';
+import { autoSlug, defaultEventDetail, seedEvents, uniqueSlug } from '@/lib/data';
+import {
+  createStudioEvent,
+  detailPatchToBody,
+  fetchCurrentUser,
+  fetchStudioEvent,
+  fetchStudioEvents,
+  logoutStudioUser,
+  patchStudioEvent,
+} from '@/lib/studio-api';
 import { PRESETS } from '@/lib/theme';
-import type { EventItem, Patch, PatchEvent, PatchEventFn, PatchFn, Preset, Session, StudioState } from '@/lib/types';
+import type {
+  AuthUser,
+  EventItem,
+  Patch,
+  PatchEvent,
+  PatchEventFn,
+  PatchFn,
+  Preset,
+  Session,
+  StudioState,
+} from '@/lib/types';
+
+// 게스트 로컬 워크스페이스 영속(FE-15). 버전을 접두사에 박아 둔다 — 나중에 저장
+// 모양이 바뀌면 새 키로 옮기고 예전 값은 그냥 버려진다(마이그레이션 없음, 로컬
+// 목업 데이터라 감수할 수 있는 손실이다).
+const GUEST_STORAGE_KEY = 'sympo-guest-events-v1';
+
+function readGuestWorkspace(): EventItem[] | null {
+  try {
+    const raw = window.localStorage.getItem(GUEST_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as EventItem[]) : null;
+  } catch {
+    // 손상된 값·프라이빗 모드에서의 접근 거부 등 — 게스트 워크스페이스는 잃어도
+    // 시드로 복구되는 로컬 전용 데이터라 조용히 무시하고 시드로 폴백한다.
+    return null;
+  }
+}
+
+function writeGuestWorkspace(events: EventItem[]) {
+  try {
+    window.localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(events));
+  } catch {
+    // 용량 초과·프라이빗 모드 등 — 화면 동작을 막을 이유는 아니다.
+  }
+}
 
 const SEEDED_EVENTS = seedEvents();
 
@@ -39,12 +83,28 @@ interface StudioContextValue {
   // 'error'는 404가 아닌 조회 실패(타임아웃·500 등) — 예전엔 이 경우 계속 'loading'에
   // 머물러 무한 스피너가 됐다(교차 리뷰 발견).
   loadStatus: 'idle' | 'loading' | 'notfound' | 'error';
+  // FE-15 — 로그인 사용자(비로그인은 null, 오류 아님). 'checking'은 GET /api/auth/me
+  // 응답이 아직 안 왔다는 뜻 — 이 창에는 로그인/게스트 어느 쪽 UI도 단정해 그리지 않는다.
+  user: AuthUser | null;
+  authStatus: 'checking' | 'ready';
+  logout: () => Promise<void>;
+  // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
+  // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
+  createEvent: () => Promise<number>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
 
 export function StudioProvider({ children }: { children: React.ReactNode }) {
   const [s, setS] = useState<StudioState>(INITIAL);
+  // FE-15 — 로그인 사용자. SSR과 첫 클라이언트 렌더는 항상 게스트로 시작한다
+  // (localStorage·세션 쿠키는 마운트 이펙트에서만 읽는다 — 서버에는 없는 값이라
+  // 렌더 중에 읽으면 하이드레이션 불일치가 난다).
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authStatus, setAuthStatus] = useState<'checking' | 'ready'>('checking');
+  // 게스트 워크스페이스를 localStorage에서 읽어온 뒤에야 그 변경을 다시 저장한다 —
+  // 안 그러면 마운트 시의 시드값이 실제 저장된 값을 먼저 덮어쓸 수 있다.
+  const guestHydratedRef = useRef(false);
   // "지금 편집 중인 이벤트"는 URL이 정본이다 — 컨텍스트 state로 따로 들고 effect로 동기화하면
   // 첫 렌더(들)에 URL과 다른 이전 값이 잠깐 보인다(하드 리로드 시 헤더·게이트 오표시, PR #9 리뷰).
   const params = useParams<{ id?: string }>();
@@ -83,6 +143,56 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 서버로도 PATCH를 보낸다(그 밖은 지금처럼 로컬 목업으로 남는다). 세션(아젠다)
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
+
+  // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
+  // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
+  // 저장된 워크스페이스가 있으면 그걸로 교체(없으면 시드를 그대로 쓰고 이제부터
+  // 저장을 시작한다).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let me: AuthUser | null = null;
+      try {
+        me = await fetchCurrentUser();
+      } catch (e) {
+        console.warn('로그인 상태 확인 실패(게스트로 취급):', e);
+      }
+      if (cancelled) return;
+      setUser(me);
+      setAuthStatus('ready');
+
+      if (me) {
+        try {
+          const events = await fetchStudioEvents();
+          if (!cancelled) {
+            setS((prev) => ({ ...prev, events }));
+            setServerIds(new Set(events.map((e) => e.id)));
+          }
+        } catch (e) {
+          // 목록을 못 받아도 화면이 완전히 막히지는 않는다 — 시드가 그대로 보인다.
+          // 재시도 UI는 이번 범위 밖(FE-15 완료 기준은 생성·재조회 왕복까지다).
+          console.warn('이벤트 목록 조회 실패:', e);
+        }
+      } else {
+        const stored = readGuestWorkspace();
+        if (stored && !cancelled) setS((prev) => ({ ...prev, events: stored }));
+        guestHydratedRef.current = true;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // 마운트 시 한 번만 — 로그인·로그아웃 이후의 재확인은 logout()·리다이렉트 복귀가
+    // 각자 처리한다(아래).
+  }, []);
+
+  // 게스트 워크스페이스 변경을 저장한다. 서버 목록을 받아오는 중(비로그인 여부를
+  // 아직 모름)에는 건너뛴다 — 안 그러면 시드값이 실제 저장분을 덮어쓸 수 있다.
+  useEffect(() => {
+    if (user || !guestHydratedRef.current) return;
+    writeGuestWorkspace(s.events);
+  }, [s.events, user]);
+
   // 404가 확인된 id만 실제 state로 둔다(비동기 콜백 안에서만 갱신 — 아래 참조).
   // "loading"은 상태로 따로 안 두고 렌더마다 파생시킨다 — 이펙트 본문에서 곧바로
   // setState하면 react-hooks/set-state-in-effect가 걸린다(연쇄 렌더 유발 경고).
@@ -279,10 +389,75 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     });
   }, [effectiveId]);
 
+  // FE-15 — 로그아웃하면 게스트로 돌아간다. 서버 목록을 지우고 localStorage
+  // 워크스페이스를(있으면) 다시 읽어온다 — 로그인 전과 같은 경로다.
+  const logout = useCallback(async () => {
+    await logoutStudioUser();
+    setUser(null);
+    setServerIds(new Set());
+    const stored = readGuestWorkspace();
+    setS((prev) => ({ ...prev, events: stored ?? seedEvents() }));
+    guestHydratedRef.current = true;
+  }, []);
+
+  // FE-15 — 로그인이면 실제 POST, 게스트면 로컬에만 추가(기존 StudioShell 로직을
+  // 여기로 옮겼다 — 로그인 분기가 화면 컴포넌트가 아니라 상태 층에 있어야 한다).
+  const createEvent = useCallback(async (): Promise<number> => {
+    const detail = defaultEventDetail();
+    if (user) {
+      // 이 범위엔 브랜드명을 따로 입력하는 필드가 없다 — 제목으로 채운다(FE-37류
+      // 갭과는 별개로, 서버가 brand를 필수로 요구해서 생긴 임시 결정).
+      const created = await createStudioEvent({
+        brand: detail.title,
+        title: detail.title,
+        venue: detail.venue || undefined,
+        date: detail.date || undefined,
+        host: detail.host || undefined,
+      });
+      setS((prev) => ({ ...prev, events: [created, ...prev.events], section: 'basic' }));
+      setServerIds((prev) => new Set(prev).add(created.id));
+      return created.id;
+    }
+    const id = Date.now();
+    setS((prev) => ({
+      ...prev,
+      events: [
+        {
+          id,
+          brand: '',
+          status: '초안',
+          dateCode: detail.date.replace(/-/g, '').slice(2),
+          slug: uniqueSlug(
+            autoSlug(detail.title, detail.venue, detail.date),
+            prev.events.map((e) => e.slug),
+          ),
+          docs: 0,
+          localRef: crypto.randomUUID(),
+          ...detail,
+        },
+        ...prev.events,
+      ],
+      section: 'basic',
+    }));
+    return id;
+  }, [user]);
+
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
   const value = useMemo(
-    () => ({ s, ev, presets, patch, patchEvent, resetSessions, loadStatus }),
-    [s, ev, presets, patch, patchEvent, resetSessions, loadStatus],
+    () => ({
+      s,
+      ev,
+      presets,
+      patch,
+      patchEvent,
+      resetSessions,
+      loadStatus,
+      user,
+      authStatus,
+      logout,
+      createEvent,
+    }),
+    [s, ev, presets, patch, patchEvent, resetSessions, loadStatus, user, authStatus, logout, createEvent],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
