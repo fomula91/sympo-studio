@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AccountMenu from '@/components/AccountMenu';
 import { LogoMark } from '@/components/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
@@ -22,12 +22,28 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const router = useRouter();
   const pathname = usePathname();
   const [createError, setCreateError] = useState<string | null>(null);
+  // POST /api/events가 401(세션 만료)로 실패하면, 계정 아이콘은 로그인 상태 그대로
+  // 남아 있어 사용자가 같은 버튼을 다시 눌러도 또 실패한다 — 재로그인 링크로 다음
+  // 행동을 알려준다(/code-review 지적).
+  const [createExpired, setCreateExpired] = useState(false);
   const [creating, setCreating] = useState(false);
+  // `creating` state만으로는 못 막는 경우가 있다 — 같은 이벤트 루프 틱 안에서 두 번
+  // 클릭되면(스크립트로 발생시킨 더블클릭, CDP 자동화 등) React가 첫 setCreating(true)를
+  // 아직 커밋하기 전이라 두 번째 클릭의 클로저도 creating===false를 본다(실측: 15→18건,
+  // 30ms 간격은 막혔지만 0ms 연속 클릭은 뚫림). 동기적으로 즉시 갱신되는 ref로 먼저
+  // 막는다.
+  const creatingRef = useRef(false);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
     patch({ viewerOpen: false });
   }, [pathname, patch]);
+
+  // creatingRef는 render 중(위 pathname 비교 블록)이 아니라 effect에서 정리한다 — 그
+  // 블록에서 ref를 건드리면 react-hooks/refs("Cannot access refs during render")가 걸린다.
+  useEffect(() => {
+    creatingRef.current = false;
+  }, [pathname]);
 
   // createError는 StudioShell(레이아웃, 라우트 전환에도 안 사라짐)의 state라 그대로 두면
   // 콘솔을 벗어났다 돌아왔을 때 새로 실패한 적이 없어도 옛 배너가 다시 보인다(/code-review
@@ -38,6 +54,11 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   if (pathname !== prevPathname) {
     setPrevPathname(pathname);
     if (createError) setCreateError(null);
+    if (createExpired) setCreateExpired(false);
+    // 생성 성공 후 router.push 전에 풀면, 실제 화면이 콘솔을 벗어나기 전까지
+    // 버튼이 다시 눌려 더블클릭 시 이벤트가 두 개 생긴다(팀원 실측: 15→17건,
+    // /code-review 2라운드 이후 재발견) — 경로가 실제로 바뀐 뒤에야 푼다.
+    if (creating) setCreating(false);
   }
 
   const inEditor = pathname.startsWith('/events/');
@@ -253,8 +274,19 @@ export default function StudioShell({ children }: { children: React.ReactNode })
           {screenKind === 'console' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {createError ? (
-                <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+                <div
+                  role="alert"
+                  style={{ fontSize: 12, color: UI.toneDangerFg, display: 'flex', alignItems: 'center', gap: 6 }}
+                >
                   {createError}
+                  {createExpired ? (
+                    <a
+                      href={`/api/auth/google?next=${encodeURIComponent(pathname)}`}
+                      style={{ color: UI.toneDangerFg, textDecoration: 'underline', fontWeight: 600 }}
+                    >
+                      다시 로그인
+                    </a>
+                  ) : null}
                 </div>
               ) : null}
               <button
@@ -275,10 +307,13 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                   // 가드 없이 연타(또는 더블탭)하면 첫 요청이 아직 안 끝난 사이 두 번째
                   // 클릭이 createEvent()를 또 부른다 — 게스트는 Date.now() id 충돌,
                   // 로그인 상태는 POST /api/events 중복 요청으로 서버에 이벤트가 두 개
-                  // 생겨 하나는 고아로 남는다(/code-review 지적).
-                  if (creating) return;
+                  // 생겨 하나는 고아로 남는다(/code-review 지적). ref를 먼저 본다 — state는
+                  // React가 커밋할 때까지 지연돼 같은 틱 안의 두 번째 클릭을 못 막는다.
+                  if (creatingRef.current) return;
+                  creatingRef.current = true;
                   setCreating(true);
                   setCreateError(null);
+                  setCreateExpired(false);
                   // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
                   // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을 눌러도
                   // 화면엔 아무 일도 없었던 것처럼 보인다 — FE-41). router.push는 이 try
@@ -293,13 +328,16 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                     setCreateError(
                       e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
                     );
+                    setCreateExpired(e instanceof ApiClientError && e.status === 401);
+                    creatingRef.current = false;
                     setCreating(false);
                     return;
                   }
-                  // 성공해도 원복한다 — StudioShell은 라우트 전환에도 안 사라지는
-                  // 레이아웃이라, 여기서 안 풀면 에디터로 이동했다 콘솔로 돌아왔을 때
-                  // 버튼이 "생성 중…"에 영구히 멈춰 있다(실측으로 재발견).
-                  setCreating(false);
+                  // 여기서 creatingRef·setCreating(false)를 풀지 않는다 — router.push는
+                  // 화면 전환을 예약할 뿐 즉시 콘솔을 벗어나지 않아서, 여기서 풀면 그 틈에
+                  // 더블클릭 두 번째 클릭이 또 통과한다. pathname이 실제로 바뀌는
+                  // 시점(위 render 중 state 조정 + pathname effect의 ref 초기화)에 푼다 —
+                  // 그러면 에디터로 이동했다 콘솔로 돌아왔을 때도 "생성 중…"에 안 멈춘다.
                   router.push(`/events/${id}/edit`);
                 }}
                 style={{ ...primaryBtn, opacity: creating ? 0.6 : 1, cursor: creating ? 'not-allowed' : 'pointer' }}
