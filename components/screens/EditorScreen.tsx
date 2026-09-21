@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
+import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { SectionTitle } from '@/components/ui/SectionTitle';
+import { TextInput } from '@/components/ui/TextInput';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { autoSlug, DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
@@ -51,14 +55,6 @@ const KV_CHOICES: { k: KvPattern; label: string }[] = [
   { k: 'grid', label: '그리드 패턴' },
   { k: 'flat', label: '단색' },
 ];
-
-const sectionTitle = { margin: '0 0 6px', fontSize: 20, fontWeight: 700, letterSpacing: '-0.025em' } as const;
-const sectionDesc = {
-  margin: '0 0 24px',
-  fontSize: 13,
-  color: UI.muted,
-  lineHeight: 1.6,
-} as const;
 
 function AgendaSection({
   s,
@@ -128,24 +124,25 @@ function AgendaSection({
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 6 }}>
-        <h2 style={{ ...sectionTitle, margin: 0 }}>아젠다</h2>
-        <div style={{ flex: 1 }} />
-        <button
-          className="hv-bg965"
-          onClick={() => {
-            patchEvent((curEv) => {
-              const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
-              return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
-            });
-            patch({ saved: '방금 저장됨' });
-          }}
-          style={{ ...ghostBtn, fontWeight: 600 }}
-        >
-          라이브러리에서 가져오기
-        </button>
-      </div>
-      <p style={sectionDesc}>이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꾸거나, 핸들에 포커스한 뒤 위/아래 화살표로 바꿉니다.</p>
+      <SectionTitle
+        title="아젠다"
+        description="이미지 슬라이드가 아니라 구조화된 세션 레코드입니다. 순서는 핸들을 끌어 바꾸거나, 핸들에 포커스한 뒤 위/아래 화살표로 바꿉니다."
+        action={
+          <button
+            className="hv-bg965"
+            onClick={() => {
+              patchEvent((curEv) => {
+                const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
+                return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
+              });
+              patch({ saved: '방금 저장됨' });
+            }}
+            style={{ ...ghostBtn, fontWeight: 600 }}
+          >
+            라이브러리에서 가져오기
+          </button>
+        }
+      />
       <div
         aria-live="polite"
         style={{
@@ -261,48 +258,25 @@ function AgendaSection({
 function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
   return (
     <div style={{ maxWidth: 600 }}>
-      <h2 style={sectionTitle}>기본 정보</h2>
-      <p style={sectionDesc}>
-        한 문자열에 인코딩되어 있던 제목을 필드로 분해했습니다. 슬러그는 자동 생성되고 중복을 검사합니다.
-      </p>
+      <SectionTitle
+        title="기본 정보"
+        description="한 문자열에 인코딩되어 있던 제목을 필드로 분해했습니다. 슬러그는 자동 생성되고 중복을 검사합니다."
+      />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {FIELD_DEFS.map((f) => (
-          <label key={f.k} style={{ display: 'block' }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 650,
-                color: UI.muted2,
-                marginBottom: 7,
-                letterSpacing: '-0.01em',
-              }}
-            >
-              {f.label}
-            </div>
-            <input
-              className="inp"
-              value={ev[f.k]}
-              maxLength={200}
-              onChange={(e) => {
-                patchEvent({ [f.k]: e.target.value });
-                patch({ saved: '변경 저장 중…' });
-              }}
-              style={{
-                width: '100%',
-                height: 52,
-                borderRadius: 12,
-                border: `1px solid ${UI.line}`,
-                background: UI.surface,
-                padding: '0 16px',
-                fontSize: 14.5,
-                color: UI.ink,
-                outline: 'none',
-              }}
-            />
-            <div style={{ fontSize: 11.5, color: UI.faint, marginTop: 6 }}>{f.hint}</div>
-          </label>
+          <TextInput
+            key={f.k}
+            label={f.label}
+            hint={f.hint}
+            value={ev[f.k]}
+            maxLength={200}
+            onChange={(v) => {
+              patchEvent({ [f.k]: v });
+              patch({ saved: '변경 저장 중…' });
+            }}
+          />
         ))}
-        <div style={{ border: `1px solid ${UI.line}`, borderRadius: 12, background: UI.surface, padding: 16 }}>
+        <Card padding={16} radius={12}>
           <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 8 }}>
             생성될 URL
           </div>
@@ -316,13 +290,13 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
               gap: 7,
               marginTop: 10,
               fontSize: 12,
-              color: 'oklch(0.45 0.09 145)',
+              color: UI.toneSuccessFg,
             }}
           >
             <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.green }} />
             중복 없음 · 회차마다 고유
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
@@ -331,8 +305,10 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
 function DocsSection() {
   return (
     <div style={{ maxWidth: 640 }}>
-      <h2 style={sectionTitle}>자료</h2>
-      <p style={sectionDesc}>강의자료와 제품소개를 한 곳에서 다룹니다. 해시 파일명 대신 표시명을 관리합니다.</p>
+      <SectionTitle
+        title="자료"
+        description="강의자료와 제품소개를 한 곳에서 다룹니다. 해시 파일명 대신 표시명을 관리합니다."
+      />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {DOCS.map((d) => (
           <div
@@ -434,8 +410,7 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
 
   return (
     <div style={{ maxWidth: 600 }}>
-      <h2 style={sectionTitle}>참여</h2>
-      <p style={sectionDesc}>Q&A와 설문을 외부 링크·QR 이미지 대신 페이지 안에서 완결시킵니다.</p>
+      <SectionTitle title="참여" description="Q&A와 설문을 외부 링크·QR 이미지 대신 페이지 안에서 완결시킵니다." />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ENGAGE_DEFS.map((t) => {
           const on = ev.engage[t.k];
@@ -486,15 +461,7 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
       </div>
 
       {ev.engage.cert ? (
-        <div
-          style={{
-            marginTop: 20,
-            padding: 16,
-            border: `1px solid ${UI.line}`,
-            borderRadius: 12,
-            background: UI.surface,
-          }}
-        >
+        <Card padding={16} radius={12} style={{ marginTop: 20 }}>
           <div style={{ fontSize: 14, fontWeight: 650, marginBottom: 4 }}>수료증 미리보기</div>
           <p style={{ fontSize: 12, color: UI.muted, marginBottom: 12, lineHeight: 1.5 }}>
             참가자가 설문을 완료했을 때 받는 PDF와 같은 양식입니다. 참가자 화면은 아직 이 흐름에 연결되지
@@ -509,11 +476,11 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
             {generating ? '생성 중…' : '수료증 다운로드'}
           </button>
           {certError ? (
-            <div role="alert" style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginTop: 8 }}>
+            <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg, marginTop: 8 }}>
               {certError}
             </div>
           ) : null}
-        </div>
+        </Card>
       ) : null}
     </div>
   );
@@ -571,10 +538,10 @@ function ThemeSection({
 
   return (
     <div style={{ maxWidth: 660 }}>
-      <h2 style={sectionTitle}>테마 스튜디오</h2>
-      <p style={sectionDesc}>
-        기존 HEX 12개 입력을 프리셋 1회 선택으로 대체했습니다. 대비비가 기준 미달인 조합은 만들 수 없습니다.
-      </p>
+      <SectionTitle
+        title="테마 스튜디오"
+        description="기존 HEX 12개 입력을 프리셋 1회 선택으로 대체했습니다. 대비비가 기준 미달인 조합은 만들 수 없습니다."
+      />
 
       <div style={{ ...monoLabel, marginBottom: 10 }}>01 · 브랜드 프리셋</div>
       <div
@@ -666,19 +633,11 @@ function ThemeSection({
       </div>
 
       {extractError ? (
-        <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 20 }}>{extractError}</div>
+        <div style={{ fontSize: 12, color: UI.toneDangerFg, marginBottom: 20 }}>{extractError}</div>
       ) : null}
 
       {draft && draftTheme ? (
-        <div
-          style={{
-            border: `1px solid ${UI.line}`,
-            borderRadius: 14,
-            background: UI.surface,
-            padding: 16,
-            marginBottom: 28,
-          }}
-        >
+        <Card padding={16} style={{ marginBottom: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
             <div style={{ display: 'flex', gap: 5 }}>
               <div style={{ width: 14, height: 28, borderRadius: 4, border: `1px solid ${UI.line}`, background: draftTheme.brand }} />
@@ -716,23 +675,17 @@ function ThemeSection({
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
             {draftRows.map((r) => (
-              <div
+              <Badge
                 key={r.label}
-                style={{
-                  fontSize: 10.5,
-                  fontFamily: MONO,
-                  padding: '3px 8px',
-                  borderRadius: 6,
-                  background: r.pass ? 'oklch(0.955 0.03 145)' : 'oklch(0.955 0.04 28)',
-                  color: r.pass ? 'oklch(0.42 0.1 145)' : 'oklch(0.5 0.15 28)',
-                }}
+                tone={r.pass ? 'success' : 'danger'}
+                style={{ fontSize: 10.5, fontFamily: MONO, height: 'auto', padding: '3px 8px' }}
               >
                 {r.label.split(' ')[0]} {r.ratio}
-              </div>
+              </Badge>
             ))}
           </div>
           {!draftPass ? (
-            <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)', marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: UI.toneDangerFg, marginBottom: 14 }}>
               {draftRows.every((r) => r.pass)
                 ? `대비비 미달 — ${ev.mode === 'light' ? '다크' : '라이트'} 모드로 전환하면 기준 미달이라 저장할 수 없습니다.`
                 : '대비비 미달 — 채도를 낮추면 통과할 수 있습니다.'}
@@ -750,7 +703,7 @@ function ThemeSection({
               취소
             </button>
           </div>
-        </div>
+        </Card>
       ) : null}
 
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 28 }}>
@@ -937,15 +890,7 @@ function ThemeSection({
       </div>
 
       {showContrast ? (
-        <div
-          style={{
-            marginTop: 28,
-            border: `1px solid ${UI.line}`,
-            borderRadius: 14,
-            background: UI.surface,
-            overflow: 'hidden',
-          }}
-        >
+        <Card padding={0} style={{ marginTop: 28, overflow: 'hidden' }}>
           <div
             style={{
               padding: '14px 16px',
@@ -960,18 +905,12 @@ function ThemeSection({
               WCAG AA · 저장 게이트
             </div>
             <div style={{ flex: 1 }} />
-            <div
-              style={{
-                padding: '5px 11px',
-                borderRadius: 7,
-                fontSize: 11,
-                fontWeight: 700,
-                background: allPass ? 'oklch(0.955 0.03 145)' : 'oklch(0.955 0.04 28)',
-                color: allPass ? 'oklch(0.4 0.1 145)' : 'oklch(0.5 0.15 28)',
-              }}
+            <Badge
+              tone={allPass ? 'success' : 'danger'}
+              style={{ height: 'auto', padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700 }}
             >
               {allPass ? '저장 허용' : '저장 차단'}
-            </div>
+            </Badge>
           </div>
           {cRows.map((r) => (
             <div
@@ -995,24 +934,22 @@ function ThemeSection({
               >
                 {r.ratio}
               </div>
-              <div
+              <Badge
+                tone={r.pass ? 'success' : 'danger'}
                 style={{
                   width: 46,
-                  textAlign: 'center',
+                  height: 'auto',
+                  justifyContent: 'center',
                   padding: '4px 0',
-                  borderRadius: 6,
                   fontSize: 10,
-                  fontWeight: 700,
                   fontFamily: MONO,
-                  background: r.pass ? 'oklch(0.955 0.03 145)' : 'oklch(0.955 0.04 28)',
-                  color: r.pass ? 'oklch(0.42 0.1 145)' : 'oklch(0.5 0.15 28)',
                 }}
               >
                 {r.pass ? 'AA' : '미달'}
-              </div>
+              </Badge>
             </div>
           ))}
-        </div>
+        </Card>
       ) : null}
     </div>
   );
