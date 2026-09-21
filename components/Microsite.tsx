@@ -61,16 +61,25 @@ export default function Microsite({
   const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const docs = documents ?? DEMO_DOCUMENTS;
+  // FE-32 — "지금 열려고 하는 문서"를 함수 진입 시점에 동기적으로 기록한다. loadingDocId
+  // state는 렌더 이후에나 반영돼 같은 틱 안의 재호출(같은 카드 연타)을 못 막고, 문서 A를
+  // 연 직후 문서 B를 열면 그 사이 다른 문서로 활성 타깃이 바뀌었다는 것도 알 수 없다 — 그
+  // 결과 나중에 도착하는 응답이 무조건 이겨, A의 낡은 응답이 이미 보고 있는 B를 조용히
+  // 덮어쓸 수 있었다.
+  const activeDocIdRef = useRef<number | null>(null);
 
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
-    setDocError(null);
     // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
     // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
     if (preview || !slug) {
       setOpenDoc(doc);
       return;
     }
+    // 이미 같은 문서를 여는 중이면(연타) 중복 요청을 시작하지 않는다.
+    if (activeDocIdRef.current === doc.id) return;
+    setDocError(null);
+    activeDocIdRef.current = doc.id;
     setLoadingDocId(doc.id);
     try {
       const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
@@ -78,12 +87,18 @@ export default function Microsite({
       const data = (await res.json()) as { documents: { id: number; url: string | null }[] };
       const fresh = data.documents.find((d) => d.id === doc.id)?.url;
       if (!fresh) throw new Error();
+      // 응답을 기다리는 사이 다른 문서를 열었다면(activeDocIdRef가 바뀌었다면) 이 응답은
+      // 이미 낡은 것이다 — 지금 보고 있는 문서를 덮어쓰지 않는다.
+      if (activeDocIdRef.current !== doc.id) return;
       setOpenDoc({ ...doc, url: fresh });
       if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
     } catch {
-      setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
+      if (activeDocIdRef.current === doc.id) setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
     } finally {
-      setLoadingDocId(null);
+      if (activeDocIdRef.current === doc.id) {
+        activeDocIdRef.current = null;
+        setLoadingDocId(null);
+      }
     }
   }
   const agendaRef = useRef<HTMLOListElement>(null);
