@@ -211,7 +211,7 @@ export default function PublicEventPage() {
           host: data.host ?? '',
           cap: data.capacity != null ? String(data.capacity) : undefined,
           engage: data.engage,
-          brandLabel: preset.label,
+          brandLabel: data.brand,
         }}
         kv={data.theme.keyVisual ?? ''}
         kvPattern={kvPattern}

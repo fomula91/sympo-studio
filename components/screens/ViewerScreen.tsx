@@ -16,7 +16,7 @@ export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: 
     host: ev.host,
     cap: ev.cap,
     engage: ev.engage,
-    brandLabel: preset.label,
+    brandLabel: ev.brand,
   };
   const micrositeProps = {
     theme,
