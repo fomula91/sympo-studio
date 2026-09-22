@@ -6,10 +6,12 @@ import { ApiClientError } from '@/lib/api';
 import { autoSlug, defaultEventDetail, seedEvents, uniqueSlug } from '@/lib/data';
 import {
   createStudioEvent,
+  createStudioPreset,
   detailPatchToBody,
   fetchCurrentUser,
   fetchStudioEvent,
   fetchStudioEvents,
+  fetchStudioPresets,
   logoutStudioUser,
   patchStudioEvent,
 } from '@/lib/studio-api';
@@ -91,6 +93,8 @@ interface StudioContextValue {
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
+  // 로그인 사용자만 호출 가능(FE-40) — 실패(401·409 등)는 그대로 던진다.
+  createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -172,6 +176,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           // 목록을 못 받아도 화면이 완전히 막히지는 않는다 — 시드가 그대로 보인다.
           // 재시도 UI는 이번 범위 밖(FE-15 완료 기준은 생성·재조회 왕복까지다).
           console.warn('이벤트 목록 조회 실패:', e);
+        }
+        try {
+          // 서버에 저장된 추출 프리셋을 목록에 합친다(FE-40) — 안 하면 "새로고침해도
+          // 프리셋이 목록에 남아 있다"는 완료 기준이 성립하지 않는다(내장은 이미
+          // `PRESETS` 상수에 있으니 서버 응답에서 'extracted' origin만 가져온다).
+          const presets = await fetchStudioPresets();
+          if (!cancelled) setS((prev) => ({ ...prev, customPresets: presets }));
+        } catch (e) {
+          console.warn('프리셋 목록 조회 실패:', e);
         }
       } else {
         const stored = readGuestWorkspace();
@@ -347,14 +360,18 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       });
       if (isServerEvent && effectiveId != null) {
         const delta: PatchEvent = typeof p === 'function' ? p(ev) : p;
-        // 로컬 전용 커스텀 프리셋(색 추출, POST /api/presets로 등록된 적 없음)의 id를
-        // 그대로 보내면 events.preset_id FK 위반으로 PATCH 전체가 400 나서 같은
-        // 델타에 합쳐진 다른 필드까지 함께 실패한다(교차 리뷰 발견). 서버가 실제로
-        // 아는 내장 프리셋(PRESETS)일 때만 그 필드를 보낸다.
+        // 서버가 모르는 프리셋 id를 그대로 보내면 events.preset_id FK 위반으로 PATCH
+        // 전체가 400 나서 같은 델타에 합쳐진 다른 필드까지 함께 실패한다(교차 리뷰
+        // 발견). 내장(PRESETS) 또는 이미 POST /api/presets로 등록된 커스텀
+        // 프리셋(s.customPresets, FE-40)일 때만 그 필드를 보낸다 — createPreset이
+        // 서버 등록에 성공한 뒤에야 customPresets에 들어가므로 이 시점엔 FK가 있다.
         let serverDelta = delta;
         if (serverDelta?.presetId !== undefined) {
           const { presetId } = serverDelta;
-          if (!PRESETS.some((preset) => preset.id === presetId)) {
+          const known =
+            PRESETS.some((preset) => preset.id === presetId) ||
+            s.customPresets.some((preset) => preset.id === presetId);
+          if (!known) {
             serverDelta = { ...serverDelta };
             delete serverDelta.presetId;
           }
@@ -374,7 +391,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave],
+    [effectiveId, serverIds, ev, flushServerSave, s.customPresets],
   );
 
   const resetSessions = useCallback(() => {
@@ -442,6 +459,26 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return id;
   }, [user]);
 
+  // 로그인 사용자만 실제로 저장한다(FE-40) — 로그인 필수는 서버(BE-25)도 401로
+  // 강제하지만, 게스트는 애초에 호출하지 않아 불필요한 왕복·에러 문구를 피한다.
+  // 실패는 호출자(ThemeSection)에게 그대로 던진다 — 401(로그인 필요)·409(이름 충돌)를
+  // 서로 다른 문구로 보여줘야 해서 여기서 뭉뚱그리지 않는다.
+  const createPreset = useCallback(
+    async (input: { id: string; label: string; hue: number; chroma: number }): Promise<Preset> => {
+      const created = await createStudioPreset(input);
+      setS((prev) => {
+        const idx = prev.customPresets.findIndex((p) => p.id === created.id);
+        const customPresets =
+          idx >= 0
+            ? prev.customPresets.map((p, i) => (i === idx ? created : p))
+            : [...prev.customPresets, created];
+        return { ...prev, customPresets };
+      });
+      return created;
+    },
+    [],
+  );
+
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
   const value = useMemo(
     () => ({
@@ -456,8 +493,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       authStatus,
       logout,
       createEvent,
+      createPreset,
     }),
-    [s, ev, presets, patch, patchEvent, resetSessions, loadStatus, user, authStatus, logout, createEvent],
+    [
+      s,
+      ev,
+      presets,
+      patch,
+      patchEvent,
+      resetSessions,
+      loadStatus,
+      user,
+      authStatus,
+      logout,
+      createEvent,
+      createPreset,
+    ],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;

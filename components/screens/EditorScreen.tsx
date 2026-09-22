@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TextInput } from '@/components/ui/TextInput';
+import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
 import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
+  AuthUser,
   Density,
   Device,
   EventItem,
@@ -39,6 +41,24 @@ function uniquePresetId(label: string, existing: Preset[]): string {
   let n = 2;
   while (existing.some((p) => p.id === `${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+const KEY_VISUAL_MAX_BYTES = 2 * 1024 * 1024;
+
+// 키 비주얼을 base64 data URL로 바꾼다(FE-19) — blob: URL은 이 탭에서만 유효해
+// 새로고침·서버 저장에서 살아남지 못했다. 별도 업로드 엔드포인트(R2) 없이 기존
+// PATCH 본문에 그대로 실어 보낼 수 있는 값이라 이 방식을 골랐다 — 대신 요청 본문·
+// 게스트 localStorage(5MB 한도) 둘 다에 부담이 되므로 원본 파일 크기를 미리 제한한다.
+function fileToDataUrl(file: File): Promise<string> {
+  if (file.size > KEY_VISUAL_MAX_BYTES) {
+    return Promise.reject(new Error('이미지가 너무 큽니다 — 2MB 이하 파일을 사용해주세요.'));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 const MODES: { k: Mode; label: string }[] = [
@@ -492,6 +512,8 @@ function ThemeSection({
   presets,
   patch,
   patchEvent,
+  user,
+  createPreset,
   showContrast,
 }: {
   s: StudioState;
@@ -499,6 +521,8 @@ function ThemeSection({
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  user: AuthUser | null;
+  createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
   showContrast: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
@@ -508,6 +532,9 @@ function ThemeSection({
 
   const [draft, setDraft] = useState<{ h: number; extractedC: number; c: number; label: string } | null>(null);
   const [extractError, setExtractError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [kvError, setKvError] = useState('');
 
   const handleFile = async (file: File) => {
     setExtractError('');
@@ -526,14 +553,31 @@ function ThemeSection({
     ? contrastAllPass(draftPreset, 'light') && contrastAllPass(draftPreset, 'dark')
     : false;
 
-  const saveDraft = () => {
-    if (!draft || !draftPass) return;
-    const id = uniquePresetId(draft.label, presets);
-    const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
-    patch({ customPresets: [...s.customPresets, newPreset] });
-    patchEvent({ presetId: id });
-    patch({ saved: '테마 반영됨' });
-    setDraft(null);
+  const saveDraft = async () => {
+    if (!draft || !draftPass || saving) return;
+    setSaveError('');
+    if (!user) {
+      setSaveError('로그인해야 프리셋을 저장할 수 있어요.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const id = uniquePresetId(draft.label, presets);
+      const created = await createPreset({ id, label: draft.label || '새 브랜드', hue: draft.h, chroma: draft.c });
+      patchEvent({ presetId: created.id });
+      patch({ saved: '테마 반영됨' });
+      setDraft(null);
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 401) {
+        setSaveError('로그인해야 프리셋을 저장할 수 있어요.');
+      } else if (err instanceof ApiClientError && err.status === 409) {
+        setSaveError('이미 사용 중인 이름입니다 — 다른 이름으로 저장해주세요.');
+      } else {
+        setSaveError(err instanceof ApiClientError ? err.message : '프리셋을 저장하지 못했습니다 — 다시 시도해주세요.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -691,15 +735,24 @@ function ThemeSection({
                 : '대비비 미달 — 채도를 낮추면 통과할 수 있습니다.'}
             </div>
           ) : null}
+          {saveError ? (
+            <div style={{ fontSize: 12, color: UI.toneDangerFg, marginBottom: 14 }} role="alert">
+              {saveError}
+            </div>
+          ) : null}
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={saveDraft}
-              disabled={!draftPass}
-              style={{ ...primaryBtn, opacity: draftPass ? 1 : 0.4, cursor: draftPass ? 'pointer' : 'not-allowed' }}
+              onClick={() => void saveDraft()}
+              disabled={!draftPass || saving}
+              style={{
+                ...primaryBtn,
+                opacity: draftPass && !saving ? 1 : 0.4,
+                cursor: draftPass && !saving ? 'pointer' : 'not-allowed',
+              }}
             >
-              프리셋으로 저장
+              {saving ? '저장 중…' : '프리셋으로 저장'}
             </button>
-            <button onClick={() => setDraft(null)} style={ghostBtn}>
+            <button onClick={() => setDraft(null)} style={ghostBtn} disabled={saving}>
               취소
             </button>
           </div>
@@ -794,9 +847,13 @@ function ThemeSection({
           patch({ dragOver: false });
           const f = e.dataTransfer?.files?.[0];
           if (f && f.type.startsWith('image')) {
-            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
-            patchEvent({ keyVisual: URL.createObjectURL(f) });
-            patch({ saved: '키 비주얼 교체됨' });
+            setKvError('');
+            fileToDataUrl(f)
+              .then((dataUrl) => {
+                patchEvent({ keyVisual: dataUrl });
+                patch({ saved: '키 비주얼 교체됨' });
+              })
+              .catch((err: Error) => setKvError(err.message));
           }
         }}
         onDragOver={(e) => {
@@ -842,12 +899,13 @@ function ThemeSection({
           </div>
         )}
       </div>
+      {kvError ? <div style={{ fontSize: 12, color: UI.toneDangerFg, marginTop: 8 }}>{kvError}</div> : null}
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
         {KV_CHOICES.map((p) => (
           <button
             key={p.k}
             onClick={() => {
-              if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+              setKvError('');
               patchEvent({ kvPattern: p.k, keyVisual: '' });
               patch({ saved: '키 비주얼 교체됨' });
             }}
@@ -869,7 +927,7 @@ function ThemeSection({
         <button
           className="hv-bg965"
           onClick={() => {
-            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+            setKvError('');
             patchEvent({ keyVisual: '', kvPattern: 'none' });
             patch({ saved: '키 비주얼 비워짐' });
           }}
@@ -949,6 +1007,12 @@ function ThemeSection({
               </Badge>
             </div>
           ))}
+          {/* FE-18 — 이 게이트는 브랜드 프리셋 색으로 합성한 배경만 검사한다. 키 비주얼로
+              올린 이미지 위 텍스트는 실측하지 않으니 그 한계를 문구로 밝혀 둔다. */}
+          <div style={{ padding: '10px 16px', fontSize: 11.5, color: UI.faint, lineHeight: 1.6 }}>
+            이 검증은 브랜드 색 배경만 검사합니다. 키 비주얼로 올린 이미지 위 텍스트 대비는 별도로
+            확인해주세요 — 밝은 이미지에 흰 라벨을 겹치면 실제로는 기준에 못 미칠 수 있습니다.
+          </div>
         </Card>
       ) : null}
     </div>
@@ -961,12 +1025,16 @@ export default function EditorScreen({
   presets,
   patch,
   patchEvent,
+  user,
+  createPreset,
 }: {
   s: StudioState;
   ev: EventItem;
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  user: AuthUser | null;
+  createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
@@ -1056,7 +1124,16 @@ export default function EditorScreen({
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
         {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'theme' ? (
-          <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
+          <ThemeSection
+            s={s}
+            ev={ev}
+            presets={presets}
+            patch={patch}
+            patchEvent={patchEvent}
+            user={user}
+            createPreset={createPreset}
+            showContrast
+          />
         ) : null}
         {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'docs' ? <DocsSection /> : null}
