@@ -148,6 +148,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
 
+  // FE-40 — "서버가 아는 커스텀 프리셋 id" 집합을 ref로도 따로 든다(`s.customPresets`
+  // state와 내용은 같다). `patchEvent`가 이 값으로 presetId를 걸러내는데, `saveDraft`
+  // 같은 async 호출자는 `createPreset`이 끝나기 전에 이미 잡아 둔 `patchEvent` 클로저를
+  // 그대로 쓴다 — 그 클로저의 `s.customPresets`는 호출 시점의 스냅샷이라 `createPreset`이
+  // 막 등록한 새 id를 못 본다(react-hooks 리렌더가 아직 안 돌았으므로). ref는 객체
+  // 정체성이 렌더를 넘나들며 그대로라, 오래된 클로저도 `.current`를 읽으면 항상 최신값을
+  // 얻는다(`detailLoadedRef`와 같은 수법, 코드 리뷰 발견).
+  const customPresetIdsRef = useRef<Set<string>>(new Set());
+
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
   // 저장된 워크스페이스가 있으면 그걸로 교체(없으면 시드를 그대로 쓰고 이제부터
@@ -166,8 +175,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       setAuthStatus('ready');
 
       if (me) {
+        // 목록·프리셋 둘 다 독립 요청이라 동시에 쏜다(순서대로 await하면 왕복 시간이
+        // 그냥 더해진다 — 코드 리뷰 발견). 각자 실패해도 나머지 하나는 그대로 반영되도록
+        // try/catch는 분리해 둔다.
+        const eventsPromise = fetchStudioEvents();
+        const presetsPromise = fetchStudioPresets();
         try {
-          const events = await fetchStudioEvents();
+          const events = await eventsPromise;
           if (!cancelled) {
             setS((prev) => ({ ...prev, events }));
             setServerIds(new Set(events.map((e) => e.id)));
@@ -181,8 +195,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           // 서버에 저장된 추출 프리셋을 목록에 합친다(FE-40) — 안 하면 "새로고침해도
           // 프리셋이 목록에 남아 있다"는 완료 기준이 성립하지 않는다(내장은 이미
           // `PRESETS` 상수에 있으니 서버 응답에서 'extracted' origin만 가져온다).
-          const presets = await fetchStudioPresets();
-          if (!cancelled) setS((prev) => ({ ...prev, customPresets: presets }));
+          const presets = await presetsPromise;
+          if (!cancelled) {
+            setS((prev) => ({ ...prev, customPresets: presets }));
+            presets.forEach((p) => customPresetIdsRef.current.add(p.id));
+          }
         } catch (e) {
           console.warn('프리셋 목록 조회 실패:', e);
         }
@@ -363,14 +380,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         // 서버가 모르는 프리셋 id를 그대로 보내면 events.preset_id FK 위반으로 PATCH
         // 전체가 400 나서 같은 델타에 합쳐진 다른 필드까지 함께 실패한다(교차 리뷰
         // 발견). 내장(PRESETS) 또는 이미 POST /api/presets로 등록된 커스텀
-        // 프리셋(s.customPresets, FE-40)일 때만 그 필드를 보낸다 — createPreset이
-        // 서버 등록에 성공한 뒤에야 customPresets에 들어가므로 이 시점엔 FK가 있다.
+        // 프리셋(customPresetIdsRef, FE-40)일 때만 그 필드를 보낸다 — `s.customPresets`
+        // 대신 ref를 보는 이유: `saveDraft`가 `createPreset` 완료 직후 곧바로 이
+        // `patchEvent`를 부르는데, 그 호출은 `createPreset`이 끝나기 **전** 렌더에서
+        // 잡아 둔 오래된 클로저를 쓴다 — 그 클로저의 `s.customPresets`는 호출 시점
+        // 스냅샷이라 막 등록된 새 id를 못 본다(리렌더가 아직 안 돌았으므로). ref는
+        // 객체 정체성이 그대로라 오래된 클로저도 `.current`를 읽으면 항상 최신값을
+        // 얻는다(코드 리뷰 발견 — 처음 버전은 이 문제로 한 번에 저장이 안 됐다).
         let serverDelta = delta;
         if (serverDelta?.presetId !== undefined) {
           const { presetId } = serverDelta;
-          const known =
-            PRESETS.some((preset) => preset.id === presetId) ||
-            s.customPresets.some((preset) => preset.id === presetId);
+          const known = PRESETS.some((preset) => preset.id === presetId) || customPresetIdsRef.current.has(presetId);
           if (!known) {
             serverDelta = { ...serverDelta };
             delete serverDelta.presetId;
@@ -391,7 +411,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave, s.customPresets],
+    [effectiveId, serverIds, ev, flushServerSave],
   );
 
   const resetSessions = useCallback(() => {
@@ -466,6 +486,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const createPreset = useCallback(
     async (input: { id: string; label: string; hue: number; chroma: number }): Promise<Preset> => {
       const created = await createStudioPreset(input);
+      customPresetIdsRef.current.add(created.id);
       setS((prev) => {
         const idx = prev.customPresets.findIndex((p) => p.id === created.id);
         const customPresets =

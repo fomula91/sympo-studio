@@ -538,6 +538,9 @@ function ThemeSection({
 
   const handleFile = async (file: File) => {
     setExtractError('');
+    // 이전 draft의 저장 실패 메시지(409·401 등)가 새 draft에 그대로 남아 있으면
+    // 아직 시도조차 안 한 새 이미지가 이미 실패한 것처럼 보인다(코드 리뷰 발견).
+    setSaveError('');
     try {
       const { h, c } = await extractPresetColor(file);
       setDraft({ h, extractedC: c, c, label: file.name.replace(/\.[^.]+$/, '') });
