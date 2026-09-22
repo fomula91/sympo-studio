@@ -35,15 +35,19 @@ interface EventDTO {
   sessions?: { id: number; time: string | null; title: string; speaker: string | null; kind: string }[];
 }
 
-function dtoToEventItem(dto: EventDTO): EventItem {
-  const dateCode = dto.date ? dto.date.replace(/-/g, '').slice(2) : '';
-  const sessions: Session[] = (dto.sessions ?? []).map((s) => ({
+function toClientSessions(dtoSessions: EventDTO['sessions']): Session[] {
+  return (dtoSessions ?? []).map((s) => ({
     id: s.id,
     time: s.time ?? '',
     title: s.title,
     speaker: s.speaker ?? '',
     kind: s.kind,
   }));
+}
+
+function dtoToEventItem(dto: EventDTO): EventItem {
+  const dateCode = dto.date ? dto.date.replace(/-/g, '').slice(2) : '';
+  const sessions: Session[] = toClientSessions(dto.sessions);
   return {
     id: dto.id,
     brand: dto.brand,
@@ -120,6 +124,27 @@ export async function patchStudioEvent(id: number, delta: Partial<EventDetail>):
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
+ * PUT /api/events/[id]/sessions — 아젠다 목록 전체를 서버 상태로 맞춘다(FE-24 ③).
+ * `id`가 `null`이면 새 행으로 INSERT된다 — 로컬에서 `Date.now()`로 임시 배정한
+ * id는 호출자가 미리 걸러 `null`로 보내야 한다(서버가 실제 DB id를 새로 발급).
+ * 응답의 확정된 목록(전부 실제 id)을 그대로 돌려준다 — 다음 저장에서 UPDATE로
+ * 가려면 이 id를 알아야 한다.
+ */
+export async function putStudioEventSessions(
+  id: number,
+  sessions: { id: number | null; time: string | null; title: string; speaker: string | null; kind: string }[],
+): Promise<Session[]> {
+  const res = await fetchWithTimeout(`/api/events/${id}/sessions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessions }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { sessions: EventDTO['sessions'] };
+  return toClientSessions(data.sessions);
 }
 
 /**

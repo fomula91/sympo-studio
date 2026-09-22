@@ -13,6 +13,7 @@ import {
   logoutStudioUser,
   patchStudioEvent,
   patchStudioEventStatus,
+  putStudioEventSessions,
 } from '@/lib/studio-api';
 import type { EventStatus } from '@/lib/status';
 import { PRESETS } from '@/lib/theme';
@@ -155,6 +156,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 서버로도 PATCH를 보낸다(그 밖은 지금처럼 로컬 목업으로 남는다). 세션(아젠다)
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
+  // "이 id가 실제 서버 이벤트로 확인됐다"(serverIds, 목록 조회만으로도 채워진다)와
+  // "이 id의 전체 상세(세션 포함)를 실제로 불러왔다"는 다른 사실이다 — 목록 응답엔
+  // sessions가 없다(단건 조회만 싣는다, GET /api/events/[id]). 아래에서 둘 다 쓴다.
+  const detailLoadedRef = useRef<Set<number>>(new Set());
 
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
@@ -177,7 +182,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         try {
           const events = await fetchStudioEvents();
           if (!cancelled) {
-            setS((prev) => ({ ...prev, events }));
+            // 목록 응답엔 sessions가 없다 — 이미 상세를 불러온 이벤트가 있다면
+            // (상세 조회가 목록보다 먼저 끝난 경우) 그 세션을 목록의 빈 배열로
+            // 덮어쓰지 않는다(FE-24 ③, 위 detailLoadedRef 주석 참조).
+            setS((prev) => {
+              const priorById = new Map(prev.events.map((e) => [e.id, e]));
+              const merged = events.map((e) =>
+                detailLoadedRef.current.has(e.id) ? { ...e, sessions: priorById.get(e.id)?.sessions ?? e.sessions } : e,
+              );
+              return { ...prev, events: merged };
+            });
             setServerIds(new Set(events.map((e) => e.id)));
           }
         } catch (e) {
@@ -280,12 +294,76 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [flushServerSave],
   );
 
+  // FE-24 ③ — 아젠다(sessions)는 detailPatchToBody가 다루지 않는 필드라(배열 전체를
+  // 보내는 다른 계약, PUT .../sessions) 위 필드 저장 큐와 분리한다. 델타를 merge하지
+  // 않고 "최신 배열 전체"만 덮어써 보관한다 — 순서 변경 델타는 항상 배열 전부를 들고
+  // 오므로 merge할 것이 없다.
+  const pendingSessionsRef = useRef<Map<number, Session[]>>(new Map());
+  const sessionSaveTimersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  // 서버가 실제로 발급한 세션 id만 담는다. 로컬에서 새로 추가한 세션은 `Date.now()`로
+  // 임시 id를 받는데(AgendaSection), 그 값을 그대로 PUT에 실으면 "남의 세션 id"로
+  // 거절당한다(존재하지 않는 id라 UPDATE 0행이 아니라 400) — 여기 없는 id는 전부
+  // null(새 행)로 보내 서버가 실제 id를 새로 발급하게 한다.
+  const knownSessionIdsRef = useRef<Map<number, Set<number>>>(new Map());
+
+  const flushSessionSave = useCallback(
+    (id: number) => {
+      const sessions = pendingSessionsRef.current.get(id);
+      const timer = sessionSaveTimersRef.current.get(id);
+      if (timer) clearTimeout(timer);
+      sessionSaveTimersRef.current.delete(id);
+      if (!sessions) return;
+      patch({ saved: '변경 저장 중…' });
+      const known = knownSessionIdsRef.current.get(id) ?? new Set<number>();
+      const body = sessions.map((s) => ({
+        id: known.has(s.id) ? s.id : null,
+        time: s.time || null,
+        title: s.title,
+        speaker: s.speaker || null,
+        kind: s.kind,
+      }));
+      putStudioEventSessions(id, body)
+        .then((serverSessions) => {
+          if (pendingSessionsRef.current.get(id) === sessions) pendingSessionsRef.current.delete(id);
+          knownSessionIdsRef.current.set(id, new Set(serverSessions.map((s) => s.id)));
+          setS((prev) => {
+            const idx = prev.events.findIndex((e) => e.id === id);
+            if (idx < 0) return prev;
+            const events = prev.events.slice();
+            events[idx] = { ...events[idx], sessions: serverSessions };
+            return { ...prev, events };
+          });
+          patch({ saved: '방금 저장됨' });
+        })
+        .catch((e) => {
+          console.warn('아젠다 저장 실패:', e);
+          patch({ saved: '아젠다 저장 실패 — 다시 시도해주세요' });
+          // 필드 저장과 같은 이유로 큐에서 지우지 않는다 — 다음 아젠다 편집이 최신
+          // 배열로 다시 덮어써 재시도된다.
+        });
+    },
+    [patch],
+  );
+
+  useEffect(
+    () => () => {
+      for (const id of pendingSessionsRef.current.keys()) flushSessionSave(id);
+    },
+    [flushSessionSave],
+  );
+
+  // 예전엔 위 두 사실을 `serverIds` 하나로 묶어서 판단했는데, 마운트 시 목록 조회가
+  // 상세 조회보다 늦게 끝나면 `serverIds`가 바뀌며 이 effect가 재실행돼 진행 중이던
+  // 상세 조회를 취소시키고, 그 상세 조회가 들고 있던 실제 세션 데이터가 조용히
+  // 버려졌다(FE-24 ③ 검증 중 발견 — 새로고침하면 방금 저장한 세션이 화면에서
+  // 사라지지만 D1엔 멀쩡히 남아 있는 것으로 확인).
   useEffect(() => {
-    if (effectiveId == null || serverIds.has(effectiveId)) return;
+    if (effectiveId == null || detailLoadedRef.current.has(effectiveId)) return;
     let cancelled = false;
     fetchStudioEvent(effectiveId)
       .then((real) => {
         if (cancelled) return;
+        detailLoadedRef.current.add(effectiveId);
         setS((prev) => {
           const idx = prev.events.findIndex((e) => e.id === effectiveId);
           const events = prev.events.slice();
@@ -294,6 +372,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, events };
         });
         setServerIds((prev) => new Set(prev).add(effectiveId));
+        knownSessionIdsRef.current.set(effectiveId, new Set(real.sessions.map((sess) => sess.id)));
       })
       .catch((e) => {
         if (cancelled) return;
@@ -313,7 +392,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, serverIds, isKnownLocally]);
+  }, [effectiveId, isKnownLocally]);
 
   useEffect(() => {
     // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
@@ -384,9 +463,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             setTimeout(() => flushServerSave(effectiveId), SAVE_DEBOUNCE_MS),
           );
         }
+        // 아젠다는 별도 계약(PUT .../sessions, 배열 전체 교체)이라 위 필드 큐와
+        // 분리한다 — 델타는 항상 최신 배열 전체다(merge할 필요 없이 덮어쓴다).
+        if (serverDelta?.sessions !== undefined) {
+          pendingSessionsRef.current.set(effectiveId, serverDelta.sessions);
+          const prevSessionTimer = sessionSaveTimersRef.current.get(effectiveId);
+          if (prevSessionTimer) clearTimeout(prevSessionTimer);
+          sessionSaveTimersRef.current.set(
+            effectiveId,
+            setTimeout(() => flushSessionSave(effectiveId), SAVE_DEBOUNCE_MS),
+          );
+        }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave],
+    [effectiveId, serverIds, ev, flushServerSave, flushSessionSave],
   );
 
   const resetSessions = useCallback(() => {
