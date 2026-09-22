@@ -8,6 +8,7 @@ import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { NAV } from '@/lib/data';
+import { patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
@@ -20,11 +21,13 @@ const PUBLIC_HOST = 'sympo.superjacob.com';
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus } = useStudio();
+  const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds } =
+    useStudio();
   const router = useRouter();
   const pathname = usePathname();
   const [statusPending, setStatusPending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [bulkPending, setBulkPending] = useState(false);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -86,6 +89,35 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     } catch (e) {
       console.warn('URL 복사 실패:', e);
     }
+  };
+
+  // FE-24 ① — 콘솔의 일괄 상태 변경을 실제 서버에 반영한다. 선택 항목 중 서버 이벤트만
+  // PATCH로 내보내고(게스트·시드는 로컬만 바꾼다 — 애초에 보낼 D1 행이 없다), 실패한
+  // 건은 로컬 상태를 낙관적으로 바꾸지 않는다.
+  const handleBulkAction = async (a: string) => {
+    if (bulkPending) return;
+    if (a === '복제') {
+      patch({ sel: [] });
+      return;
+    }
+    const targetIds = s.sel;
+    setBulkPending(true);
+    patch({ saved: '일괄 반영 중…' });
+    const serverTargets = targetIds.filter((id) => serverIds.has(id));
+    const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
+    const failedIds = new Set<number>();
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        failedIds.add(serverTargets[i]);
+        console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
+      }
+    });
+    patch((st) => ({
+      events: st.events.map((e) => (targetIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
+      sel: [],
+      saved: failedIds.size > 0 ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요` : '일괄 반영됨',
+    }));
+    setBulkPending(false);
   };
 
   const goTo = (target: 'console' | 'editor' | 'theme' | 'report' | 'viewer') => {
@@ -365,16 +397,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
             <button
               key={a}
               className="hv-glass"
-              onClick={() =>
-                patch((st) => ({
-                  events:
-                    a === '복제'
-                      ? st.events
-                      : st.events.map((e) => (st.sel.includes(e.id) ? { ...e, status: a } : e)),
-                  sel: [],
-                  saved: '일괄 반영됨',
-                }))
-              }
+              onClick={() => void handleBulkAction(a)}
+              disabled={bulkPending}
               style={{
                 height: 44,
                 padding: '0 14px',
@@ -384,7 +408,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                 color: '#fff',
                 fontSize: 12.5,
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: bulkPending ? 'not-allowed' : 'pointer',
+                opacity: bulkPending ? 0.5 : 1,
               }}
             >
               {a === '복제' ? '템플릿으로 복제' : `${a}으로 변경`}

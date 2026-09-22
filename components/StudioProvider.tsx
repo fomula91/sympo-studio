@@ -99,6 +99,10 @@ interface StudioContextValue {
   // 발행 상태만 즉시 PATCH한다(디바운스 없음) — 실패하면 throw, 로컬 상태는 안 바뀐다.
   // 서버 이벤트가 아닐 때 부르면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
   setEventStatus: (status: EventStatus) => Promise<void>;
+  // 실제 D1에 연결된 것으로 확인된 이벤트 id 전체 — 콘솔의 일괄 작업(FE-24)이 어떤
+  // 선택 항목이 서버로 나가야 하는지 가릴 때 쓴다. 로그인 사용자는 목록 조회 성공 시
+  // 전부 여기 들어온다(개별 열람 없이도).
+  serverIds: ReadonlySet<number>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -484,6 +488,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       createEvent,
       isServerEvent,
       setEventStatus,
+      serverIds,
     }),
     [
       s,
@@ -499,6 +504,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       createEvent,
       isServerEvent,
       setEventStatus,
+      serverIds,
     ],
   );
 
