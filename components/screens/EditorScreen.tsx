@@ -978,7 +978,7 @@ export default function EditorScreen({
     host: ev.host,
     cap: ev.cap,
     engage: ev.engage,
-    brandLabel: preset.label,
+    brandLabel: ev.brand,
   };
 
   const roRef = useRef<ResizeObserver | null>(null);
