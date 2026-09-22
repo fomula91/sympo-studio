@@ -13,6 +13,18 @@
 > **과거 기록은 아카이브에 있다** — 이 파일은 최근 3개 날짜만 둔다(훅은 최신 섹션만 읽는다).
 > [[Archive/log-2026-09]] · [[Archive/log-2026-08]] · 사람이 읽을 연표는 [[Summaries/History]]
 
+## 2026-09-23
+
+- **[FE] 묶음 4 나머지(FE-19·18·40) 완료 — 브랜치 `fe-bundle4-remainder`(`origin/main` 기준)로 닫았다**: 「전체 조망」 묶음 4에서 아직 안 건드린 세 과제를 처리했다. 착수 전 사용자에게 갈림길 둘을 물어 방향을 정했다 — FE-19는 base64 인코딩(R2 실제 업로드 대신, 백엔드 작업 없이 이 세션에서 끝낼 수 있다), FE-18은 UI 문구로 한계를 명시(캔버스 픽셀 샘플링으로 게이트를 확장하는 "상당한 작업"은 보류).
+
+  **FE-40** — `EditorScreen.tsx`의 `saveDraft()`가 추출 프리셋을 로컬 state에만 넣고 `POST /api/presets`(BE-25, 이미 구현)를 호출한 적이 없던 것을 고쳤다. `lib/studio-api.ts`에 `createStudioPreset`·`fetchStudioPresets`를, `StudioProvider.tsx`에 `createPreset` 컨텍스트 함수와 로그인 시 프리셋 목록 자동 조회를 추가했다. **구현하다가 이 과제 자체가 만든 버그를 하나 더 찾아 고쳤다** — `patchEvent`가 내장 프리셋이 아닌 `presetId`는 무조건 PATCH에서 지우던 옛 방어(서버가 모르는 id를 보내면 FK 위반으로 400)가, `saveDraft()`를 실제 등록 뒤 `patchEvent`를 부르도록 고친 지금은 **방금 등록에 성공한 프리셋의 id까지 매번 지워버려** `preset_id`가 D1에 계속 `null`로 남았다(직접 D1 조회로 재현). `PRESETS` 외에 `s.customPresets`(등록 성공분만 들어옴)도 "서버가 아는 프리셋"으로 인정하도록 고쳤다.
+
+  **FE-19** — 키 비주얼 업로드가 `URL.createObjectURL(f)`(이 탭에서만 유효, `detailPatchToBody`가 서버 전송에서 걸러내고 있었다)를 쓰던 것을 `FileReader` 기반 base64 data URL로 바꿨다. 원본 파일 2MB 초과는 새 헬퍼 `fileToDataUrl`이 명확한 메시지로 거절한다(요청 본문·게스트 `localStorage` 5MB 한도 부담을 원본 단계에서 제한). `detailPatchToBody`의 `blob:` 필터링 가드와, 이제 죽은 코드가 된 드롭존 3곳의 `URL.revokeObjectURL` 가드를 함께 지웠다.
+
+  **FE-18** — "대비비 검증" 카드에 이 게이트가 브랜드 색 배경만 검사하고 업로드 이미지 위 텍스트는 실측하지 않는다는 문구를 추가했다. 곁들여 `design.md`의 낡은 문장("FE-7에서 게이트로 강제 예정, 현재는 배지만" — FE-7은 2026-08-24에 이미 완료돼 실제 게이트다)도 정정했다.
+
+  **실측**: 로그인 세션으로 새 서버 이벤트를 만들어(D1 auth_sessions 직접 삽입으로 로그인 시뮬레이션) 이미지에서 색 추출 → "프리셋으로 저장" → `POST /api/presets` 201·D1 반영 확인 → **새로고침 후 목록에 남아 있는 것 확인**(여기서 `preset_id` null 버그 발견) → 재저장으로 D1 `events.preset_id` 반영 확인. 실제 이미지를 키 비주얼 드롭존에 떨어뜨려(파일 입력이 없는 순수 드래그존이라 `DataTransfer`+합성 `drop` 이벤트로 실측) base64 저장·새로고침 후 유지 확인. 이벤트를 D1에서 직접 `공개`로 전환해 **참가자 페이지(`/{slug}`)가 추출 색·라벨·키 비주얼 전부 그대로 렌더하는 것까지 확인**(FE-31 경로 재검증). 테마 탭에서 FE-18 새 문구 렌더도 확인. 테스트 이벤트·프리셋·세션 전부 정리. `npm run lint`(변경 파일 대상 — 전체 `npm run lint`는 이 저장소에 존재하는 무관한 다른 워크트리(`.claude/worktrees/fe-intro-redesign`)와 `.next` 빌드 산출물까지 스캔하는 환경 문제가 있어 우회)·`build`·`test`(168건) 통과. 「전체 조망」 묶음 4를 갱신, `Next-Tasks.md`에서 세 과제를 빼 [[Archive/Closed-Tasks]]로 옮겼다 — FE-37·FE-42는 이미 다른 브랜치(PR #61·#62, 이 세션이 시작하기 전부터 존재)에서 진행 중이라 묶음 4는 네 브랜치에 코드가 분산된 채 병합 대기 상태다.
+
 ## 2026-09-21
 
 - **[BE] BE-33 종료 — 정본 도메인을 Google 리디렉션 URI에 등록했고, 실제 로그인 왕복까지 확인됐다**: 콘솔에서 해당 클라이언트(`371083668622-bn6ojbqt…`)의 승인된 리디렉션 URI에 `https://sympo.superjacob.com/api/auth/callback/google`을 추가했다 — **기존 둘(`workers.dev`·`localhost:3000`)은 그대로 뒀다**(밖으로 나간 링크를 죽이지 않으려고 두 주소를 함께 살려 둔 것과 같은 이유, `wrangler.jsonc` 주석). **반영 확인은 로그인 없이 먼저 했다**: 같은 authorize 호출의 최종 URL이 `…/signin/oauth/error?authError=…`에서 **`…/v3/signin/identifier`**로 바뀌었고, 쿼리에 **`app_domain=https://sympo.superjacob.com`**이 붙었다 — Google이 그 도메인을 이 클라이언트의 것으로 인정했을 때만 생기는 값이라 URI 등록 여부만 따로 떼어 볼 수 있는 지표였다. 이어서 **사용자가 정본 도메인에서 실제 계정으로 로그인 성공을 확인**했다. **코드 변경은 0이다** — 고칠 것이 애초에 코드에 없었고, 이 과제의 값어치는 "어느 층이 깨졌는지 가려낸 것"에 있다(코드·비밀값·배포 엔드포인트 세 층은 멀쩡했고 네 번째인 Google 콘솔만 비어 있었다). **남긴 한계**: OAuth 동의 화면의 게시 상태와 테스트 사용자 목록은 확인하지 않았다 — 사용자 계정이 `access_blocked` 없이 통과했으므로 **이 계정에 한해** 문제없다는 것까지만 확인됐고, 제3자 로그인이 필요해지면 그때 본다. **교훈을 종료 기록에 함께 적었다** — [[0007-sso-and-account-model]]이 "redirect URI 등록은 사람 손 작업"이라고 예고한 항목이 실제로 누락됐고, 근본 원인은 **BE-22(커스텀 도메인)의 완료 기준에 이게 없었다**는 것이다. 다음에 호스트를 추가·변경하면 리디렉션 URI 등록을 같은 과제 안에서 함께 본다. `Next-Tasks`에서 BE-33을 빼 [[Archive/Closed-Tasks]]로 옮겼고(BE 섹션은 다시 0건), FE-43의 완료 기준에 걸려 있던 "BE-33이 닫힌 뒤에야 정본 도메인에서 실측 가능" 단서와 「전체 조망」 묶음 1의 선행 표시도 함께 갱신했다. 열린 과제 17건(Next-Task 4 · FE 백로그 13 · BE 0), 종료 37건.
