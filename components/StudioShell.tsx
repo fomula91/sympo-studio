@@ -32,6 +32,9 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const statusPending = statusPendingId === ev.id;
   const [copied, setCopied] = useState(false);
   const [bulkPending, setBulkPending] = useState(false);
+  // s.saved(위)는 에디터 헤더 전용이라 콘솔의 일괄 변경 결과가 보일 자리가 없었다
+  // (팀원 코드리뷰가 PR #63에서 발견) — 콘솔에서도 보이는 별도 토스트로 띄운다.
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -106,6 +109,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     }
     const targetIds = s.sel;
     setBulkPending(true);
+    setBulkResult(null);
     patch({ saved: '일괄 반영 중…' });
     const serverTargets = targetIds.filter((id) => serverIds.has(id));
     const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
@@ -116,14 +120,25 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
       }
     });
+    const successCount = targetIds.length - failedIds.size;
     patch((st) => ({
       events: st.events.map((e) => (targetIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
-      // 처리한 항목만 선택에서 뺀다 — 요청이 진행되는 동안 사용자가 선택을 바꿨다면
-      // (체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면 그 새 선택이 조용히
-      // 사라진다(`/code-review` 발견).
-      sel: st.sel.filter((id) => !targetIds.includes(id)),
+      // 처리한 항목 중 성공한 것만 선택에서 뺀다. 실패한 건은 선택을 그대로 둬서
+      // 바로 다시 시도할 수 있게 한다 — 요청이 진행되는 동안 사용자가 선택을
+      // 바꿨다면(체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면 그 새 선택도
+      // 조용히 사라진다(팀원 코드리뷰가 PR #63에서 발견).
+      sel: st.sel.filter((id) => !targetIds.includes(id) || failedIds.has(id)),
+      // s.saved는 에디터 헤더에만 보인다 — 일괄 변경은 콘솔에서 일어나는데 그
+      // 결과가 콘솔 화면 어디에도 안 보였다(같은 리뷰가 발견). 콘솔에서도 보이는
+      // 별도 배너(bulkResult, 아래)로 성공·실패 건수를 알린다.
       saved: failedIds.size > 0 ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요` : '일괄 반영됨',
     }));
+    setBulkResult(
+      failedIds.size > 0
+        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+        : `${successCount}건 반영됨`,
+    );
+    setTimeout(() => setBulkResult(null), 4000);
     setBulkPending(false);
   };
 
@@ -378,6 +393,28 @@ export default function StudioShell({ children }: { children: React.ReactNode })
           {s.viewerOpen ? <ViewerScreen ev={ev} presets={presets} /> : children}
         </main>
       </div>
+
+      {bulkResult ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            // 선택 토스트가 함께 떠 있으면(일부 실패해 선택이 남은 경우) 겹치지 않게 위로.
+            bottom: s.bulk && s.sel.length > 0 ? 88 : 24,
+            transform: 'translateX(-50%)',
+            background: 'oklch(0.22 0.008 250)',
+            color: '#fff',
+            borderRadius: 12,
+            padding: '9px 16px',
+            fontSize: 12.5,
+            fontWeight: 600,
+            boxShadow: '0 18px 40px -12px oklch(0.3 0.02 250 / 0.5)',
+            zIndex: 21,
+          }}
+        >
+          {bulkResult}
+        </div>
+      ) : null}
 
       {s.bulk && s.sel.length > 0 ? (
         <div

@@ -246,21 +246,35 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 실제로 생긴 경우) 성공한 조회가 우선해야 한다. 그렇지 않으면 한 번 404·에러였던
   // id는 나중에 성공해도 이 세션 내내 그 화면에 영구히 갇힌다.
   //
-  // **`serverIds`가 아니라 `detailLoadedRef`로 가른다** — 로그인 사용자는 마운트 시
+  // **`serverIds`가 아니라 `detailLoadedIds`로 가른다** — 로그인 사용자는 마운트 시
   // 목록 조회(GET /api/events, sessions 없음)만으로도 `serverIds`가 채워진다. 예전엔
   // 그걸로 'idle'을 판정해 에디터가 곧장 렌더됐는데, 그러면 단건 상세(세션 포함)가
   // 아직 안 왔는데도 아젠다 섹션이 빈 배열을 진짜 상태로 오해하고 편집을 받아들여,
   // `PUT .../sessions`(배열 전체 교체 계약)가 그 빈 배열로 나가 서버의 기존 세션을
   // 전부 지울 수 있었다(`/code-review` 발견, FE-24 ③). 상세가 실제로 온 뒤에만 'idle'로
   // 본다 — 그때까지는 'loading'이라 `EditEventPage`가 `EditorScreen` 자체를 안 그린다.
+  //
+  // **`isKnownLocally`만으로는 부족하다** — 목록 조회가 `s.events`에 이 id의 항목을
+  // (세션 없이) 추가하는 순간 `isKnownLocally`도 true가 돼, 원래 목적(순수 로컬 목업·
+  // 게스트 이벤트는 서버 확인을 기다릴 필요가 없다)과 무관하게 **서버 이벤트조차** 상세
+  // 도착 전에 'idle'로 새 버렸다(팀원 코드리뷰가 PR #63에서 재발견). `serverIds`에는
+  // 있는데 `detailLoadedIds`엔 아직 없는 경우를 `isKnownLocally`보다 먼저 걸러
+  // 'loading'으로 묶어 둔다 — 순수 로컬(게스트·시드) 이벤트만 `isKnownLocally`로
+  // 즉시 'idle' 처리된다.
   const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
-    effectiveId != null && !isKnownLocally && !detailLoadedIds.has(effectiveId)
-      ? effectiveId === notFoundId
-        ? 'notfound'
-        : effectiveId === errorId
-          ? 'error'
-          : 'loading'
-      : 'idle';
+    effectiveId == null
+      ? 'idle'
+      : detailLoadedIds.has(effectiveId)
+        ? 'idle'
+        : serverIds.has(effectiveId)
+          ? 'loading'
+          : isKnownLocally
+            ? 'idle'
+            : effectiveId === notFoundId
+              ? 'notfound'
+              : effectiveId === errorId
+                ? 'error'
+                : 'loading';
 
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
   // 매 키 입력마다 보내면 12글자 제목 하나에 요청 12번이 나간다(실측으로 확인). 짧은
@@ -274,14 +288,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const SAVE_DEBOUNCE_MS = 700;
 
   const flushServerSave = useCallback(
-    (id: number) => {
+    (id: number): Promise<void> => {
       const delta = pendingSavesRef.current.get(id);
       const timer = saveTimersRef.current.get(id);
       if (timer) clearTimeout(timer);
       saveTimersRef.current.delete(id);
-      if (!delta) return;
+      if (!delta) return Promise.resolve();
       patch({ saved: '변경 저장 중…' });
-      patchStudioEvent(id, delta)
+      return patchStudioEvent(id, delta)
         .then(() => {
           // 이 델타를 큐에서 뺀다 — 단, 응답을 기다리는 사이 같은 이벤트에 새 편집이
           // 들어와 이미 다른(더 최신) 델타로 교체됐다면 그건 건드리지 않는다(이미
@@ -297,6 +311,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           // 그대로 사라지고 이어서 다른 필드를 수정하면 그 필드만 나가 "방금 저장됨"이
           // 뜨는 동안 실패한 필드는 계속 서버에 반영 안 된 채 묻혔다(교차 리뷰 발견).
           // 이제 같은 이벤트를 한 번 더 편집하면 남은 델타와 합쳐져 함께 재전송된다.
+          // 호출자(공개 직전 flush 등)는 실패를 알아야 하므로 다시 던진다.
+          throw e;
         });
     },
     [patch],
@@ -307,7 +323,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 각자 알아서 flush되므로(전환만으로는 안 지워짐), 여기서는 진짜 언마운트만 처리한다.
   useEffect(
     () => () => {
-      for (const id of pendingSavesRef.current.keys()) flushServerSave(id);
+      for (const id of pendingSavesRef.current.keys()) flushServerSave(id).catch(() => {});
     },
     [flushServerSave],
   );
@@ -334,11 +350,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const sessionSaveChainRef = useRef<Map<number, Promise<void>>>(new Map());
 
   const flushSessionSave = useCallback(
-    (id: number) => {
+    (id: number): Promise<void> => {
       const timer = sessionSaveTimersRef.current.get(id);
       if (timer) clearTimeout(timer);
       sessionSaveTimersRef.current.delete(id);
-      if (!pendingSessionsRef.current.has(id)) return;
+      if (!pendingSessionsRef.current.has(id)) return sessionSaveChainRef.current.get(id) ?? Promise.resolve();
       const prior = sessionSaveChainRef.current.get(id) ?? Promise.resolve();
       const run = prior.catch(() => {}).then(() => {
         const sessions = pendingSessionsRef.current.get(id);
@@ -354,32 +370,56 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }));
         return putStudioEventSessions(id, body)
           .then((serverSessions) => {
-            if (pendingSessionsRef.current.get(id) === sessions) pendingSessionsRef.current.delete(id);
             knownSessionIdsRef.current.set(id, new Set(serverSessions.map((s) => s.id)));
-            setS((prev) => {
-              const idx = prev.events.findIndex((e) => e.id === id);
-              if (idx < 0) return prev;
-              const events = prev.events.slice();
-              events[idx] = { ...events[idx], sessions: serverSessions };
-              return { ...prev, events };
+            // 방금 보낸 배열(sessions/body)과 응답(serverSessions)은 같은 순서다 —
+            // 위치로 짝지어 "이번 저장에서 새로 발급된" 임시 id → 실제 id 매핑을 만든다.
+            const resolvedIds = new Map<number, number>();
+            sessions.forEach((s, i) => {
+              if (!known.has(s.id) && serverSessions[i]) resolvedIds.set(s.id, serverSessions[i].id);
             });
+            const stillPending = pendingSessionsRef.current.get(id);
+            if (stillPending && stillPending !== sessions) {
+              // 이 저장이 오가는 동안 더 최신 편집이 이미 쌓여 있다 — 화면은 그
+              // 최신 편집을 그대로 두고(덮어쓰면 방금 반영한 편집이 사라진다,
+              // `/code-review` 발견), 방금 실제 id가 발급된 항목이 그 최신 편집
+              // 안에 옛 임시 id로 남아 있다면 바꿔치기만 한다. 안 그러면 다음 저장이
+              // 그 항목을 "모르는 id"로 오인해 같은 세션을 중복 삽입한다.
+              if (resolvedIds.size > 0) {
+                pendingSessionsRef.current.set(
+                  id,
+                  stillPending.map((s) => (resolvedIds.has(s.id) ? { ...s, id: resolvedIds.get(s.id)! } : s)),
+                );
+              }
+            } else {
+              if (pendingSessionsRef.current.get(id) === sessions) pendingSessionsRef.current.delete(id);
+              setS((prev) => {
+                const idx = prev.events.findIndex((e) => e.id === id);
+                if (idx < 0) return prev;
+                const events = prev.events.slice();
+                events[idx] = { ...events[idx], sessions: serverSessions };
+                return { ...prev, events };
+              });
+            }
             patch({ saved: '방금 저장됨' });
           })
           .catch((e) => {
             console.warn('아젠다 저장 실패:', e);
             patch({ saved: '아젠다 저장 실패 — 다시 시도해주세요' });
             // 필드 저장과 같은 이유로 큐에서 지우지 않는다 — 다음 아젠다 편집이 최신
-            // 배열로 다시 덮어써 재시도된다.
+            // 배열로 다시 덮어써 재시도된다. 단, 호출자(공개 직전 flush 등)는 실패를
+            // 알아야 하므로 여기서 삼키지 않고 다시 던진다.
+            throw e;
           });
       });
       sessionSaveChainRef.current.set(id, run);
+      return run;
     },
     [patch],
   );
 
   useEffect(
     () => () => {
-      for (const id of pendingSessionsRef.current.keys()) flushSessionSave(id);
+      for (const id of pendingSessionsRef.current.keys()) flushSessionSave(id).catch(() => {});
     },
     [flushSessionSave],
   );
@@ -434,9 +474,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (!validIds.has(id)) baselineRef.current.delete(id);
     }
     if (effectiveId == null || baselineRef.current.has(effectiveId)) return;
+    // 서버 이벤트는 상세(세션 포함)가 실제로 온 뒤에만 기준선을 잡는다 — 안 그러면
+    // 목록 조회가 만든 빈 세션 스텁을 "원래 상태"로 잘못 기억해, 상세를 다 읽은
+    // 뒤에 "아젠다 되돌리기"를 눌러도 서버의 기존 세션을 지우는 배열로 되돌아간다
+    // (팀원 코드리뷰가 PR #63에서 발견).
+    if (serverIds.has(effectiveId) && !detailLoadedIds.has(effectiveId)) return;
     const found = s.events.find((e) => e.id === effectiveId);
     if (found) baselineRef.current.set(effectiveId, found.sessions);
-  }, [effectiveId, s.events]);
+  }, [effectiveId, s.events, serverIds, detailLoadedIds]);
 
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
@@ -493,7 +538,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           if (prevTimer) clearTimeout(prevTimer);
           saveTimersRef.current.set(
             effectiveId,
-            setTimeout(() => flushServerSave(effectiveId), SAVE_DEBOUNCE_MS),
+            setTimeout(() => {
+              flushServerSave(effectiveId).catch(() => {});
+            }, SAVE_DEBOUNCE_MS),
           );
         }
         // 아젠다는 별도 계약(PUT .../sessions, 배열 전체 교체)이라 위 필드 큐와
@@ -504,7 +551,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           if (prevSessionTimer) clearTimeout(prevSessionTimer);
           sessionSaveTimersRef.current.set(
             effectiveId,
-            setTimeout(() => flushSessionSave(effectiveId), SAVE_DEBOUNCE_MS),
+            setTimeout(() => {
+              flushSessionSave(effectiveId).catch(() => {});
+            }, SAVE_DEBOUNCE_MS),
           );
         }
       }
@@ -589,8 +638,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const setEventStatus = useCallback(
     async (status: EventStatus): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
-      await patchStudioEventStatus(effectiveId, status);
       const id = effectiveId;
+      // 공개·비공개 전환 직전에 대기 중인 필드·아젠다 저장을 먼저 끝낸다 — 안 그러면
+      // 방금 고친 제목·아젠다가 아직 서버에 안 나간 채로 공개돼 참가자에게 낡은
+      // 내용이 먼저 보이고, 그 저장이 실패해도 공개 자체는 성공해버린다(팀원
+      // 코드리뷰가 PR #63에서 발견). 둘 중 하나라도 실패하면 여기서 던져 공개
+      // 자체를 막는다 — 호출자(StudioShell)가 실패 사유를 사용자에게 보여준다.
+      await Promise.all([flushServerSave(id), flushSessionSave(id)]);
+      await patchStudioEventStatus(id, status);
       setS((prev) => {
         const idx = prev.events.findIndex((e) => e.id === id);
         if (idx < 0) return prev;
@@ -599,7 +654,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, events };
       });
     },
-    [effectiveId, serverIds],
+    [effectiveId, serverIds, flushServerSave, flushSessionSave],
   );
 
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
