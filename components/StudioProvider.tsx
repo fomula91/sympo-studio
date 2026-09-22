@@ -25,6 +25,7 @@ import type {
   PatchFn,
   Preset,
   Session,
+  StudioDocument,
   StudioState,
 } from '@/lib/types';
 
@@ -57,6 +58,12 @@ function writeGuestWorkspace(events: EventItem[]) {
   } catch {
     // 용량 초과·프라이빗 모드 등 — 화면 동작을 막을 이유는 아니다.
   }
+}
+
+// addDocument·removeDocument가 PUT .../documents(전체 교체 계약)에 보내는 메타 행
+// 하나를 만든다 — 추가·삭제·업로드 실패 시 되돌리기, 세 자리에서 같은 모양이 필요하다.
+function toDocumentMetaBody(d: StudioDocument) {
+  return { id: d.id, sessionId: d.sessionId, displayName: d.displayName, tag: d.tag };
 }
 
 const SEEDED_EVENTS = seedEvents();
@@ -461,6 +468,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     await logoutStudioUser();
     setUser(null);
     setServerIds(new Set());
+    // serverIds와 같이 비운다 — 안 그러면 로그아웃 후에도 detailLoadedIds에 남은 id가
+    // loadStatus를 'idle'로 잘못 판정해(아래 loadStatus 계산부 주석 참조), 방금
+    // 초기화된 s.events(게스트/시드)에는 그 id가 없어 편집 화면이 로딩·에러 표시
+    // 없이 곧장 notFound()로 떨어진다 — AccountMenu는 이 화면에서도 로그아웃이 가능하다.
+    detailLoadedRef.current = new Set();
+    setDetailLoadedIds(new Set());
     const stored = readGuestWorkspace();
     setS((prev) => ({ ...prev, events: stored ?? seedEvents() }));
     guestHydratedRef.current = true;
@@ -518,69 +531,72 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 없음) — 파일을 드롭한 순간이 곧 "이걸 올리겠다"는 의사 표시라 텍스트 입력처럼
   // 타이핑 중간값을 무시할 이유가 없다.
   //
-  // **동시 호출을 여기서 직렬화하지 않는다** — 대신 DocsSection이 업로드·삭제
-  // 어느 쪽이든 진행 중이면 드롭존·삭제 버튼을 비활성화한다. 두 mutate가 겹쳐
-  // 나가면(둘 다 같은 "현재 목록" 스냅샷에서 시작해 서로의 결과를 모른 채 PUT하는
-  // 전체 교체 계약이라) 나중 응답이 먼저 응답을 덮어쓸 수 있는데, 세션 저장과
-  // 달리 자료는 드롭존 하나·삭제 버튼 하나뿐이라 UI가 막아주면 애초에 겹칠 방법이
-  // 없다 — 데이터 층에 별도 직렬화를 두는 것보다 단순하다.
+  // **동시 호출은 이벤트별 ref 락으로 막는다** — DocsSection의 로컬 busy 상태만으로는
+  // 부족하다(편집 화면을 벗어났다 돌아오면 그 상태가 초기화되지만, 이전 요청은 계속
+  // 진행 중일 수 있다) — 겹쳐 나가면(둘 다 같은 "현재 목록" 스냅샷에서 시작해 서로의
+  // 결과를 모른 채 PUT하는 전체 교체 계약이라) 나중 응답이 먼저 응답을 덮어쓸 수 있다.
+  const docsBusyRef = useRef<Set<number>>(new Set());
   const addDocument = useCallback(
     async (file: File): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
       const id = effectiveId;
-      const current = s.events.find((e) => e.id === id)?.documents ?? [];
-      const metaBody = [
-        ...current.map((d) => ({ id: d.id, sessionId: d.sessionId, displayName: d.displayName, tag: d.tag })),
-        { id: null, sessionId: null, displayName: file.name.replace(/\.[^.]+$/, ''), tag: null },
-      ];
-      const saved = await putStudioEventDocuments(id, metaBody);
-      const existingIds = new Set(current.map((d) => d.id));
-      const created = saved.find((d) => !existingIds.has(d.id));
-      setS((prev) => {
-        const idx = prev.events.findIndex((e) => e.id === id);
-        if (idx < 0) return prev;
-        const events = prev.events.slice();
-        events[idx] = { ...events[idx], documents: saved };
-        return { ...prev, events };
-      });
-      if (!created) return;
+      if (docsBusyRef.current.has(id)) return;
+      docsBusyRef.current.add(id);
       try {
-        const result = await uploadStudioDocument(id, created.id, file);
+        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const metaBody = [
+          ...current.map(toDocumentMetaBody),
+          { id: null, sessionId: null, displayName: file.name.replace(/\.[^.]+$/, ''), tag: null },
+        ];
+        const saved = await putStudioEventDocuments(id, metaBody);
+        const existingIds = new Set(current.map((d) => d.id));
+        const created = saved.find((d) => !existingIds.has(d.id));
         setS((prev) => {
           const idx = prev.events.findIndex((e) => e.id === id);
           if (idx < 0) return prev;
           const events = prev.events.slice();
-          const documents = events[idx].documents.map((d) =>
-            d.id === created.id
-              ? { ...d, status: result.status, hasFile: true, sizeBytes: result.sizeBytes, contentType: file.type || null }
-              : d,
-          );
-          events[idx] = { ...events[idx], documents };
+          events[idx] = { ...events[idx], documents: saved };
           return { ...prev, events };
         });
-      } catch (e) {
-        // 업로드 실패 — 방금 만든 메타 행을 되돌린다. 안 그러면 빈 'pending' 자료가
-        // 목록에 영영 남고, 이번 범위엔 "기존 pending 행에 다시 올리기" UI가 없어
-        // 되돌리는 것 말고는 회복할 방법이 없다. 되돌리기 자체가 실패해도 원래
-        // 실패 사유를 덮지 않는다(호출자에게 그대로 던진다).
+        if (!created) return;
         try {
-          const rolledBack = await putStudioEventDocuments(
-            id,
-            saved
-              .filter((d) => d.id !== created.id)
-              .map((d) => ({ id: d.id, sessionId: d.sessionId, displayName: d.displayName, tag: d.tag })),
-          );
+          const result = await uploadStudioDocument(id, created.id, file);
           setS((prev) => {
             const idx = prev.events.findIndex((e) => e.id === id);
             if (idx < 0) return prev;
             const events = prev.events.slice();
-            events[idx] = { ...events[idx], documents: rolledBack };
+            const documents = events[idx].documents.map((d) =>
+              d.id === created.id
+                ? { ...d, status: result.status, hasFile: true, sizeBytes: result.sizeBytes, contentType: file.type || null }
+                : d,
+            );
+            events[idx] = { ...events[idx], documents };
             return { ...prev, events };
           });
-        } catch (rollbackError) {
-          console.warn('업로드 실패 후 메타 되돌리기도 실패:', rollbackError);
+        } catch (e) {
+          // 업로드 실패 — 방금 만든 메타 행을 되돌린다. 안 그러면 빈 'pending' 자료가
+          // 목록에 영영 남고, 이번 범위엔 "기존 pending 행에 다시 올리기" UI가 없어
+          // 되돌리는 것 말고는 회복할 방법이 없다. 되돌리기 자체가 실패해도 원래
+          // 실패 사유를 덮지 않는다(호출자에게 그대로 던진다).
+          try {
+            const rolledBack = await putStudioEventDocuments(
+              id,
+              saved.filter((d) => d.id !== created.id).map(toDocumentMetaBody),
+            );
+            setS((prev) => {
+              const idx = prev.events.findIndex((e) => e.id === id);
+              if (idx < 0) return prev;
+              const events = prev.events.slice();
+              events[idx] = { ...events[idx], documents: rolledBack };
+              return { ...prev, events };
+            });
+          } catch (rollbackError) {
+            console.warn('업로드 실패 후 메타 되돌리기도 실패:', rollbackError);
+          }
+          throw e;
         }
-        throw e;
+      } finally {
+        docsBusyRef.current.delete(id);
       }
     },
     [effectiveId, serverIds, s.events],
@@ -590,18 +606,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     async (docId: number): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
       const id = effectiveId;
-      const current = s.events.find((e) => e.id === id)?.documents ?? [];
-      const metaBody = current
-        .filter((d) => d.id !== docId)
-        .map((d) => ({ id: d.id, sessionId: d.sessionId, displayName: d.displayName, tag: d.tag }));
-      const saved = await putStudioEventDocuments(id, metaBody);
-      setS((prev) => {
-        const idx = prev.events.findIndex((e) => e.id === id);
-        if (idx < 0) return prev;
-        const events = prev.events.slice();
-        events[idx] = { ...events[idx], documents: saved };
-        return { ...prev, events };
-      });
+      if (docsBusyRef.current.has(id)) return;
+      docsBusyRef.current.add(id);
+      try {
+        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const metaBody = current.filter((d) => d.id !== docId).map(toDocumentMetaBody);
+        const saved = await putStudioEventDocuments(id, metaBody);
+        setS((prev) => {
+          const idx = prev.events.findIndex((e) => e.id === id);
+          if (idx < 0) return prev;
+          const events = prev.events.slice();
+          events[idx] = { ...events[idx], documents: saved };
+          return { ...prev, events };
+        });
+      } finally {
+        docsBusyRef.current.delete(id);
+      }
     },
     [effectiveId, serverIds, s.events],
   );
