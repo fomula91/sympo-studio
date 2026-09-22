@@ -473,7 +473,10 @@ function DocsSection({
             </button>
           </div>
         ))}
-        <div
+        <button
+          type="button"
+          disabled={!isServerEvent || busy}
+          aria-label="PDF 업로드 — 드롭 또는 클릭"
           onClick={() => {
             if (isServerEvent && !busy) fileInputRef.current?.click();
           }}
@@ -489,9 +492,11 @@ function DocsSection({
             if (isServerEvent && !busy) void handleFiles(e.dataTransfer.files);
           }}
           style={{
+            width: '100%',
             height: 64,
             border: `1px dashed ${dragOver ? UI.brand : 'var(--hover-border)'}`,
             borderRadius: 12,
+            background: 'transparent',
             display: 'grid',
             placeItems: 'center',
             fontFamily: MONO,
@@ -507,7 +512,7 @@ function DocsSection({
             : uploading
               ? '업로드 중…'
               : 'PDF 드롭 또는 클릭 · 표시명 자동 추론'}
-        </div>
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -519,8 +524,16 @@ function DocsSection({
             e.target.value = '';
           }}
         />
-        {uploadError ? <div style={{ fontSize: 12, color: UI.toneDangerFg }}>{uploadError}</div> : null}
-        {deleteError ? <div style={{ fontSize: 12, color: UI.toneDangerFg }}>{deleteError}</div> : null}
+        {uploadError ? (
+          <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+            {uploadError}
+          </div>
+        ) : null}
+        {deleteError ? (
+          <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+            {deleteError}
+          </div>
+        ) : null}
       </div>
     </div>
   );

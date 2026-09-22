@@ -2,7 +2,7 @@
 
 import Microsite from '@/components/Microsite';
 import { derive, ICONSETS } from '@/lib/theme';
-import type { EventItem, Preset } from '@/lib/types';
+import type { DocumentInfo, EventItem, Preset } from '@/lib/types';
 import { monoLabel, UI } from '@/lib/ui';
 
 export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: Preset[] }) {
@@ -18,11 +18,21 @@ export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: 
     engage: ev.engage,
     brandLabel: preset.label,
   };
+  // 실제 이 이벤트의 자료로 미리보기를 그린다(FE-25) — 안 넘기면 EditorScreen의 라이브
+  // 미리보기와 마찬가지로 Microsite가 대표 예시 2건(DEMO_DOCUMENTS)을 보여준다.
+  const previewDocuments: DocumentInfo[] = ev.documents.map((d) => ({
+    id: d.id,
+    name: d.displayName,
+    status: d.status,
+    pages: d.pageCount,
+    url: null,
+  }));
   const micrositeProps = {
     theme,
     sessions: ev.sessions,
     icons,
     event: micrositeEvent,
+    documents: previewDocuments,
     // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
     // D1에 대응하는 실제 id가 없다. preview로 Q&A 입력·폴링을 꺼서 실제 행사 데이터에
     // 쓰기가 일어나지 않게 한다(Codex 리뷰 2026-09-02 P1).

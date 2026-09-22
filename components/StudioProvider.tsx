@@ -274,19 +274,25 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 자료를 지울 수 있다. `serverIds`에 있는 이벤트는 `detailLoadedIds`가 찰
   // 때까지 무조건 'loading'으로 묶고, 순수 로컬(게스트·시드) 이벤트만
   // `isKnownLocally`로 즉시 'idle' 처리한다.
+  //
+  // **`notFoundId`·`errorId`는 `serverIds`-'loading'보다 먼저 확인한다** — 상세
+  // 조회가 실패해 errorId가 찍힌 뒤에도 이 id는 여전히 serverIds에 남아 있다(목록
+  // 조회가 존재를 이미 확인했으므로 지울 이유가 없다). serverIds 체크를 먼저 두면
+  // 확정된 에러 상태를 영영 못 보고 무한 'loading'에 머문다(Codex 리뷰 2026-09-22
+  // 발견).
   const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
     effectiveId == null
       ? 'idle'
       : detailLoadedIds.has(effectiveId)
         ? 'idle'
-        : serverIds.has(effectiveId)
-          ? 'loading'
-          : isKnownLocally
-            ? 'idle'
-            : effectiveId === notFoundId
-              ? 'notfound'
-              : effectiveId === errorId
-                ? 'error'
+        : effectiveId === notFoundId
+          ? 'notfound'
+          : effectiveId === errorId
+            ? 'error'
+            : serverIds.has(effectiveId)
+              ? 'loading'
+              : isKnownLocally
+                ? 'idle'
                 : 'loading';
 
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
@@ -358,13 +364,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        // 로컬에 이미 있던 이벤트(목업 시드 또는 방금 만든 새 이벤트)는 서버에 없는 게
-        // 정상 경로라 조용히 로컬로 남는다. 그 밖의 id는 조회가 실패한 이유에 따라
-        // 갈린다 — 404면 정말 없는 이벤트, 그 밖(타임아웃·500 등)은 존재 여부를 모르는
-        // 것뿐이라 notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에
-        // 계속 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
+        // 순수 로컬 이벤트(목업 시드 또는 방금 만든 새 이벤트, serverIds에 없음)는
+        // 서버에 없는 게 정상 경로라 조용히 로컬로 남는다. `serverIds`에 이미 있는
+        // (목록 조회로 존재가 확인된) 이벤트는 isKnownLocally가 true여도 정상 경로가
+        // 아니다 — 그 경우까지 조용히 넘기면 loadStatus가 serverIds만 보고 무조건
+        // 'loading'을 반환해(위 loadStatus 주석 참조) 무한 스피너가 된다(Codex 리뷰
+        // 2026-09-22 발견). 그 밖의 id는 조회가 실패한 이유에 따라 갈린다 — 404면
+        // 정말 없는 이벤트, 그 밖(타임아웃·500 등)은 존재 여부를 모르는 것뿐이라
+        // notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에 계속
+        // 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
         console.warn('스튜디오 이벤트 실측 조회 실패:', e);
-        if (isKnownLocally) return;
+        if (isKnownLocally && !serverIds.has(effectiveId)) return;
         if (e instanceof ApiClientError && e.status === 404) {
           setNotFoundId(effectiveId);
         } else {
@@ -374,7 +384,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, isKnownLocally]);
+  }, [effectiveId, isKnownLocally, serverIds]);
 
   useEffect(() => {
     // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
