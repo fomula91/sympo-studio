@@ -181,6 +181,10 @@ export const ENGAGE_DEFS = [
 
 export const FIELD_DEFS = [
   { k: 'title' as const, label: '행사명', hint: '날짜·장소는 별도 필드입니다' },
+  // 로그인 사용자가 만든 이벤트는 생성 시 brand가 행사명으로 임시 채워진다(서버가
+  // 필수로 요구하는데 이 화면엔 원래 입력 필드가 없었다, FE-42) — 여기서 실제
+  // 브랜드명으로 고칠 수 있게 한다. 게스트는 빈 문자열로 시작해 바로 채운다.
+  { k: 'brand' as const, label: '브랜드명', hint: '행사명과 별도로 저장됩니다 — 콘솔 검색에 쓰입니다' },
   { k: 'date' as const, label: '일시', hint: '캘린더 연동·리마인더의 소스' },
   { k: 'venue' as const, label: '장소', hint: '장소 마스터에서 참조' },
   { k: 'host' as const, label: '좌장', hint: '연자 라이브러리에서 참조' },
