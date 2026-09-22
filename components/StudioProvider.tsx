@@ -159,7 +159,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // "이 id가 실제 서버 이벤트로 확인됐다"(serverIds, 목록 조회만으로도 채워진다)와
   // "이 id의 전체 상세(세션 포함)를 실제로 불러왔다"는 다른 사실이다 — 목록 응답엔
   // sessions가 없다(단건 조회만 싣는다, GET /api/events/[id]). 아래에서 둘 다 쓴다.
+  //
+  // **두 갈래로 나눠 들고 있는 이유** — ref는 상세 조회 effect의 재실행 가드(아래)에
+  // 쓴다. 그 effect가 이 값을 의존성 배열에 넣으면(반응형 state라면) "어떤 이벤트든
+  // 상세가 하나 로드될 때마다" 재실행돼, 지금 막 진행 중인 다른 이벤트의 상세 조회를
+  // 취소시킨다 — 처음에 고친 경합 버그(위 주석)가 다른 모양으로 되살아난다. 반면
+  // `loadStatus`(아래)는 렌더 중에 값을 읽어야 하는데, 렌더 중 ref 읽기는
+  // `react-hooks/refs` 규칙이 막는다(`/code-review`가 CI에서 잡아냄) — 그래서 렌더용
+  // 값만 별도로 반응형 state(`detailLoadedIds`)에 미러링한다. 둘은 상세 조회가 끝나는
+  // 같은 시점에 함께 갱신되므로 항상 같은 값을 가리킨다.
   const detailLoadedRef = useRef<Set<number>>(new Set());
+  const [detailLoadedIds, setDetailLoadedIds] = useState<Set<number>>(new Set());
 
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
@@ -244,7 +254,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 전부 지울 수 있었다(`/code-review` 발견, FE-24 ③). 상세가 실제로 온 뒤에만 'idle'로
   // 본다 — 그때까지는 'loading'이라 `EditEventPage`가 `EditorScreen` 자체를 안 그린다.
   const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
-    effectiveId != null && !isKnownLocally && !detailLoadedRef.current.has(effectiveId)
+    effectiveId != null && !isKnownLocally && !detailLoadedIds.has(effectiveId)
       ? effectiveId === notFoundId
         ? 'notfound'
         : effectiveId === errorId
@@ -386,6 +396,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       .then((real) => {
         if (cancelled) return;
         detailLoadedRef.current.add(effectiveId);
+        setDetailLoadedIds((prev) => new Set(prev).add(effectiveId));
         setS((prev) => {
           const idx = prev.events.findIndex((e) => e.id === effectiveId);
           const events = prev.events.slice();
@@ -546,6 +557,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       // 있다 — 단건 상세를 다시 조회하지 않아도 된다. 안 해두면 방금 만든 이벤트를
       // 바로 열었을 때 loadStatus가 'loading'으로 한 번 더 깜빡인다.
       detailLoadedRef.current.add(created.id);
+      setDetailLoadedIds((prev) => new Set(prev).add(created.id));
       return created.id;
     }
     const id = Date.now();
