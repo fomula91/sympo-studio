@@ -41,6 +41,15 @@ function uniquePresetId(label: string, existing: Preset[]): string {
   return `${base}-${n}`;
 }
 
+// isServerEvent가 아니면 patchEvent가 서버로 아무것도 안 보낸다(StudioProvider.tsx) — 그때
+// "저장 중"이라고 말하면 거짓이다(FE-36). isServerEvent라도 필드 변경 직후 "반영됨"류
+// 문구를 먼저 찍으면 700ms 뒤 flushServerSave가 "변경 저장 중…"으로 덮어써 순서가
+// 뒤집힌다(FE-38, /code-review가 ThemeSection에서 재발 지적) — 저장 여부를 알리는 문구는
+// 항상 이 한 판정으로 고른다. 호출부마다 따로 적으면 이번처럼 일부 자리를 빠뜨리기 쉽다.
+function savingMessage(isServerEvent: boolean): string {
+  return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
+}
+
 const MODES: { k: Mode; label: string }[] = [
   { k: 'light', label: '라이트' },
   { k: 'dark', label: '다크' },
@@ -282,11 +291,7 @@ function BasicSection({
             maxLength={200}
             onChange={(v) => {
               patchEvent({ [f.k]: v });
-              // 로컬 전용(서버 미연결) 이벤트는 flushServerSave가 안 걸려 "변경 저장
-              // 중…"이 다음 상태로 넘어갈 방법이 없다 — 영원히 그 문구에 멈춘다(FE-36).
-              // 서버로 안 나간다는 사실 자체를 문구로 바로 드러낸다(FE-34가 아젠다에
-              // 쓴 것과 같은 문구).
-              patch({ saved: isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨' });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
           />
         ))}
@@ -444,12 +449,7 @@ function EngageSection({
               className="hv-border80"
               onClick={() => {
                 patchEvent((curEv) => ({ engage: { ...curEv.engage, [t.k]: !curEv.engage[t.k] } }));
-                // 실제 PATCH는 700ms 디바운스 뒤에나 나가는데 여기서 "방금 저장됨"을
-                // 먼저 찍으면 문구 순서가 뒤집힌다(FE-38) — flushServerSave가 성공/실패로
-                // 정정할 때까지는 "저장 중"이 맞다. 로컬 전용 이벤트는 그 정정 자체가
-                // 안 걸려 "저장 중"에 영원히 멈추므로 미리 다른 문구를 쓴다(FE-36,
-                // BasicSection과 같은 판단).
-                patch({ saved: isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨' });
+                patch({ saved: savingMessage(isServerEvent) });
               }}
               style={{
                 display: 'flex',
@@ -521,6 +521,7 @@ function ThemeSection({
   presets,
   patch,
   patchEvent,
+  isServerEvent,
   showContrast,
 }: {
   s: StudioState;
@@ -528,6 +529,7 @@ function ThemeSection({
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  isServerEvent: boolean;
   showContrast: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
@@ -561,7 +563,7 @@ function ThemeSection({
     const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
     patch({ customPresets: [...s.customPresets, newPreset] });
     patchEvent({ presetId: id });
-    patch({ saved: '테마 반영됨' });
+    patch({ saved: savingMessage(isServerEvent) });
     setDraft(null);
   };
 
@@ -594,7 +596,7 @@ function ThemeSection({
               className="hv-border78"
               onClick={() => {
                 patchEvent({ presetId: p.id });
-                patch({ saved: '테마 반영됨' });
+                patch({ saved: savingMessage(isServerEvent) });
               }}
               style={{
                 display: 'flex',
@@ -753,7 +755,7 @@ function ThemeSection({
                 key={m.k}
                 onClick={() => {
                   patchEvent({ mode: m.k });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.mode === m.k)}
               >
@@ -779,7 +781,7 @@ function ThemeSection({
                 key={k}
                 onClick={() => {
                   patchEvent({ iconSet: k });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.iconSet === k)}
               >
@@ -805,7 +807,7 @@ function ThemeSection({
                 key={d}
                 onClick={() => {
                   patchEvent({ density: d });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.density === d)}
               >
@@ -825,6 +827,10 @@ function ThemeSection({
           if (f && f.type.startsWith('image')) {
             if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: URL.createObjectURL(f) });
+            // savingMessage로 안 바꾼다 — blob: URL은 detailPatchToBody가 항상 걸러내서
+            // (lib/studio-api.ts, FE-19) isServerEvent라도 이 변경은 서버로 안 나간다.
+            // "변경 저장 중…"이라고 하면 오히려 거짓이 된다 — 실제로 반영된 것(미리보기)만
+            // 정직하게 말한다.
             patch({ saved: '키 비주얼 교체됨' });
           }
         }}
@@ -878,7 +884,7 @@ function ThemeSection({
             onClick={() => {
               if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
               patchEvent({ kvPattern: p.k, keyVisual: '' });
-              patch({ saved: '키 비주얼 교체됨' });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
             style={{
               height: 44,
@@ -900,7 +906,7 @@ function ThemeSection({
           onClick={() => {
             if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: '', kvPattern: 'none' });
-            patch({ saved: '키 비주얼 비워짐' });
+            patch({ saved: savingMessage(isServerEvent) });
           }}
           style={{
             height: 44,
@@ -1087,7 +1093,15 @@ export default function EditorScreen({
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
         {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'theme' ? (
-          <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
+          <ThemeSection
+            s={s}
+            ev={ev}
+            presets={presets}
+            patch={patch}
+            patchEvent={patchEvent}
+            isServerEvent={isServerEvent}
+            showContrast
+          />
         ) : null}
         {s.section === 'basic' ? (
           <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
