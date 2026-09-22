@@ -25,7 +25,11 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     useStudio();
   const router = useRouter();
   const pathname = usePathname();
-  const [statusPending, setStatusPending] = useState(false);
+  // StudioShell은 화면 전환에도 언마운트되지 않는 공용 레이아웃이라, 진행 중인
+  // 이벤트 id를 담아 두지 않으면(그냥 boolean이면) 공개 처리 중에 다른 이벤트로
+  // 넘어갔을 때 그 이벤트의 버튼까지 엉뚱하게 비활성으로 보인다(`/code-review` 발견).
+  const [statusPendingId, setStatusPendingId] = useState<number | null>(null);
+  const statusPending = statusPendingId === ev.id;
   const [copied, setCopied] = useState(false);
   const [bulkPending, setBulkPending] = useState(false);
 
@@ -53,7 +57,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   // 그대로 두고 사유를 저장 상태 문구에 남긴다(버튼만 낙관적으로 바뀌는 일이 없게).
   const handlePublish = async () => {
     if (!canPublish || statusPending) return;
-    setStatusPending(true);
+    setStatusPendingId(ev.id);
     patch({ saved: '공개하는 중…' });
     try {
       await setEventStatus('공개');
@@ -62,13 +66,13 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       console.warn('이벤트 공개 실패:', e);
       patch({ saved: '공개하지 못했습니다 — 다시 시도해주세요' });
     } finally {
-      setStatusPending(false);
+      setStatusPendingId(null);
     }
   };
 
   const handleUnpublish = async () => {
     if (statusPending) return;
-    setStatusPending(true);
+    setStatusPendingId(ev.id);
     patch({ saved: '비공개로 전환하는 중…' });
     try {
       await setEventStatus('초안');
@@ -77,7 +81,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       console.warn('이벤트 비공개 전환 실패:', e);
       patch({ saved: '전환하지 못했습니다 — 다시 시도해주세요' });
     } finally {
-      setStatusPending(false);
+      setStatusPendingId(null);
     }
   };
 
@@ -114,7 +118,10 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     });
     patch((st) => ({
       events: st.events.map((e) => (targetIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
-      sel: [],
+      // 처리한 항목만 선택에서 뺀다 — 요청이 진행되는 동안 사용자가 선택을 바꿨다면
+      // (체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면 그 새 선택이 조용히
+      // 사라진다(`/code-review` 발견).
+      sel: st.sel.filter((id) => !targetIds.includes(id)),
       saved: failedIds.size > 0 ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요` : '일괄 반영됨',
     }));
     setBulkPending(false);

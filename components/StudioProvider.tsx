@@ -231,12 +231,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 기다릴 필요가 없다. s.events를 렌더 중에 직접 훑는다(ref로 캐싱하면 값이 바뀌어도
   // 리렌더를 안 일으켜 loadStatus가 갱신되지 않는다).
   const isKnownLocally = effectiveId != null && s.events.some((e) => e.id === effectiveId);
-  // serverIds에 있다는 건 그 뒤 fetch가 성공했다는 뜻이다 — notFoundId·errorId가 예전에
-  // 이 id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에 실제로 생긴 경우) 성공한 조회가
-  // 우선해야 한다. 그렇지 않으면 한 번 404·에러였던 id는 나중에 성공해도 이 세션
-  // 내내 그 화면에 영구히 갇힌다.
+  // detailLoadedRef(위)에 있다는 건 단건 상세 조회(세션 포함)가 성공했다는 뜻이다 —
+  // notFoundId·errorId가 예전에 이 id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에
+  // 실제로 생긴 경우) 성공한 조회가 우선해야 한다. 그렇지 않으면 한 번 404·에러였던
+  // id는 나중에 성공해도 이 세션 내내 그 화면에 영구히 갇힌다.
+  //
+  // **`serverIds`가 아니라 `detailLoadedRef`로 가른다** — 로그인 사용자는 마운트 시
+  // 목록 조회(GET /api/events, sessions 없음)만으로도 `serverIds`가 채워진다. 예전엔
+  // 그걸로 'idle'을 판정해 에디터가 곧장 렌더됐는데, 그러면 단건 상세(세션 포함)가
+  // 아직 안 왔는데도 아젠다 섹션이 빈 배열을 진짜 상태로 오해하고 편집을 받아들여,
+  // `PUT .../sessions`(배열 전체 교체 계약)가 그 빈 배열로 나가 서버의 기존 세션을
+  // 전부 지울 수 있었다(`/code-review` 발견, FE-24 ③). 상세가 실제로 온 뒤에만 'idle'로
+  // 본다 — 그때까지는 'loading'이라 `EditEventPage`가 `EditorScreen` 자체를 안 그린다.
   const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
-    effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
+    effectiveId != null && !isKnownLocally && !detailLoadedRef.current.has(effectiveId)
       ? effectiveId === notFoundId
         ? 'notfound'
         : effectiveId === errorId
@@ -305,42 +313,56 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 거절당한다(존재하지 않는 id라 UPDATE 0행이 아니라 400) — 여기 없는 id는 전부
   // null(새 행)로 보내 서버가 실제 id를 새로 발급하게 한다.
   const knownSessionIdsRef = useRef<Map<number, Set<number>>>(new Map());
+  // 이벤트별로 세션 저장 요청을 직렬화한다 — 디바운스는 "연달아 편집하는 동안"만
+  // 막아준다. 느린 네트워크에서 A 저장이 응답을 기다리는 사이 사용자가 또 편집하면
+  // 새 타이머가 독립적으로 잡혀 B가 A와 겹쳐 나갈 수 있다. 겹치면 A의 응답이 B가
+  // 이미 반영한 로컬 편집을 화면에서 덮어쓰고, B는 A가 방금 실제 id를 발급한
+  // 세션을 여전히 옛 임시 id로 들고 있어 "모르는 id"로 오인해 **같은 세션을 중복
+  // 삽입**한다(`/code-review` 발견). 이전 저장이 끝난 뒤에만 다음 저장이 시작되도록
+  // Promise 체인으로 묶고, 보낼 배열은 스케줄된 시점이 아니라 **실행 시점**에
+  // 다시 읽는다 — 그래야 앞선 저장이 갱신한 `knownSessionIdsRef`를 보고 간다.
+  const sessionSaveChainRef = useRef<Map<number, Promise<void>>>(new Map());
 
   const flushSessionSave = useCallback(
     (id: number) => {
-      const sessions = pendingSessionsRef.current.get(id);
       const timer = sessionSaveTimersRef.current.get(id);
       if (timer) clearTimeout(timer);
       sessionSaveTimersRef.current.delete(id);
-      if (!sessions) return;
-      patch({ saved: '변경 저장 중…' });
-      const known = knownSessionIdsRef.current.get(id) ?? new Set<number>();
-      const body = sessions.map((s) => ({
-        id: known.has(s.id) ? s.id : null,
-        time: s.time || null,
-        title: s.title,
-        speaker: s.speaker || null,
-        kind: s.kind,
-      }));
-      putStudioEventSessions(id, body)
-        .then((serverSessions) => {
-          if (pendingSessionsRef.current.get(id) === sessions) pendingSessionsRef.current.delete(id);
-          knownSessionIdsRef.current.set(id, new Set(serverSessions.map((s) => s.id)));
-          setS((prev) => {
-            const idx = prev.events.findIndex((e) => e.id === id);
-            if (idx < 0) return prev;
-            const events = prev.events.slice();
-            events[idx] = { ...events[idx], sessions: serverSessions };
-            return { ...prev, events };
+      if (!pendingSessionsRef.current.has(id)) return;
+      const prior = sessionSaveChainRef.current.get(id) ?? Promise.resolve();
+      const run = prior.catch(() => {}).then(() => {
+        const sessions = pendingSessionsRef.current.get(id);
+        if (!sessions) return;
+        patch({ saved: '변경 저장 중…' });
+        const known = knownSessionIdsRef.current.get(id) ?? new Set<number>();
+        const body = sessions.map((s) => ({
+          id: known.has(s.id) ? s.id : null,
+          time: s.time || null,
+          title: s.title,
+          speaker: s.speaker || null,
+          kind: s.kind,
+        }));
+        return putStudioEventSessions(id, body)
+          .then((serverSessions) => {
+            if (pendingSessionsRef.current.get(id) === sessions) pendingSessionsRef.current.delete(id);
+            knownSessionIdsRef.current.set(id, new Set(serverSessions.map((s) => s.id)));
+            setS((prev) => {
+              const idx = prev.events.findIndex((e) => e.id === id);
+              if (idx < 0) return prev;
+              const events = prev.events.slice();
+              events[idx] = { ...events[idx], sessions: serverSessions };
+              return { ...prev, events };
+            });
+            patch({ saved: '방금 저장됨' });
+          })
+          .catch((e) => {
+            console.warn('아젠다 저장 실패:', e);
+            patch({ saved: '아젠다 저장 실패 — 다시 시도해주세요' });
+            // 필드 저장과 같은 이유로 큐에서 지우지 않는다 — 다음 아젠다 편집이 최신
+            // 배열로 다시 덮어써 재시도된다.
           });
-          patch({ saved: '방금 저장됨' });
-        })
-        .catch((e) => {
-          console.warn('아젠다 저장 실패:', e);
-          patch({ saved: '아젠다 저장 실패 — 다시 시도해주세요' });
-          // 필드 저장과 같은 이유로 큐에서 지우지 않는다 — 다음 아젠다 편집이 최신
-          // 배열로 다시 덮어써 재시도된다.
-        });
+      });
+      sessionSaveChainRef.current.set(id, run);
     },
     [patch],
   );
@@ -479,17 +501,19 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [effectiveId, serverIds, ev, flushServerSave, flushSessionSave],
   );
 
+  // patchEvent를 통해 되돌린다 — 직접 setS만 하면 서버 이벤트에서 두 가지가
+  // 어긋난다(`/code-review` 발견). ① 이 되돌리기 직전에 있던 아젠다 편집이 이미
+  // 세션 저장 큐(`pendingSessionsRef`)에 대기 중이었다면 그 타이머가 그대로 살아남아
+  // 되돌린 뒤에도 "되돌리기 전" 배열을 서버로 보낸다. ② 되돌리기 자체도 로컬에서만
+  // 일어나 서버엔 반영되지 않는다 — 새로고침하면 되돌리기 전 상태가 다시 나온다.
+  // patchEvent를 쓰면 두 문제 다 같은 메커니즘(최신 배열로 큐를 덮어쓰고 타이머를
+  // 리셋)으로 풀린다.
   const resetSessions = useCallback(() => {
-    setS((prev) => {
-      if (effectiveId == null) return prev;
-      const baseline = baselineRef.current.get(effectiveId);
-      const idx = prev.events.findIndex((e) => e.id === effectiveId);
-      if (!baseline || idx < 0) return prev;
-      const events = prev.events.slice();
-      events[idx] = { ...events[idx], sessions: baseline.slice() };
-      return { ...prev, events };
-    });
-  }, [effectiveId]);
+    if (effectiveId == null) return;
+    const baseline = baselineRef.current.get(effectiveId);
+    if (!baseline) return;
+    patchEvent({ sessions: baseline.slice() });
+  }, [effectiveId, patchEvent]);
 
   // FE-15 — 로그아웃하면 게스트로 돌아간다. 서버 목록을 지우고 localStorage
   // 워크스페이스를(있으면) 다시 읽어온다 — 로그인 전과 같은 경로다.
@@ -518,6 +542,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       });
       setS((prev) => ({ ...prev, events: [created, ...prev.events], section: 'basic' }));
       setServerIds((prev) => new Set(prev).add(created.id));
+      // 생성 응답에 이미 완전한 상세(세션 포함, 새 이벤트라 당연히 빈 배열)가 실려
+      // 있다 — 단건 상세를 다시 조회하지 않아도 된다. 안 해두면 방금 만든 이벤트를
+      // 바로 열었을 때 loadStatus가 'loading'으로 한 번 더 깜빡인다.
+      detailLoadedRef.current.add(created.id);
       return created.id;
     }
     const id = Date.now();
