@@ -292,19 +292,25 @@ function BasicSection({
         description="한 문자열에 인코딩되어 있던 제목을 필드로 분해했습니다. 슬러그는 자동 생성되고 중복을 검사합니다."
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {FIELD_DEFS.map((f) => (
-          <TextInput
-            key={f.k}
-            label={f.label}
-            hint={f.hint}
-            value={ev[f.k]}
-            maxLength={200}
-            onChange={(v) => {
-              patchEvent({ [f.k]: v });
-              patch({ saved: savingMessage(isServerEvent) });
-            }}
-          />
-        ))}
+        {FIELD_DEFS.map((f) => {
+          // FE-45: 브랜드명이 비어있거나 생성 시 임시로 채워진 기본값("새 이벤트") 그대로면
+          // 참가자 화면에 그 값이 그대로 노출된다(FE-37) — 에디터에서 눈에 띄게 알려준다.
+          const brandNeedsInput = f.k === 'brand' && (ev.brand === '' || ev.brand === '새 이벤트');
+          return (
+            <TextInput
+              key={f.k}
+              label={f.label}
+              hint={brandNeedsInput ? '참가자에게 표시될 브랜드명을 입력해 주세요' : f.hint}
+              warn={brandNeedsInput}
+              value={ev[f.k]}
+              maxLength={200}
+              onChange={(v) => {
+                patchEvent({ [f.k]: v });
+                patch({ saved: savingMessage(isServerEvent) });
+              }}
+            />
+          );
+        })}
         <Card padding={16} radius={12}>
           <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 8 }}>
             생성될 URL

@@ -4,12 +4,14 @@ import { UI } from '@/lib/ui';
 export function TextInput({
   label,
   hint,
+  warn,
   value,
   onChange,
   maxLength,
 }: {
   label: string;
   hint?: string;
+  warn?: boolean;
   value: string;
   onChange: (v: string) => void;
   maxLength?: number;
@@ -36,7 +38,9 @@ export function TextInput({
           outline: 'none',
         }}
       />
-      {hint ? <div style={{ fontSize: 11.5, color: UI.faint, marginTop: 6 }}>{hint}</div> : null}
+      {hint ? (
+        <div style={{ fontSize: 11.5, color: warn ? UI.toneWarningFg : UI.faint, marginTop: 6 }}>{hint}</div>
+      ) : null}
     </label>
   );
 }
