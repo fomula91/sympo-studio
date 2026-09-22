@@ -1,7 +1,7 @@
 // FE-30 — 스튜디오(운영자 화면)가 실제 D1 이벤트를 읽고 쓰기 위한 클라이언트 헬퍼.
 // 참가자용 클라이언트(lib/api.ts)와 분리한다 — 인증·용도가 다르다.
 import { ApiClientError, fetchWithTimeout } from '@/lib/api';
-import type { AuthUser, EventDetail, EventItem, Session } from '@/lib/types';
+import type { AuthUser, EventDetail, EventItem, Session, StudioDocument } from '@/lib/types';
 
 async function readError(res: Response): Promise<string> {
   try {
@@ -31,8 +31,35 @@ interface EventDTO {
     kvPattern: string;
   };
   engage: { qa: boolean; survey: boolean; chat: boolean; cert: boolean };
-  // 단건 조회(GET /api/events/[id])만 세션을 함께 싣는다 — 목록·생성 응답엔 없다.
+  // 단건 조회(GET /api/events/[id])만 세션·자료를 함께 싣는다 — 목록·생성 응답엔 없다.
   sessions?: { id: number; time: string | null; title: string; speaker: string | null; kind: string }[];
+  documents?: {
+    id: number;
+    sessionId: number | null;
+    displayName: string;
+    tag: string | null;
+    status: string;
+    hasFile: boolean;
+    contentType: string | null;
+    sizeBytes: number | null;
+    pageCount: number | null;
+    uploadedAt: string | null;
+  }[];
+}
+
+function toClientDocuments(dtoDocuments: EventDTO['documents']): StudioDocument[] {
+  return (dtoDocuments ?? []).map((d) => ({
+    id: d.id,
+    sessionId: d.sessionId,
+    displayName: d.displayName,
+    tag: d.tag,
+    status: d.status,
+    hasFile: d.hasFile,
+    contentType: d.contentType,
+    sizeBytes: d.sizeBytes,
+    pageCount: d.pageCount,
+    uploadedAt: d.uploadedAt,
+  }));
 }
 
 function dtoToEventItem(dto: EventDTO): EventItem {
@@ -44,13 +71,13 @@ function dtoToEventItem(dto: EventDTO): EventItem {
     speaker: s.speaker ?? '',
     kind: s.kind,
   }));
+  const documents = toClientDocuments(dto.documents);
   return {
     id: dto.id,
     brand: dto.brand,
     status: dto.status,
     dateCode,
     slug: dto.slug,
-    docs: 0, // 자료 개수는 documents 응답에서 세야 하지만 이번 범위(제목 등 기본 필드 동기화) 밖이다.
     title: dto.title,
     venue: dto.venue ?? '',
     date: dto.date ?? '',
@@ -64,6 +91,7 @@ function dtoToEventItem(dto: EventDTO): EventItem {
     keyVisual: dto.theme.keyVisual ?? '',
     kvPattern: dto.theme.kvPattern as EventItem['kvPattern'],
     sessions,
+    documents,
   };
 }
 
@@ -102,8 +130,9 @@ export function detailPatchToBody(delta: Partial<EventDetail>): Record<string, u
   }
   if (delta.kvPattern !== undefined) body.kvPattern = delta.kvPattern;
   if (delta.engage !== undefined) body.engage = delta.engage;
-  // sessions는 여기서 다루지 않는다 — 아젠다 쓰기는 PUT /api/events/[id]/sessions로
-  // 별도 diff 계약을 쓰고, 이번 범위(연결 경로 증명)에는 포함하지 않는다.
+  // sessions·documents는 여기서 다루지 않는다 — 아젠다·자료 쓰기는 각각
+  // PUT /api/events/[id]/sessions · PUT /api/events/[id]/documents로 별도
+  // diff 계약(배열 전체 교체, id 기준)을 쓴다.
   return Object.keys(body).length ? body : null;
 }
 
@@ -120,6 +149,50 @@ export async function patchStudioEvent(id: number, delta: Partial<EventDetail>):
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
+ * PUT /api/events/[id]/documents — 자료 메타 목록 전체를 서버 상태로 맞춘다(FE-25).
+ * `id`가 `null`이면 새 행으로 INSERT된다(status는 항상 'pending'으로 시작 — 파일이
+ * 없으니까). 파일 자체는 다루지 않는다 — 업로드는 `uploadStudioDocument`가 별도로
+ * 처리한다. 응답의 확정된 목록(전부 실제 id)을 그대로 돌려준다.
+ */
+export async function putStudioEventDocuments(
+  id: number,
+  documents: { id: number | null; sessionId: number | null; displayName: string; tag: string | null }[],
+): Promise<StudioDocument[]> {
+  const res = await fetchWithTimeout(`/api/events/${id}/documents`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { documents: EventDTO['documents'] };
+  return toClientDocuments(data.documents);
+}
+
+/**
+ * PUT /api/events/[id]/documents/[docId]/upload — 자료 행에 실제 파일을 붙인다(BE-6).
+ * 본문은 파일 바이트 그대로다(멀티파트 아님) — 서버가 `Content-Length`를 요구하므로
+ * `fetch`에 `File`을 그대로 넘겨 자동으로 채워지게 한다.
+ *
+ * **`fetchWithTimeout`을 안 쓴다** — 그 8초는 작은 JSON 요청 기준이다. 현장 업로드가
+ * 이 기능의 전제인데(태블릿·행사장 와이파이, `field-experience.md`) 20MB 파일이 느린
+ * 회선에서 8초를 넘기는 건 흔한 일이다. 여기서는 브라우저의 기본 타임아웃(사실상
+ * 없음)에 맡긴다 — 진짜 끊긴 연결은 fetch 자체가 결국 에러로 끝낸다.
+ */
+export async function uploadStudioDocument(
+  eventId: number,
+  documentId: number,
+  file: File,
+): Promise<{ status: string; sizeBytes: number }> {
+  const res = await fetch(`/api/events/${eventId}/documents/${documentId}/upload`, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  return (await res.json()) as { status: string; sizeBytes: number };
 }
 
 /**

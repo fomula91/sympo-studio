@@ -251,7 +251,7 @@ export default function ConsoleScreen({
                 }}
               >
                 <div style={{ fontSize: 12, color: UI.muted }}>
-                  세션 {e.sessions.length} · 자료 {e.docs}
+                  세션 {e.sessions.length} · 자료 {e.documents.length}
                 </div>
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : UI.muted2 }}>
