@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import AccountMenu from '@/components/AccountMenu';
 import { LogoMark } from '@/components/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
@@ -14,12 +14,17 @@ import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
 const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
 
+// 참가자 화면 주소는 이 도메인 아래에 slug로 열린다(콘솔·에디터의 "생성될 URL" 표시와 동일).
+const PUBLIC_HOST = 'sympo.superjacob.com';
+
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, presets, patch, resetSessions, createEvent } = useStudio();
+  const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus } = useStudio();
   const router = useRouter();
   const pathname = usePathname();
+  const [statusPending, setStatusPending] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -39,6 +44,48 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const canPublish = contrastAllPass(preset, ev.mode);
   const openViewer = () => {
     if (canPublish) patch({ viewerOpen: true });
+  };
+
+  // FE-23 — 공개·비공개는 디바운스 없이 즉시 서버에 반영한다. 실패하면 로컬 상태는
+  // 그대로 두고 사유를 저장 상태 문구에 남긴다(버튼만 낙관적으로 바뀌는 일이 없게).
+  const handlePublish = async () => {
+    if (!canPublish || statusPending) return;
+    setStatusPending(true);
+    patch({ saved: '공개하는 중…' });
+    try {
+      await setEventStatus('공개');
+      patch({ saved: '공개됨' });
+    } catch (e) {
+      console.warn('이벤트 공개 실패:', e);
+      patch({ saved: '공개하지 못했습니다 — 다시 시도해주세요' });
+    } finally {
+      setStatusPending(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (statusPending) return;
+    setStatusPending(true);
+    patch({ saved: '비공개로 전환하는 중…' });
+    try {
+      await setEventStatus('초안');
+      patch({ saved: '비공개로 전환됨' });
+    } catch (e) {
+      console.warn('이벤트 비공개 전환 실패:', e);
+      patch({ saved: '전환하지 못했습니다 — 다시 시도해주세요' });
+    } finally {
+      setStatusPending(false);
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(`https://${PUBLIC_HOST}/${ev.slug}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      console.warn('URL 복사 실패:', e);
+    }
   };
 
   const goTo = (target: 'console' | 'editor' | 'theme' | 'report' | 'viewer') => {
@@ -226,14 +273,40 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               {!canPublish ? (
                 <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)' }}>대비비 미달로 공개할 수 없음</div>
               ) : null}
-              <button
-                className="hv-brandpress"
-                onClick={openViewer}
-                disabled={!canPublish}
-                style={{ ...primaryBtn, opacity: canPublish ? 1 : 0.4, cursor: canPublish ? 'pointer' : 'not-allowed' }}
-              >
-                공개하기
-              </button>
+              {isServerEvent && ev.status === '공개' ? (
+                <>
+                  <button
+                    className="hv-bg965"
+                    onClick={handleCopyUrl}
+                    title={`https://${PUBLIC_HOST}/${ev.slug}`}
+                    style={{ ...ghostBtn, fontFamily: MONO, fontSize: 11.5, maxWidth: 260 }}
+                  >
+                    {copied ? '복사됨' : `${PUBLIC_HOST}/${ev.slug}`}
+                  </button>
+                  <button
+                    className="hv-bg965"
+                    onClick={handleUnpublish}
+                    disabled={statusPending}
+                    style={{ ...ghostBtn, opacity: statusPending ? 0.5 : 1, cursor: statusPending ? 'not-allowed' : 'pointer' }}
+                  >
+                    비공개로 전환
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="hv-brandpress"
+                  onClick={isServerEvent ? handlePublish : undefined}
+                  disabled={!canPublish || !isServerEvent || statusPending}
+                  title={!isServerEvent ? '로그인해야 실제로 공개할 수 있어요' : undefined}
+                  style={{
+                    ...primaryBtn,
+                    opacity: canPublish && isServerEvent && !statusPending ? 1 : 0.4,
+                    cursor: canPublish && isServerEvent && !statusPending ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  공개하기
+                </button>
+              )}
             </div>
           ) : null}
           {screenKind === 'console' ? (

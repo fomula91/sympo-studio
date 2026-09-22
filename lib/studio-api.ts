@@ -123,6 +123,20 @@ export async function patchStudioEvent(id: number, delta: Partial<EventDetail>):
 }
 
 /**
+ * PATCH /api/events/[id] — 발행 상태만 즉시 바꾼다(FE-23·24).
+ * `status`는 `EventDetail`에 없어 `patchStudioEvent`의 델타 경로(디바운스)를 안 탄다 —
+ * 공개·비공개·보관 전환은 사람이 버튼을 누른 순간 바로 서버에 반영돼야 한다.
+ */
+export async function patchStudioEventStatus(id: number, status: string): Promise<void> {
+  const res = await fetchWithTimeout(`/api/events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
  * GET /api/auth/me — 현재 로그인 사용자(FE-15). 비로그인은 200 + `user: null`이라
  * 예외를 던지지 않는다(ADR 0007) — 게스트가 정상 상태다.
  */

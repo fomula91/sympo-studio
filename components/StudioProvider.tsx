@@ -12,7 +12,9 @@ import {
   fetchStudioEvents,
   logoutStudioUser,
   patchStudioEvent,
+  patchStudioEventStatus,
 } from '@/lib/studio-api';
+import type { EventStatus } from '@/lib/status';
 import { PRESETS } from '@/lib/theme';
 import type {
   AuthUser,
@@ -91,6 +93,12 @@ interface StudioContextValue {
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
+  // 지금 보고 있는 이벤트가 실제 D1에 연결돼 있는가 — 로컬 전용(게스트·시드)이면 false.
+  // 공개·비공개 전환(FE-23)은 서버 이벤트에서만 의미가 있다.
+  isServerEvent: boolean;
+  // 발행 상태만 즉시 PATCH한다(디바운스 없음) — 실패하면 throw, 로컬 상태는 안 바뀐다.
+  // 서버 이벤트가 아닐 때 부르면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
+  setEventStatus: (status: EventStatus) => Promise<void>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -442,6 +450,24 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return id;
   }, [user]);
 
+  const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
+
+  const setEventStatus = useCallback(
+    async (status: EventStatus): Promise<void> => {
+      if (effectiveId == null || !serverIds.has(effectiveId)) return;
+      await patchStudioEventStatus(effectiveId, status);
+      const id = effectiveId;
+      setS((prev) => {
+        const idx = prev.events.findIndex((e) => e.id === id);
+        if (idx < 0) return prev;
+        const events = prev.events.slice();
+        events[idx] = { ...events[idx], status };
+        return { ...prev, events };
+      });
+    },
+    [effectiveId, serverIds],
+  );
+
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
   const value = useMemo(
     () => ({
@@ -456,8 +482,24 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       authStatus,
       logout,
       createEvent,
+      isServerEvent,
+      setEventStatus,
     }),
-    [s, ev, presets, patch, patchEvent, resetSessions, loadStatus, user, authStatus, logout, createEvent],
+    [
+      s,
+      ev,
+      presets,
+      patch,
+      patchEvent,
+      resetSessions,
+      loadStatus,
+      user,
+      authStatus,
+      logout,
+      createEvent,
+      isServerEvent,
+      setEventStatus,
+    ],
   );
 
   return <StudioContext.Provider value={value}>{children}</StudioContext.Provider>;
