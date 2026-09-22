@@ -9,7 +9,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type {
   Density,
   Device,
@@ -48,6 +48,16 @@ function uniquePresetId(label: string, existing: Preset[]): string {
 // 항상 이 한 판정으로 고른다. 호출부마다 따로 적으면 이번처럼 일부 자리를 빠뜨리기 쉽다.
 function savingMessage(isServerEvent: boolean): string {
   return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
+}
+
+// StudioProvider.tsx의 patchEvent는 커스텀(내장이 아닌) presetId를 서버로 보내기
+// 직전에 지운다(남의 프리셋 id를 추측해 붙이는 걸 막는 가드, BE-25 경계) — 그 델타가
+// presetId 하나뿐이면 보낼 게 없어(detailPatchToBody가 null) PATCH 자체가 안 걸리고
+// flushServerSave도 영영 안 불린다. isServerEvent만 보고 "변경 저장 중…"을 찍으면
+// 이 경우 그 문구에 영영 멈춘다(/code-review 지적) — 프리셋을 고를 때는 내장인지도
+// 함께 확인한다.
+function isBuiltInPreset(presetId: string): boolean {
+  return PRESETS.some((p) => p.id === presetId);
 }
 
 const MODES: { k: Mode; label: string }[] = [
@@ -563,7 +573,8 @@ function ThemeSection({
     const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
     patch({ customPresets: [...s.customPresets, newPreset] });
     patchEvent({ presetId: id });
-    patch({ saved: savingMessage(isServerEvent) });
+    // 방금 만든 프리셋은 항상 커스텀(내장 아님) — isBuiltInPreset(id)는 늘 거짓이다.
+    patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(id)) });
     setDraft(null);
   };
 
@@ -596,7 +607,7 @@ function ThemeSection({
               className="hv-border78"
               onClick={() => {
                 patchEvent({ presetId: p.id });
-                patch({ saved: savingMessage(isServerEvent) });
+                patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(p.id)) });
               }}
               style={{
                 display: 'flex',
