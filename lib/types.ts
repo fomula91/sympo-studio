@@ -15,6 +15,7 @@ export type Device = 'mobile' | 'tablet';
 
 export interface EventDetail {
   title: string;
+  brand: string;
   venue: string;
   date: string;
   host: string;
@@ -32,7 +33,6 @@ export interface EventDetail {
 
 export interface EventItem extends EventDetail {
   id: number;
-  brand: string;
   status: string;
   dateCode: string;
   slug: string;

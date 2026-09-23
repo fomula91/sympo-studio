@@ -35,7 +35,9 @@ export const GET = withRoute(async (request: NextRequest) => {
 
   /** 이 브라우저가 시작한 로그인이 확실할 때만 쓴다 — 단기 쿠키를 만료시킨다. */
   const fail = (reason: string) => {
-    const headers = new Headers({ Location: `/console?auth=${reason}` });
+    // `back`은 이미 safeNextPath로 검증됐다 — 실패해도 원래 돌아갈 곳을 잃지 않도록
+    // 함께 실어 보낸다(/console 화면의 "다시 시도"가 이걸 next=로 다시 쓴다).
+    const headers = new Headers({ Location: `/console?auth=${reason}&next=${encodeURIComponent(back)}` });
     headers.append('Set-Cookie', expire(names.state));
     headers.append('Set-Cookie', expire(names.redirect));
     return new Response(null, { status: 302, headers });

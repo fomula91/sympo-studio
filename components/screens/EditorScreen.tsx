@@ -10,7 +10,7 @@ import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type {
   Density,
   Device,
@@ -41,6 +41,25 @@ function uniquePresetId(label: string, existing: Preset[]): string {
   let n = 2;
   while (existing.some((p) => p.id === `${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+// isServerEvent가 아니면 patchEvent가 서버로 아무것도 안 보낸다(StudioProvider.tsx) — 그때
+// "저장 중"이라고 말하면 거짓이다(FE-36). isServerEvent라도 필드 변경 직후 "반영됨"류
+// 문구를 먼저 찍으면 700ms 뒤 flushServerSave가 "변경 저장 중…"으로 덮어써 순서가
+// 뒤집힌다(FE-38, /code-review가 ThemeSection에서 재발 지적) — 저장 여부를 알리는 문구는
+// 항상 이 한 판정으로 고른다. 호출부마다 따로 적으면 이번처럼 일부 자리를 빠뜨리기 쉽다.
+function savingMessage(isServerEvent: boolean): string {
+  return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
+}
+
+// StudioProvider.tsx의 patchEvent는 커스텀(내장이 아닌) presetId를 서버로 보내기
+// 직전에 지운다(남의 프리셋 id를 추측해 붙이는 걸 막는 가드, BE-25 경계) — 그 델타가
+// presetId 하나뿐이면 보낼 게 없어(detailPatchToBody가 null) PATCH 자체가 안 걸리고
+// flushServerSave도 영영 안 불린다. isServerEvent만 보고 "변경 저장 중…"을 찍으면
+// 이 경우 그 문구에 영영 멈춘다(/code-review 지적) — 프리셋을 고를 때는 내장인지도
+// 함께 확인한다.
+function isBuiltInPreset(presetId: string): boolean {
+  return PRESETS.some((p) => p.id === presetId);
 }
 
 const MODES: { k: Mode; label: string }[] = [
@@ -257,7 +276,17 @@ function AgendaSection({
   );
 }
 
-function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+function BasicSection({
+  ev,
+  patch,
+  patchEvent,
+  isServerEvent,
+}: {
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  isServerEvent: boolean;
+}) {
   return (
     <div style={{ maxWidth: 600 }}>
       <SectionTitle
@@ -274,7 +303,7 @@ function BasicSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn
             maxLength={200}
             onChange={(v) => {
               patchEvent({ [f.k]: v });
-              patch({ saved: '변경 저장 중…' });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
           />
         ))}
@@ -539,7 +568,17 @@ function DocsSection({
   );
 }
 
-function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchFn; patchEvent: PatchEventFn }) {
+function EngageSection({
+  ev,
+  patch,
+  patchEvent,
+  isServerEvent,
+}: {
+  ev: EventItem;
+  patch: PatchFn;
+  patchEvent: PatchEventFn;
+  isServerEvent: boolean;
+}) {
   const [generating, setGenerating] = useState(false);
   const [certError, setCertError] = useState<string | null>(null);
 
@@ -567,7 +606,7 @@ function EngageSection({ ev, patch, patchEvent }: { ev: EventItem; patch: PatchF
               className="hv-border80"
               onClick={() => {
                 patchEvent((curEv) => ({ engage: { ...curEv.engage, [t.k]: !curEv.engage[t.k] } }));
-                patch({ saved: '방금 저장됨' });
+                patch({ saved: savingMessage(isServerEvent) });
               }}
               style={{
                 display: 'flex',
@@ -639,6 +678,7 @@ function ThemeSection({
   presets,
   patch,
   patchEvent,
+  isServerEvent,
   showContrast,
 }: {
   s: StudioState;
@@ -646,6 +686,7 @@ function ThemeSection({
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  isServerEvent: boolean;
   showContrast: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
@@ -679,7 +720,8 @@ function ThemeSection({
     const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
     patch({ customPresets: [...s.customPresets, newPreset] });
     patchEvent({ presetId: id });
-    patch({ saved: '테마 반영됨' });
+    // 방금 만든 프리셋은 항상 커스텀(내장 아님) — isBuiltInPreset(id)는 늘 거짓이다.
+    patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(id)) });
     setDraft(null);
   };
 
@@ -712,7 +754,7 @@ function ThemeSection({
               className="hv-border78"
               onClick={() => {
                 patchEvent({ presetId: p.id });
-                patch({ saved: '테마 반영됨' });
+                patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(p.id)) });
               }}
               style={{
                 display: 'flex',
@@ -871,7 +913,7 @@ function ThemeSection({
                 key={m.k}
                 onClick={() => {
                   patchEvent({ mode: m.k });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.mode === m.k)}
               >
@@ -897,7 +939,7 @@ function ThemeSection({
                 key={k}
                 onClick={() => {
                   patchEvent({ iconSet: k });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.iconSet === k)}
               >
@@ -923,7 +965,7 @@ function ThemeSection({
                 key={d}
                 onClick={() => {
                   patchEvent({ density: d });
-                  patch({ saved: '테마 반영됨' });
+                  patch({ saved: savingMessage(isServerEvent) });
                 }}
                 style={seg(ev.density === d)}
               >
@@ -943,6 +985,10 @@ function ThemeSection({
           if (f && f.type.startsWith('image')) {
             if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: URL.createObjectURL(f) });
+            // savingMessage로 안 바꾼다 — blob: URL은 detailPatchToBody가 항상 걸러내서
+            // (lib/studio-api.ts, FE-19) isServerEvent라도 이 변경은 서버로 안 나간다.
+            // "변경 저장 중…"이라고 하면 오히려 거짓이 된다 — 실제로 반영된 것(미리보기)만
+            // 정직하게 말한다.
             patch({ saved: '키 비주얼 교체됨' });
           }
         }}
@@ -996,7 +1042,7 @@ function ThemeSection({
             onClick={() => {
               if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
               patchEvent({ kvPattern: p.k, keyVisual: '' });
-              patch({ saved: '키 비주얼 교체됨' });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
             style={{
               height: 44,
@@ -1018,7 +1064,7 @@ function ThemeSection({
           onClick={() => {
             if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
             patchEvent({ keyVisual: '', kvPattern: 'none' });
-            patch({ saved: '키 비주얼 비워짐' });
+            patch({ saved: savingMessage(isServerEvent) });
           }}
           style={{
             height: 44,
@@ -1226,9 +1272,19 @@ export default function EditorScreen({
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
         {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
         {s.section === 'theme' ? (
-          <ThemeSection s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} showContrast />
+          <ThemeSection
+            s={s}
+            ev={ev}
+            presets={presets}
+            patch={patch}
+            patchEvent={patchEvent}
+            isServerEvent={isServerEvent}
+            showContrast
+          />
         ) : null}
-        {s.section === 'basic' ? <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'basic' ? (
+          <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
         {s.section === 'docs' ? (
           <DocsSection
             ev={ev}
@@ -1237,7 +1293,9 @@ export default function EditorScreen({
             removeDocument={removeDocument}
           />
         ) : null}
-        {s.section === 'engage' ? <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'engage' ? (
+          <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
       </div>
 
       <div
