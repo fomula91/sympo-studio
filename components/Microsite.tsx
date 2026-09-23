@@ -113,6 +113,19 @@ export default function Microsite({
       if (requestIdRef.current === requestId) setLoadingDocId(null);
     }
   }
+
+  // 탭 전환 자체를 여기서 다룬다 — 자료 탭을 벗어날 때 대기 중인 서명 URL 요청을
+  // 무효화한다(코드 리뷰 발견). 안 그러면 자료를 누르고 응답을 기다리는 사이 다른
+  // 탭으로 넘어가도 요청은 계속 유효해서, 뒤늦게 도착한 응답이 지금 보고 있는(자료가
+  // 아닌) 탭 위에 PDF 뷰어를 불쑥 띄운다 — requestIdRef를 올리면 위 openDocument의
+  // "이미 낡은 응답" 판정(FE-32)에 그대로 걸려 무시된다.
+  function changeTab(key: (typeof TABS)[number]['key']) {
+    setActiveTab(key);
+    if (key !== 'docs') {
+      requestIdRef.current++;
+      setLoadingDocId(null);
+    }
+  }
   const agendaRef = useRef<HTMLOListElement>(null);
   // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
   // seen을 effect 안에 두면 그때마다 초기화돼 이미 본 세션을 다시 화면에 노출된 것으로 오인해
@@ -294,6 +307,19 @@ export default function Microsite({
       </div>
 
       <div
+        role="tablist"
+        aria-label="참가자 화면 섹션"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          const idx = TABS.findIndex((tab) => tab.key === activeTab);
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const next = TABS[(idx + dir + TABS.length) % TABS.length];
+          changeTab(next.key);
+          // 포커스도 같이 옮겨야 화살표를 계속 눌러 다음 탭으로 이어갈 수 있다 —
+          // activeTab만 바꾸면 포커스는 이전 탭 버튼에 그대로 남는다.
+          (e.currentTarget.querySelector(`#tab-${next.key}`) as HTMLElement | null)?.focus();
+        }}
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
@@ -309,8 +335,13 @@ export default function Microsite({
           return (
             <button
               key={tab.key}
+              id={`tab-${tab.key}`}
               type="button"
-              onClick={() => setActiveTab(tab.key)}
+              role="tab"
+              aria-selected={on}
+              aria-controls={`panel-${tab.key}`}
+              tabIndex={on ? 0 : -1}
+              onClick={() => changeTab(tab.key)}
               style={{
                 height: 60,
                 display: 'flex',
@@ -349,7 +380,12 @@ export default function Microsite({
           margin: '0 auto',
         }}
       >
-        <div style={{ display: activeTab === 'agenda' ? undefined : 'none' }}>
+        <div
+          role="tabpanel"
+          id="panel-agenda"
+          aria-labelledby="tab-agenda"
+          style={{ display: activeTab === 'agenda' ? undefined : 'none' }}
+        >
         <div style={sectionLabel}>아젠다</div>
         <ol
           ref={agendaRef}
@@ -424,7 +460,12 @@ export default function Microsite({
         </ol>
         </div>
 
-        <div style={{ display: activeTab === 'docs' ? undefined : 'none' }}>
+        <div
+          role="tabpanel"
+          id="panel-docs"
+          aria-labelledby="tab-docs"
+          style={{ display: activeTab === 'docs' ? undefined : 'none' }}
+        >
         <div style={sectionLabel}>자료</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
           {docs.length === 0 ? (
@@ -502,7 +543,12 @@ export default function Microsite({
         </div>
 
         {ev.engage.qa !== false ? (
-        <div style={{ display: activeTab === 'qa' ? undefined : 'none' }}>
+        <div
+          role="tabpanel"
+          id="panel-qa"
+          aria-labelledby="tab-qa"
+          style={{ display: activeTab === 'qa' ? undefined : 'none' }}
+        >
         {offlineBanner}
         {(preview ? (
             <div
@@ -525,7 +571,7 @@ export default function Microsite({
               질문 남기기 (미리보기 — 참가자 페이지에서만 동작)
             </div>
           ) : qaOpen && eventId != null ? (
-            <QaPanel theme={t} online={online} eventId={eventId} />
+            <QaPanel theme={t} online={online} eventId={eventId} active={activeTab === 'qa'} />
           ) : (
             <button
               type="button"
@@ -553,7 +599,12 @@ export default function Microsite({
         </div>
         ) : null}
         {ev.engage.survey !== false ? (
-        <div style={{ display: activeTab === 'survey' ? undefined : 'none' }}>
+        <div
+          role="tabpanel"
+          id="panel-survey"
+          aria-labelledby="tab-survey"
+          style={{ display: activeTab === 'survey' ? undefined : 'none' }}
+        >
         {offlineBanner}
         {(preview ? (
             <div
