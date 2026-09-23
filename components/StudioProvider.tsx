@@ -94,8 +94,10 @@ interface StudioContextValue {
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
-  // 지금 보고 있는 이벤트가 실제 D1에 연결돼 있는가 — 로컬 전용(게스트·시드)이면 false.
-  // 공개·비공개 전환(FE-23)은 서버 이벤트에서만 의미가 있다.
+  // 지금 보고 있는 이벤트가 실제 D1에 연결돼 있는가 — 로컬 전용(게스트·시드)이면
+  // false. patchEvent가 실제로 서버에 쓰는지와 같은 판정이라 화면이 "저장 중" 문구를
+  // 정직하게 고를 때도 쓰고(FE-36), 공개·비공개 전환(FE-23)도 서버 이벤트에서만
+  // 의미가 있어 이 값으로 가른다.
   isServerEvent: boolean;
   // 발행 상태만 즉시 PATCH한다(디바운스 없음) — 실패하면 throw, 로컬 상태는 안 바뀐다.
   // 서버 이벤트가 아닐 때 부르면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
@@ -156,6 +158,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 서버로도 PATCH를 보낸다(그 밖은 지금처럼 로컬 목업으로 남는다). 세션(아젠다)
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가 — patchEvent 내부 판정과 같은
+  // 식이다(FE-36). 화면(EditorScreen)이 "변경 저장 중…"을 쓸지 "미리보기에만
+  // 반영됨"을 쓸지 이걸로 가른다. patchEvent(아래)의 의존성 배열이 이 값을 참조하므로
+  // 그보다 앞서 선언해야 한다.
+  const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
+
   // "이 id가 실제 서버 이벤트로 확인됐다"(serverIds, 목록 조회만으로도 채워진다)와
   // "이 id의 전체 상세(세션 포함)를 실제로 불러왔다"는 다른 사실이다 — 목록 응답엔
   // sessions가 없다(단건 조회만 싣는다, GET /api/events/[id]). 아래에서 둘 다 쓴다.
@@ -485,7 +493,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
-      const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
       setS((prev) => {
         const idx = prev.events.findIndex((e) => e.id === effectiveId);
         if (idx < 0) return prev;
@@ -558,7 +565,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave, flushSessionSave],
+    [effectiveId, ev, flushServerSave, flushSessionSave, isServerEvent],
   );
 
   // patchEvent를 통해 되돌린다 — 직접 setS만 하면 서버 이벤트에서 두 가지가
@@ -591,8 +598,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const createEvent = useCallback(async (): Promise<number> => {
     const detail = defaultEventDetail();
     if (user) {
-      // 이 범위엔 브랜드명을 따로 입력하는 필드가 없다 — 제목으로 채운다(FE-37류
-      // 갭과는 별개로, 서버가 brand를 필수로 요구해서 생긴 임시 결정).
+      // 생성 시점엔 여전히 제목으로 채운다 — 서버가 brand를 빈 문자열이면 필수
+      // 위반으로 거절해서(app/api/events/route.ts), 폼 없이 부르는 이 생성 경로에선
+      // 뭔가를 채워 보내야 한다. 에디터 기본 정보에 브랜드명 필드가 생겨(FE-42)
+      // 생성 직후 바로 고칠 수 있으니, 그걸로 이 임시값을 대신한다.
       const created = await createStudioEvent({
         brand: detail.title,
         title: detail.title,
@@ -633,8 +642,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return id;
   }, [user]);
 
-  const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
-
   const setEventStatus = useCallback(
     async (status: EventStatus): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
@@ -665,13 +672,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       presets,
       patch,
       patchEvent,
+      isServerEvent,
       resetSessions,
       loadStatus,
       user,
       authStatus,
       logout,
       createEvent,
-      isServerEvent,
       setEventStatus,
       serverIds,
     }),
@@ -681,13 +688,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       presets,
       patch,
       patchEvent,
+      isServerEvent,
       resetSessions,
       loadStatus,
       user,
       authStatus,
       logout,
       createEvent,
-      isServerEvent,
       setEventStatus,
       serverIds,
     ],

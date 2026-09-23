@@ -1,6 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
@@ -9,10 +10,83 @@ import { eventPhase } from '@/lib/status';
 import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
+// 로그인 라우트(/api/auth/google·/api/auth/callback/google)가 실패를 리다이렉트로
+// 알려줄 때 쓰는 사유 코드 → 화면 문구. URL엔 사유 코드만 싣고 문구는 여기서 정한다.
+const AUTH_ERROR_MESSAGE: Record<string, string> = {
+  cancelled: '로그인을 취소했습니다.',
+  failed: '로그인에 실패했습니다. 다시 시도해 주세요.',
+  config_error: 'Google 로그인이 아직 설정되지 않았습니다. 관리자에게 문의해 주세요.',
+};
 // 발행 상태 4종의 톤(BE-23) — 행사 시점('당일'·'종료')은 별도 축이라 배지를 나눠 그린다(phasePillStyle).
 // 초안은 이전 pillStyle과 정확히 같은 값(UI.muted)이고, 보관은 근접한 값(UI.faint, L 0.62 —
 // 이전 리터럴은 0.66)으로 통일했다 — 육안 차이 없음(/code-review 2026-09-21이 지적).
 const STATUS_TONE: Record<string, BadgeTone> = { 공개: 'success', 초안: 'muted', 보관: 'faint' };
+
+// `useSearchParams()`를 쓰는 부분만 따로 떼어 Suspense 경계도 이 컴포넌트 하나로 좁힌다 —
+// ConsoleScreen 전체를 감싸면 정적 프리렌더가 통째로 빈 셸이 된다(팀원 리뷰, PR #59).
+function AuthErrorBanner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // authError를 렌더마다 searchParams에서 직접 파생시키면, 아래 effect가 쿼리를
+  // 지우는 순간 배너도 같이 사라진다(≈150ms만 노출, 팀원 실측). 첫 값을 state로
+  // 붙잡아 URL 정리와 배너 노출을 분리한다.
+  const [authError] = useState(() => searchParams.get('auth'));
+  // 콜백 실패 리다이렉트가 원래 복귀 경로를 next=로 함께 실어 보낸다 — 재시도
+  // 링크도 그 경로로 다시 로그인해야 에디터 등에서 실패한 사용자가 재시도 후
+  // 콘솔로 튕기지 않는다(팀원 리뷰).
+  const [returnTo] = useState(() => searchParams.get('next'));
+  useEffect(() => {
+    if (searchParams.get('auth')) router.replace('/console');
+  }, [searchParams, router]);
+  if (!authError) return null;
+  // 객체 리터럴을 authError로 바로 인덱싱하면 '__proto__' 같은 값이 상속된
+  // 프로퍼티(빈 객체가 아닌 Object.prototype)를 반환해 렌더가 깨진다(팀원 실측,
+  // /console?auth=__proto__) — 등록된 사유인지 먼저 확인한다.
+  const message = Object.hasOwn(AUTH_ERROR_MESSAGE, authError)
+    ? AUTH_ERROR_MESSAGE[authError]
+    : '로그인 중 문제가 발생했습니다.';
+  // 취소는 사용자의 선택이지 오류가 아니다 — 빨간 배너·role="alert"로 보이면 안 된다(팀원 리뷰).
+  const cancelled = authError === 'cancelled';
+  return (
+    <div
+      role={cancelled ? 'status' : 'alert'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 14,
+        padding: '10px 16px',
+        borderRadius: 12,
+        background: cancelled ? UI.soft : UI.toneDangerBg,
+        border: cancelled ? `1px solid ${UI.line}` : undefined,
+        fontSize: 12.5,
+        color: cancelled ? UI.muted2 : UI.toneDangerFg,
+      }}
+    >
+      <div
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 99,
+          background: cancelled ? UI.faint : UI.toneDangerFg,
+          flex: '0 0 6px',
+        }}
+      />
+      {message}
+      <a
+        href={`/api/auth/google?next=${encodeURIComponent(returnTo ?? '/console')}`}
+        style={{
+          color: cancelled ? UI.muted2 : UI.toneDangerFg,
+          textDecoration: 'underline',
+          fontWeight: 600,
+          marginLeft: 2,
+        }}
+      >
+        다시 시도
+      </a>
+    </div>
+  );
+}
 
 export function filterEvents(s: StudioState) {
   const q = s.query.trim().toLowerCase();
@@ -42,6 +116,9 @@ export default function ConsoleScreen({
 
   return (
     <div style={{ padding: '24px 24px 120px', maxWidth: 1400 }}>
+      <Suspense fallback={null}>
+        <AuthErrorBanner />
+      </Suspense>
       {authStatus === 'ready' && !user ? (
         <div
           style={{
