@@ -55,6 +55,16 @@ export default function Microsite({
   wide = false,
 }: MicrositeProps) {
   const online = useOnlineStatus();
+  // 탭바가 실제로 전환되게 한다(FE-17) — 예전엔 onClick이 아예 없어 첫 탭만 항상
+  // "활성" 스타일이고 아래엔 네 섹션이 한 페이지에 죽 이어져 있었다. 꺼진 engage
+  // 토글의 탭은 목록 자체에서 뺀다 — 눌러도 아무 것도 없는 탭을 보여주지 않는다.
+  const TABS = [
+    { key: 'agenda' as const, label: '아젠다', glyphIndex: 0 },
+    { key: 'docs' as const, label: '자료', glyphIndex: 1 },
+    ...(ev.engage.qa !== false ? [{ key: 'qa' as const, label: 'Q&A', glyphIndex: 2 }] : []),
+    ...(ev.engage.survey !== false ? [{ key: 'survey' as const, label: '설문', glyphIndex: 3 }] : []),
+  ];
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('agenda');
   const [qaOpen, setQaOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
@@ -269,7 +279,7 @@ export default function Microsite({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
           background: t.surface,
           borderBottom: `1px solid ${t.line}`,
           position: 'sticky',
@@ -277,34 +287,42 @@ export default function Microsite({
           zIndex: 2,
         }}
       >
-        {['아젠다', '자료', 'Q&A', '설문'].map((label, i) => (
-          <div
-            key={label}
-            style={{
-              height: 60,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              cursor: 'pointer',
-              color: i === 0 ? t.brand : t.muted,
-              borderBottom: `3px solid ${i === 0 ? t.brand : 'transparent'}`,
-            }}
-          >
-            <div
+        {TABS.map((tab) => {
+          const on = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
               style={{
-                fontSize: numberIcons ? 12 : 16,
-                lineHeight: 1,
-                fontFamily: numberIcons ? MONO : 'inherit',
-                fontWeight: 700,
+                height: 60,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                fontFamily: 'inherit',
+                color: on ? t.brand : t.muted,
+                borderBottom: `3px solid ${on ? t.brand : 'transparent'}`,
               }}
             >
-              {icons[i]}
-            </div>
-            <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{label}</div>
-          </div>
-        ))}
+              <div
+                style={{
+                  fontSize: numberIcons ? 12 : 16,
+                  lineHeight: 1,
+                  fontFamily: numberIcons ? MONO : 'inherit',
+                  fontWeight: 700,
+                }}
+              >
+                {icons[tab.glyphIndex]}
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{tab.label}</div>
+            </button>
+          );
+        })}
       </div>
 
       <div
@@ -314,6 +332,7 @@ export default function Microsite({
           margin: '0 auto',
         }}
       >
+        <div style={{ display: activeTab === 'agenda' ? undefined : 'none' }}>
         <div style={sectionLabel}>아젠다</div>
         <ol
           ref={agendaRef}
@@ -386,7 +405,9 @@ export default function Microsite({
             </li>
           ))}
         </ol>
+        </div>
 
+        <div style={{ display: activeTab === 'docs' ? undefined : 'none' }}>
         <div style={sectionLabel}>자료</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
           {docs.length === 0 ? (
@@ -461,8 +482,11 @@ export default function Microsite({
             <div style={{ fontSize: 12, color: t.muted }}>{docError}</div>
           ) : null}
         </div>
+        </div>
 
-        {!preview && !online && (ev.engage.qa !== false || ev.engage.survey !== false) ? (
+        {ev.engage.qa !== false ? (
+        <div style={{ display: activeTab === 'qa' ? undefined : 'none' }}>
+        {!preview && !online ? (
           <div
             style={{
               display: 'flex',
@@ -477,8 +501,7 @@ export default function Microsite({
             오프라인 상태 — 연결되면 다시 시도하세요
           </div>
         ) : null}
-        {ev.engage.qa !== false &&
-          (preview ? (
+        {(preview ? (
             <div
               aria-disabled
               style={{
@@ -524,8 +547,26 @@ export default function Microsite({
               질문 남기기
             </button>
           ))}
-        {ev.engage.survey !== false &&
-          (preview ? (
+        </div>
+        ) : null}
+        {ev.engage.survey !== false ? (
+        <div style={{ display: activeTab === 'survey' ? undefined : 'none' }}>
+        {!preview && !online ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12.5,
+              color: t.muted,
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+            오프라인 상태 — 연결되면 다시 시도하세요
+          </div>
+        ) : null}
+        {(preview ? (
             <div
               aria-disabled
               style={{
@@ -579,6 +620,8 @@ export default function Microsite({
               설문 참여 · 2분
             </button>
           ))}
+        </div>
+        ) : null}
       </div>
       {openDoc && openDoc.url ? (
         <PdfViewer theme={t} url={openDoc.url} title={openDoc.name} onClose={() => setOpenDoc(null)} />
