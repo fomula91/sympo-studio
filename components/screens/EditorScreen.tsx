@@ -6,13 +6,15 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TextInput } from '@/components/ui/TextInput';
+import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
-import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
+import { ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
 import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type {
   Density,
   Device,
+  DocumentInfo,
   EventItem,
   IconSetId,
   KvPattern,
@@ -331,17 +333,93 @@ function BasicSection({
   );
 }
 
-function DocsSection() {
+function formatBytes(bytes: number | null): string {
+  if (bytes == null) return '';
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function DocsSection({
+  ev,
+  isServerEvent,
+  addDocument,
+  removeDocument,
+}: {
+  ev: EventItem;
+  isServerEvent: boolean;
+  addDocument: (file: File) => Promise<void>;
+  removeDocument: (docId: number) => Promise<void>;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // 드롭존 하나·삭제 버튼 하나뿐이라, 업로드·삭제 중 하나라도 진행 중이면 나머지를
+  // 막아 둘이 겹치지 않게 한다 — 자료 PUT은 전체 교체 계약이라 겹치면 나중 응답이
+  // 먼저 응답을 덮어쓸 수 있다(StudioProvider의 addDocument 주석 참조).
+  const busy = uploading || deletingId !== null;
+
+  // 한 번에 한 건만 받는다 — 여러 개를 동시에 드롭해도 첫 파일만 처리한다(단순함
+  // 우선, 완료 기준은 "등록→업로드 완주"이지 다중 업로드가 아니다).
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0 || !isServerEvent || busy) return;
+    const file = files[0];
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await addDocument(file);
+    } catch (e) {
+      console.warn('자료 업로드 실패:', e);
+      setUploadError(e instanceof ApiClientError ? e.message : '업로드하지 못했습니다 — 다시 시도해주세요.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDelete(docId: number) {
+    if (!isServerEvent || busy) return;
+    setDeletingId(docId);
+    setDeleteError(null);
+    try {
+      await removeDocument(docId);
+    } catch (e) {
+      console.warn('자료 삭제 실패:', e);
+      setDeleteError('삭제하지 못했습니다 — 다시 시도해주세요.');
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 640 }}>
       <SectionTitle
         title="자료"
-        description="강의자료와 제품소개를 한 곳에서 다룹니다. 해시 파일명 대신 표시명을 관리합니다."
+        description="강의자료와 제품소개를 한 곳에서 다룹니다. 파일명에서 표시명을 자동으로 추론합니다."
+        action={
+          isServerEvent ? (
+            <a
+              href={`/${ev.slug}/report`}
+              target="_blank"
+              rel="noreferrer"
+              className="hv-bg965"
+              style={{
+                ...ghostBtn,
+                fontWeight: 600,
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+              }}
+            >
+              리포트 보기 ↗
+            </a>
+          ) : undefined
+        }
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {DOCS.map((d) => (
+        {ev.documents.map((d) => (
           <div
-            key={d.name}
+            key={d.id}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -350,6 +428,7 @@ function DocsSection() {
               border: `1px solid ${UI.line}`,
               borderRadius: 12,
               padding: '12px 14px',
+              opacity: deletingId === d.id ? 0.5 : 1,
             }}
           >
             <div
@@ -380,42 +459,110 @@ function DocsSection() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {d.name}
+                {d.displayName}
               </div>
               <div style={{ fontFamily: MONO, fontSize: 11, color: UI.faint, marginTop: 3 }}>
-                {d.meta}
+                {d.status === 'pending' ? '준비 중' : formatBytes(d.sizeBytes)}
               </div>
             </div>
-            <div
+            {d.tag ? (
+              <div
+                style={{
+                  flex: '0 0 auto',
+                  padding: '5px 10px',
+                  borderRadius: 7,
+                  fontSize: 11,
+                  fontWeight: 650,
+                  background: UI.soft,
+                  color: UI.muted2,
+                }}
+              >
+                {d.tag}
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="hv-x"
+              onClick={() => void handleDelete(d.id)}
+              disabled={!isServerEvent || busy}
+              aria-label={`${d.displayName} 삭제`}
               style={{
-                flex: '0 0 auto',
-                padding: '5px 10px',
-                borderRadius: 7,
-                fontSize: 11,
-                fontWeight: 650,
-                background: UI.soft,
-                color: UI.muted2,
+                width: 32,
+                height: 32,
+                flex: '0 0 32px',
+                borderRadius: 8,
+                border: 'none',
+                background: 'transparent',
+                color: UI.faint,
+                fontSize: 15,
+                cursor: !isServerEvent || busy ? 'not-allowed' : 'pointer',
               }}
             >
-              {d.tag}
-            </div>
+              ×
+            </button>
           </div>
         ))}
-        <div
+        <button
+          type="button"
+          disabled={!isServerEvent || busy}
+          aria-label="PDF 업로드 — 드롭 또는 클릭"
+          onClick={() => {
+            if (isServerEvent && !busy) fileInputRef.current?.click();
+          }}
+          onDragOver={(e) => {
+            if (!isServerEvent || busy) return;
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            if (isServerEvent && !busy) void handleFiles(e.dataTransfer.files);
+          }}
           style={{
+            width: '100%',
             height: 64,
-            border: '1px dashed var(--hover-border)',
+            border: `1px dashed ${dragOver ? UI.brand : 'var(--hover-border)'}`,
             borderRadius: 12,
+            background: 'transparent',
             display: 'grid',
             placeItems: 'center',
             fontFamily: MONO,
             fontSize: 11,
             color: UI.faint,
             letterSpacing: '0.02em',
+            opacity: isServerEvent ? 1 : 0.5,
+            cursor: isServerEvent && !busy ? 'pointer' : 'not-allowed',
           }}
         >
-          PDF 드롭 · 표시명 자동 추론
-        </div>
+          {!isServerEvent
+            ? '로그인해야 자료를 올릴 수 있어요'
+            : uploading
+              ? '업로드 중…'
+              : 'PDF 드롭 또는 클릭 · 표시명 자동 추론'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            void handleFiles(e.target.files);
+            // 같은 파일을 다시 골라도 onChange가 또 뜨도록 비워 둔다.
+            e.target.value = '';
+          }}
+        />
+        {uploadError ? (
+          <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+            {uploadError}
+          </div>
+        ) : null}
+        {deleteError ? (
+          <div role="alert" style={{ fontSize: 12, color: UI.toneDangerFg }}>
+            {deleteError}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1008,6 +1155,8 @@ export default function EditorScreen({
   patch,
   patchEvent,
   isServerEvent,
+  addDocument,
+  removeDocument,
 }: {
   s: StudioState;
   ev: EventItem;
@@ -1015,6 +1164,8 @@ export default function EditorScreen({
   patch: PatchFn;
   patchEvent: PatchEventFn;
   isServerEvent: boolean;
+  addDocument: (file: File) => Promise<void>;
+  removeDocument: (docId: number) => Promise<void>;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
@@ -1028,6 +1179,17 @@ export default function EditorScreen({
     engage: ev.engage,
     brandLabel: preset.label,
   };
+  // 실제 이 이벤트의 자료로 미리보기를 그린다(FE-25) — 안 넘기면 Microsite가 대표
+  // 예시 2건(DEMO_DOCUMENTS)을 보여줘서, 자료를 하나도 안 올린 새 이벤트도 미리보기엔
+  // 늘 "자료 2건"이 떠 있었다. 스튜디오엔 서명 URL이 없어(그건 참가자 경로 전용이다)
+  // url은 전부 null — 미리보기에서 파일을 실제로 열어보는 건 이번 범위 밖이다.
+  const previewDocuments: DocumentInfo[] = ev.documents.map((d) => ({
+    id: d.id,
+    name: d.displayName,
+    status: d.status,
+    pages: d.pageCount,
+    url: null,
+  }));
 
   const roRef = useRef<ResizeObserver | null>(null);
   const pvRef = useCallback(
@@ -1067,7 +1229,13 @@ export default function EditorScreen({
         <div style={{ ...monoLabel, color: UI.faint, padding: '6px 10px 10px' }}>SECTIONS</div>
         {SECTIONS.map((x) => {
           const meta =
-            x.id === 'agenda' ? String(ev.sessions.length) : x.id === 'theme' ? preset.label.split(' ')[0] : x.meta;
+            x.id === 'agenda'
+              ? String(ev.sessions.length)
+              : x.id === 'docs'
+                ? String(ev.documents.length)
+                : x.id === 'theme'
+                  ? preset.label.split(' ')[0]
+                  : x.meta;
           return (
             <button
               key={x.id}
@@ -1117,7 +1285,14 @@ export default function EditorScreen({
         {s.section === 'basic' ? (
           <BasicSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
         ) : null}
-        {s.section === 'docs' ? <DocsSection /> : null}
+        {s.section === 'docs' ? (
+          <DocsSection
+            ev={ev}
+            isServerEvent={isServerEvent}
+            addDocument={addDocument}
+            removeDocument={removeDocument}
+          />
+        ) : null}
         {s.section === 'engage' ? (
           <EngageSection ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
         ) : null}
@@ -1205,6 +1380,7 @@ export default function EditorScreen({
                 sessions={ev.sessions}
                 icons={icons}
                 event={micrositeEvent}
+                documents={previewDocuments}
                 // 스튜디오 미리보기는 실제 참가자 페이지가 아니다 — 편집 중인 목업 이벤트에는
                 // D1에 대응하는 실제 id가 없다. preview로 Q&A 입력·폴링을 꺼서 실제 행사 데이터에
                 // 쓰기가 일어나지 않게 한다(Codex 리뷰 2026-09-02 P1).

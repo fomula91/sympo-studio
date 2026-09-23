@@ -12,6 +12,8 @@ import {
   fetchStudioEvents,
   logoutStudioUser,
   patchStudioEvent,
+  putStudioEventDocuments,
+  uploadStudioDocument,
 } from '@/lib/studio-api';
 import { PRESETS } from '@/lib/theme';
 import type {
@@ -23,13 +25,19 @@ import type {
   PatchFn,
   Preset,
   Session,
+  StudioDocument,
   StudioState,
 } from '@/lib/types';
 
 // 게스트 로컬 워크스페이스 영속(FE-15). 버전을 접두사에 박아 둔다 — 나중에 저장
 // 모양이 바뀌면 새 키로 옮기고 예전 값은 그냥 버려진다(마이그레이션 없음, 로컬
 // 목업 데이터라 감수할 수 있는 손실이다).
-const GUEST_STORAGE_KEY = 'sympo-guest-events-v1';
+//
+// **v2로 올렸다(FE-25)** — `EventItem`에 `documents` 필드가 새로 생겨, v1으로 저장된
+// 옛 이벤트는 그 필드가 아예 없다. 콘솔이 `e.documents.length`를 그대로 읽는 곳들이
+// 있어(사이드바 카드 등) undefined에서 즉시 TypeError로 터진다 — 이 파일 자체가
+// 예고한 대로 새 키로 옮겨 옛 값을 버린다.
+const GUEST_STORAGE_KEY = 'sympo-guest-events-v2';
 
 function readGuestWorkspace(): EventItem[] | null {
   try {
@@ -50,6 +58,12 @@ function writeGuestWorkspace(events: EventItem[]) {
   } catch {
     // 용량 초과·프라이빗 모드 등 — 화면 동작을 막을 이유는 아니다.
   }
+}
+
+// addDocument·removeDocument가 PUT .../documents(전체 교체 계약)에 보내는 메타 행
+// 하나를 만든다 — 추가·삭제·업로드 실패 시 되돌리기, 세 자리에서 같은 모양이 필요하다.
+function toDocumentMetaBody(d: StudioDocument) {
+  return { id: d.id, sessionId: d.sessionId, displayName: d.displayName, tag: d.tag };
 }
 
 const SEEDED_EVENTS = seedEvents();
@@ -77,9 +91,6 @@ interface StudioContextValue {
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
-  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가(FE-36) — patchEvent가 실제로
-  // 서버에 쓰는지와 같은 판정. 화면이 "저장 중" 문구를 정직하게 고를 때 쓴다.
-  isServerEvent: boolean;
   resetSessions: () => void;
   // FE-30 — 목업 시드(0~14)에 없는 실제 D1 전용 id를 열람 중일 때의 로딩 상태.
   // 목업 id는 그 자리에 보여줄 게 이미 있어 'loading'을 띄우지 않는다(기존 UX 유지).
@@ -94,6 +105,16 @@ interface StudioContextValue {
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가(FE-36) — patchEvent가 실제로
+  // 서버에 쓰는지와 같은 판정. 화면이 "저장 중" 문구를 정직하게 고를 때도 쓰고,
+  // 자료 업로드(FE-25)는 서버 이벤트에서만 의미가 있다(로컬 전용은 올릴 R2 행이 없다).
+  isServerEvent: boolean;
+  // 자료 한 건을 등록+업로드한다(메타 PUT → 파일 PUT, 두 단계를 한 동작으로 묶는다).
+  // 서버 이벤트가 아니면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
+  // 업로드 실패 시 방금 만든 메타 행도 되돌려 목록에 빈 'pending' 자료가 남지 않는다.
+  addDocument: (file: File) => Promise<void>;
+  // 자료 한 건을 지운다(메타 목록에서 빼고 PUT — R2 객체 정리는 서버가 best-effort로 한다).
+  removeDocument: (docId: number) => Promise<void>;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -151,6 +172,25 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 반영됨"을 쓸지 이걸로 가른다.
   const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
 
+  // "이 id가 실제 서버 이벤트로 확인됐다"(serverIds, 목록 조회만으로도 채워진다)와
+  // "이 id의 전체 상세(세션·자료 포함)를 실제로 불러왔다"는 다른 사실이다 — 목록
+  // 응답엔 sessions·documents가 없다(단건 조회만 싣는다, GET /api/events/[id]). 로그인
+  // 사용자는 목록 조회만으로도 `s.events`에 이 id의 항목이 생겨 `isKnownLocally`가
+  // true가 되므로, `serverIds`나 `isKnownLocally`만으로 "상세까지 왔다"를 판정하면
+  // 상세 도착 전에 빈 자료 목록을 진짜 상태로 오해해 편집(업로드 후 PUT)이 그 빈
+  // 배열을 기준으로 나갈 수 있다 — `documents`는 전체 교체 계약이라 그러면 서버의
+  // 기존 자료가 지워진다. 아래에서 둘 다 쓴다.
+  //
+  // **두 갈래로 나눠 들고 있는 이유** — ref는 상세 조회 effect의 재실행 가드에 쓴다.
+  // 그 effect가 이 값을 의존성 배열에 넣으면(반응형 state라면) "어떤 이벤트든 상세가
+  // 하나 로드될 때마다" 재실행돼, 지금 막 진행 중인 다른 이벤트의 상세 조회를
+  // 취소시킨다. `loadStatus`(아래)는 렌더 중에 값을 읽어야 하는데, 렌더 중 ref 읽기는
+  // `react-hooks/refs` 규칙이 막는다 — 그래서 렌더용 값만 별도로 반응형
+  // state(`detailLoadedIds`)에 미러링한다. 둘은 상세 조회가 끝나는 같은 시점에 함께
+  // 갱신되므로 항상 같은 값을 가리킨다.
+  const detailLoadedRef = useRef<Set<number>>(new Set());
+  const [detailLoadedIds, setDetailLoadedIds] = useState<Set<number>>(new Set());
+
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
   // 저장된 워크스페이스가 있으면 그걸로 교체(없으면 시드를 그대로 쓰고 이제부터
@@ -172,7 +212,22 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         try {
           const events = await fetchStudioEvents();
           if (!cancelled) {
-            setS((prev) => ({ ...prev, events }));
+            // 목록 응답엔 sessions·documents가 없다 — 이미 상세를 불러온 이벤트가
+            // 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그 값을 목록의 빈 배열로
+            // 덮어쓰지 않는다(위 detailLoadedRef 주석 참조).
+            setS((prev) => {
+              const priorById = new Map(prev.events.map((e) => [e.id, e]));
+              const merged = events.map((e) =>
+                detailLoadedRef.current.has(e.id)
+                  ? {
+                      ...e,
+                      sessions: priorById.get(e.id)?.sessions ?? e.sessions,
+                      documents: priorById.get(e.id)?.documents ?? e.documents,
+                    }
+                  : e,
+              );
+              return { ...prev, events: merged };
+            });
             setServerIds(new Set(events.map((e) => e.id)));
           }
         } catch (e) {
@@ -212,18 +267,39 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 기다릴 필요가 없다. s.events를 렌더 중에 직접 훑는다(ref로 캐싱하면 값이 바뀌어도
   // 리렌더를 안 일으켜 loadStatus가 갱신되지 않는다).
   const isKnownLocally = effectiveId != null && s.events.some((e) => e.id === effectiveId);
-  // serverIds에 있다는 건 그 뒤 fetch가 성공했다는 뜻이다 — notFoundId·errorId가 예전에
-  // 이 id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에 실제로 생긴 경우) 성공한 조회가
-  // 우선해야 한다. 그렇지 않으면 한 번 404·에러였던 id는 나중에 성공해도 이 세션
-  // 내내 그 화면에 영구히 갇힌다.
+  // detailLoadedIds에 있다는 건 단건 상세 조회(세션·자료 포함)가 성공했다는 뜻이다 —
+  // notFoundId·errorId가 예전에 이 id로 찍혀 있어도(생성 전에 먼저 열어봤다가 나중에
+  // 실제로 생긴 경우) 성공한 조회가 우선해야 한다. 그렇지 않으면 한 번 404·에러였던
+  // id는 나중에 성공해도 이 세션 내내 그 화면에 영구히 갇힌다.
+  //
+  // **`serverIds`·`isKnownLocally`만으로는 부족하다** — 로그인 사용자는 목록 조회만
+  // 으로도 `s.events`에 이 id의 항목이 생겨 `isKnownLocally`가 true가 된다. 그걸로
+  // 'idle'을 판정하면 에디터가 상세(세션·자료 포함) 도착 전에 곧장 렌더돼, 자료
+  // 섹션이 빈 배열을 진짜 상태로 오해하고 업로드를 받아들일 수 있다 — `PUT
+  // .../documents`(배열 전체 교체 계약)가 그 빈 배열 기준으로 나가 서버의 기존
+  // 자료를 지울 수 있다. `serverIds`에 있는 이벤트는 `detailLoadedIds`가 찰
+  // 때까지 무조건 'loading'으로 묶고, 순수 로컬(게스트·시드) 이벤트만
+  // `isKnownLocally`로 즉시 'idle' 처리한다.
+  //
+  // **`notFoundId`·`errorId`는 `serverIds`-'loading'보다 먼저 확인한다** — 상세
+  // 조회가 실패해 errorId가 찍힌 뒤에도 이 id는 여전히 serverIds에 남아 있다(목록
+  // 조회가 존재를 이미 확인했으므로 지울 이유가 없다). serverIds 체크를 먼저 두면
+  // 확정된 에러 상태를 영영 못 보고 무한 'loading'에 머문다(Codex 리뷰 2026-09-22
+  // 발견).
   const loadStatus: 'idle' | 'loading' | 'notfound' | 'error' =
-    effectiveId != null && !isKnownLocally && !serverIds.has(effectiveId)
-      ? effectiveId === notFoundId
-        ? 'notfound'
-        : effectiveId === errorId
-          ? 'error'
-          : 'loading'
-      : 'idle';
+    effectiveId == null
+      ? 'idle'
+      : detailLoadedIds.has(effectiveId)
+        ? 'idle'
+        : effectiveId === notFoundId
+          ? 'notfound'
+          : effectiveId === errorId
+            ? 'error'
+            : serverIds.has(effectiveId)
+              ? 'loading'
+              : isKnownLocally
+                ? 'idle'
+                : 'loading';
 
   // 텍스트 입력은 키 입력마다 patchEvent를 부른다(기존 로컬 전용 동작) — 서버 PATCH까지
   // 매 키 입력마다 보내면 12글자 제목 하나에 요청 12번이 나간다(실측으로 확인). 짧은
@@ -276,11 +352,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (effectiveId == null || serverIds.has(effectiveId)) return;
+    if (effectiveId == null || detailLoadedRef.current.has(effectiveId)) return;
     let cancelled = false;
     fetchStudioEvent(effectiveId)
       .then((real) => {
         if (cancelled) return;
+        detailLoadedRef.current.add(effectiveId);
+        setDetailLoadedIds((prev) => new Set(prev).add(effectiveId));
         setS((prev) => {
           const idx = prev.events.findIndex((e) => e.id === effectiveId);
           const events = prev.events.slice();
@@ -292,13 +370,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        // 로컬에 이미 있던 이벤트(목업 시드 또는 방금 만든 새 이벤트)는 서버에 없는 게
-        // 정상 경로라 조용히 로컬로 남는다. 그 밖의 id는 조회가 실패한 이유에 따라
-        // 갈린다 — 404면 정말 없는 이벤트, 그 밖(타임아웃·500 등)은 존재 여부를 모르는
-        // 것뿐이라 notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에
-        // 계속 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
+        // 순수 로컬 이벤트(목업 시드 또는 방금 만든 새 이벤트, serverIds에 없음)는
+        // 서버에 없는 게 정상 경로라 조용히 로컬로 남는다. `serverIds`에 이미 있는
+        // (목록 조회로 존재가 확인된) 이벤트는 isKnownLocally가 true여도 정상 경로가
+        // 아니다 — 그 경우까지 조용히 넘기면 loadStatus가 serverIds만 보고 무조건
+        // 'loading'을 반환해(위 loadStatus 주석 참조) 무한 스피너가 된다(Codex 리뷰
+        // 2026-09-22 발견). 그 밖의 id는 조회가 실패한 이유에 따라 갈린다 — 404면
+        // 정말 없는 이벤트, 그 밖(타임아웃·500 등)은 존재 여부를 모르는 것뿐이라
+        // notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에 계속
+        // 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
         console.warn('스튜디오 이벤트 실측 조회 실패:', e);
-        if (isKnownLocally) return;
+        if (isKnownLocally && !serverIds.has(effectiveId)) return;
         if (e instanceof ApiClientError && e.status === 404) {
           setNotFoundId(effectiveId);
         } else {
@@ -308,7 +390,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, serverIds, isKnownLocally]);
+  }, [effectiveId, isKnownLocally, serverIds]);
 
   useEffect(() => {
     // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
@@ -401,6 +483,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     await logoutStudioUser();
     setUser(null);
     setServerIds(new Set());
+    // serverIds와 같이 비운다 — 안 그러면 로그아웃 후에도 detailLoadedIds에 남은 id가
+    // loadStatus를 'idle'로 잘못 판정해(아래 loadStatus 계산부 주석 참조), 방금
+    // 초기화된 s.events(게스트/시드)에는 그 id가 없어 편집 화면이 로딩·에러 표시
+    // 없이 곧장 notFound()로 떨어진다 — AccountMenu는 이 화면에서도 로그아웃이 가능하다.
+    detailLoadedRef.current = new Set();
+    setDetailLoadedIds(new Set());
     const stored = readGuestWorkspace();
     setS((prev) => ({ ...prev, events: stored ?? seedEvents() }));
     guestHydratedRef.current = true;
@@ -424,6 +512,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       });
       setS((prev) => ({ ...prev, events: [created, ...prev.events], section: 'basic' }));
       setServerIds((prev) => new Set(prev).add(created.id));
+      // 생성 응답에 이미 완전한 상세(세션·자료 포함, 새 이벤트라 둘 다 빈 배열)가
+      // 실려 있다 — 단건 상세를 다시 조회하지 않아도 된다. 안 해두면 방금 만든
+      // 이벤트를 바로 열었을 때 loadStatus가 'loading'으로 한 번 더 깜빡인다.
+      detailLoadedRef.current.add(created.id);
+      setDetailLoadedIds((prev) => new Set(prev).add(created.id));
       return created.id;
     }
     const id = Date.now();
@@ -439,7 +532,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             autoSlug(detail.title, detail.venue, detail.date),
             prev.events.map((e) => e.slug),
           ),
-          docs: 0,
           localRef: crypto.randomUUID(),
           ...detail,
         },
@@ -449,6 +541,105 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     }));
     return id;
   }, [user]);
+
+  // 메타 행 생성 → 파일 업로드, 두 단계를 한 동작으로 묶는다. 즉시 실행이다(디바운스
+  // 없음) — 파일을 드롭한 순간이 곧 "이걸 올리겠다"는 의사 표시라 텍스트 입력처럼
+  // 타이핑 중간값을 무시할 이유가 없다.
+  //
+  // **동시 호출은 이벤트별 ref 락으로 막는다** — DocsSection의 로컬 busy 상태만으로는
+  // 부족하다(편집 화면을 벗어났다 돌아오면 그 상태가 초기화되지만, 이전 요청은 계속
+  // 진행 중일 수 있다) — 겹쳐 나가면(둘 다 같은 "현재 목록" 스냅샷에서 시작해 서로의
+  // 결과를 모른 채 PUT하는 전체 교체 계약이라) 나중 응답이 먼저 응답을 덮어쓸 수 있다.
+  const docsBusyRef = useRef<Set<number>>(new Set());
+  const addDocument = useCallback(
+    async (file: File): Promise<void> => {
+      if (effectiveId == null || !serverIds.has(effectiveId)) return;
+      const id = effectiveId;
+      if (docsBusyRef.current.has(id)) return;
+      docsBusyRef.current.add(id);
+      try {
+        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const metaBody = [
+          ...current.map(toDocumentMetaBody),
+          { id: null, sessionId: null, displayName: file.name.replace(/\.[^.]+$/, ''), tag: null },
+        ];
+        const saved = await putStudioEventDocuments(id, metaBody);
+        const existingIds = new Set(current.map((d) => d.id));
+        const created = saved.find((d) => !existingIds.has(d.id));
+        setS((prev) => {
+          const idx = prev.events.findIndex((e) => e.id === id);
+          if (idx < 0) return prev;
+          const events = prev.events.slice();
+          events[idx] = { ...events[idx], documents: saved };
+          return { ...prev, events };
+        });
+        if (!created) return;
+        try {
+          const result = await uploadStudioDocument(id, created.id, file);
+          setS((prev) => {
+            const idx = prev.events.findIndex((e) => e.id === id);
+            if (idx < 0) return prev;
+            const events = prev.events.slice();
+            const documents = events[idx].documents.map((d) =>
+              d.id === created.id
+                ? { ...d, status: result.status, hasFile: true, sizeBytes: result.sizeBytes, contentType: file.type || null }
+                : d,
+            );
+            events[idx] = { ...events[idx], documents };
+            return { ...prev, events };
+          });
+        } catch (e) {
+          // 업로드 실패 — 방금 만든 메타 행을 되돌린다. 안 그러면 빈 'pending' 자료가
+          // 목록에 영영 남고, 이번 범위엔 "기존 pending 행에 다시 올리기" UI가 없어
+          // 되돌리는 것 말고는 회복할 방법이 없다. 되돌리기 자체가 실패해도 원래
+          // 실패 사유를 덮지 않는다(호출자에게 그대로 던진다).
+          try {
+            const rolledBack = await putStudioEventDocuments(
+              id,
+              saved.filter((d) => d.id !== created.id).map(toDocumentMetaBody),
+            );
+            setS((prev) => {
+              const idx = prev.events.findIndex((e) => e.id === id);
+              if (idx < 0) return prev;
+              const events = prev.events.slice();
+              events[idx] = { ...events[idx], documents: rolledBack };
+              return { ...prev, events };
+            });
+          } catch (rollbackError) {
+            console.warn('업로드 실패 후 메타 되돌리기도 실패:', rollbackError);
+          }
+          throw e;
+        }
+      } finally {
+        docsBusyRef.current.delete(id);
+      }
+    },
+    [effectiveId, serverIds, s.events],
+  );
+
+  const removeDocument = useCallback(
+    async (docId: number): Promise<void> => {
+      if (effectiveId == null || !serverIds.has(effectiveId)) return;
+      const id = effectiveId;
+      if (docsBusyRef.current.has(id)) return;
+      docsBusyRef.current.add(id);
+      try {
+        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const metaBody = current.filter((d) => d.id !== docId).map(toDocumentMetaBody);
+        const saved = await putStudioEventDocuments(id, metaBody);
+        setS((prev) => {
+          const idx = prev.events.findIndex((e) => e.id === id);
+          if (idx < 0) return prev;
+          const events = prev.events.slice();
+          events[idx] = { ...events[idx], documents: saved };
+          return { ...prev, events };
+        });
+      } finally {
+        docsBusyRef.current.delete(id);
+      }
+    },
+    [effectiveId, serverIds, s.events],
+  );
 
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
   const value = useMemo(
@@ -465,6 +656,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       authStatus,
       logout,
       createEvent,
+      addDocument,
+      removeDocument,
     }),
     [
       s,
@@ -479,6 +672,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       authStatus,
       logout,
       createEvent,
+      addDocument,
+      removeDocument,
     ],
   );
 
