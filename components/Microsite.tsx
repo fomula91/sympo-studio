@@ -64,7 +64,14 @@ export default function Microsite({
     ...(ev.engage.qa !== false ? [{ key: 'qa' as const, label: 'Q&A', glyphIndex: 2 }] : []),
     ...(ev.engage.survey !== false ? [{ key: 'survey' as const, label: '설문', glyphIndex: 3 }] : []),
   ];
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('agenda');
+  const [requestedTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('agenda');
+  // 스튜디오 라이브 프리뷰에서는 이 컴포넌트가 다시 마운트되지 않고 engage 토글이
+  // 바뀔 때마다 새 props로 리렌더된다(EditorScreen.tsx가 Microsite에 key를 안 준다) —
+  // Q&A 탭을 보던 중 그 토글을 끄면 TABS에서 'qa'가 빠지는데 activeTab을 그대로
+  // 'qa'로 두면 탭바 활성 표시도, 콘텐츠도 전부 사라져 화면이 통째로 빈다(코드
+  // 리뷰 발견). state를 직접 쓰지 않고 매 렌더 TABS에 있는지 확인해 파생시킨다 —
+  // 이펙트로 되돌리면 react-hooks/set-state-in-effect가 걸린다.
+  const activeTab = TABS.some((tab) => tab.key === requestedTab) ? requestedTab : TABS[0].key;
   const [qaOpen, setQaOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
@@ -165,6 +172,16 @@ export default function Microsite({
   }, [eventId, preview, sessions]);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
+
+  // Q&A·설문 탭 둘 다 오프라인이면 같은 안내를 보여준다 — 한 곳만 계산해 재사용한다
+  // (코드 리뷰 발견 — 예전엔 두 자리에 그대로 복붙돼 있었다).
+  const offlineBanner =
+    !preview && !online ? (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: t.muted, marginBottom: 10 }}>
+        <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+        오프라인 상태 — 연결되면 다시 시도하세요
+      </div>
+    ) : null;
 
   const bg = kv ? `url("${kv}") center/cover` : KV_PATTERNS[kvPattern](t);
   const heroFg = `oklch(0.985 0.006 ${t.h})`;
@@ -486,21 +503,7 @@ export default function Microsite({
 
         {ev.engage.qa !== false ? (
         <div style={{ display: activeTab === 'qa' ? undefined : 'none' }}>
-        {!preview && !online ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 12.5,
-              color: t.muted,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
-            오프라인 상태 — 연결되면 다시 시도하세요
-          </div>
-        ) : null}
+        {offlineBanner}
         {(preview ? (
             <div
               aria-disabled
@@ -551,21 +554,7 @@ export default function Microsite({
         ) : null}
         {ev.engage.survey !== false ? (
         <div style={{ display: activeTab === 'survey' ? undefined : 'none' }}>
-        {!preview && !online ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 12.5,
-              color: t.muted,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
-            오프라인 상태 — 연결되면 다시 시도하세요
-          </div>
-        ) : null}
+        {offlineBanner}
         {(preview ? (
             <div
               aria-disabled
