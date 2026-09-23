@@ -83,6 +83,7 @@ export async function fetchStudioEvent(id: number): Promise<EventItem> {
 export function detailPatchToBody(delta: Partial<EventDetail>): Record<string, unknown> | null {
   const body: Record<string, unknown> = {};
   if (delta.title !== undefined) body.title = delta.title;
+  if (delta.brand !== undefined) body.brand = delta.brand;
   if (delta.venue !== undefined) body.venue = delta.venue;
   if (delta.date !== undefined) body.date = delta.date;
   if (delta.host !== undefined) body.host = delta.host;

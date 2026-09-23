@@ -85,6 +85,9 @@ interface StudioContextValue {
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가(FE-36) — patchEvent가 실제로
+  // 서버에 쓰는지와 같은 판정. 화면이 "저장 중" 문구를 정직하게 고를 때 쓴다.
+  isServerEvent: boolean;
   resetSessions: () => void;
   // FE-30 — 목업 시드(0~14)에 없는 실제 D1 전용 id를 열람 중일 때의 로딩 상태.
   // 목업 id는 그 자리에 보여줄 게 이미 있어 'loading'을 띄우지 않는다(기존 UX 유지).
@@ -153,6 +156,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 서버로도 PATCH를 보낸다(그 밖은 지금처럼 로컬 목업으로 남는다). 세션(아젠다)
   // 쓰기는 별도 계약(PUT .../sessions)이라 이번 범위에 넣지 않았다 — context-notes 참조.
   const [serverIds, setServerIds] = useState<Set<number>>(new Set());
+  // 지금 편집 중인 이벤트가 실제 D1에 연결돼 있는가 — patchEvent 내부 판정과 같은
+  // 식이다(FE-36). 화면(EditorScreen)이 "변경 저장 중…"을 쓸지 "미리보기에만
+  // 반영됨"을 쓸지 이걸로 가른다.
+  const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
 
   // FE-40 — "서버가 아는 커스텀 프리셋 id" 집합을 ref로도 따로 든다(`s.customPresets`
   // state와 내용은 같다). `patchEvent`가 이 값으로 presetId를 걸러내는데, `saveDraft`
@@ -362,7 +369,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
 
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
-      const isServerEvent = effectiveId != null && serverIds.has(effectiveId);
       setS((prev) => {
         const idx = prev.events.findIndex((e) => e.id === effectiveId);
         if (idx < 0) return prev;
@@ -427,7 +433,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, serverIds, ev, flushServerSave],
+    [effectiveId, ev, flushServerSave, isServerEvent],
   );
 
   const resetSessions = useCallback(() => {
@@ -464,8 +470,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const createEvent = useCallback(async (): Promise<number> => {
     const detail = defaultEventDetail();
     if (user) {
-      // 이 범위엔 브랜드명을 따로 입력하는 필드가 없다 — 제목으로 채운다(FE-37류
-      // 갭과는 별개로, 서버가 brand를 필수로 요구해서 생긴 임시 결정).
+      // 생성 시점엔 여전히 제목으로 채운다 — 서버가 brand를 빈 문자열이면 필수
+      // 위반으로 거절해서(app/api/events/route.ts), 폼 없이 부르는 이 생성 경로에선
+      // 뭔가를 채워 보내야 한다. 에디터 기본 정보에 브랜드명 필드가 생겨(FE-42)
+      // 생성 직후 바로 고칠 수 있으니, 그걸로 이 임시값을 대신한다.
       const created = await createStudioEvent({
         brand: detail.title,
         title: detail.title,
@@ -535,6 +543,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       presets,
       patch,
       patchEvent,
+      isServerEvent,
       resetSessions,
       loadStatus,
       user,
@@ -549,6 +558,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       presets,
       patch,
       patchEvent,
+      isServerEvent,
       resetSessions,
       loadStatus,
       user,
