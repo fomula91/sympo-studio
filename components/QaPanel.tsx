@@ -9,9 +9,13 @@ interface QaPanelProps {
   theme: Theme;
   online: boolean;
   eventId: number;
+  /** Microsite 탭바에서 Q&A 탭이 지금 보이는 중인지(FE-17) — display:none으로 숨겨도
+   * 이 컴포넌트는 언마운트되지 않아(작성 중인 draft를 보존하려고) 다른 탭을 보는
+   * 동안에도 내부 폴링이 계속 돌았다(코드 리뷰 발견). 안 보이면 폴링을 멈춘다. */
+  active: boolean;
 }
 
-export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
+export default function QaPanel({ theme: t, online, eventId, active }: QaPanelProps) {
   const [questions, setQuestions] = useState<Question[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -30,7 +34,7 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
   }, []);
 
   useEffect(() => {
-    if (!online) return;
+    if (!online || !active) return;
     let cancelled = false;
     const load = async () => {
       // 탭이 백그라운드면 쉰다 — 참가자가 탭을 열어두기만 해도 계속 돌면 D1 읽기 티어를 갉아먹는다.
@@ -60,7 +64,7 @@ export default function QaPanel({ theme: t, online, eventId }: QaPanelProps) {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [online, eventId]);
+  }, [online, eventId, active]);
 
   async function handleSubmit() {
     const trimmed = draft.trim();

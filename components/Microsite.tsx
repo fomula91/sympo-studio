@@ -55,6 +55,23 @@ export default function Microsite({
   wide = false,
 }: MicrositeProps) {
   const online = useOnlineStatus();
+  // 탭바가 실제로 전환되게 한다(FE-17) — 예전엔 onClick이 아예 없어 첫 탭만 항상
+  // "활성" 스타일이고 아래엔 네 섹션이 한 페이지에 죽 이어져 있었다. 꺼진 engage
+  // 토글의 탭은 목록 자체에서 뺀다 — 눌러도 아무 것도 없는 탭을 보여주지 않는다.
+  const TABS = [
+    { key: 'agenda' as const, label: '아젠다', glyphIndex: 0 },
+    { key: 'docs' as const, label: '자료', glyphIndex: 1 },
+    ...(ev.engage.qa !== false ? [{ key: 'qa' as const, label: 'Q&A', glyphIndex: 2 }] : []),
+    ...(ev.engage.survey !== false ? [{ key: 'survey' as const, label: '설문', glyphIndex: 3 }] : []),
+  ];
+  const [requestedTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('agenda');
+  // 스튜디오 라이브 프리뷰에서는 이 컴포넌트가 다시 마운트되지 않고 engage 토글이
+  // 바뀔 때마다 새 props로 리렌더된다(EditorScreen.tsx가 Microsite에 key를 안 준다) —
+  // Q&A 탭을 보던 중 그 토글을 끄면 TABS에서 'qa'가 빠지는데 activeTab을 그대로
+  // 'qa'로 두면 탭바 활성 표시도, 콘텐츠도 전부 사라져 화면이 통째로 빈다(코드
+  // 리뷰 발견). state를 직접 쓰지 않고 매 렌더 TABS에 있는지 확인해 파생시킨다 —
+  // 이펙트로 되돌리면 react-hooks/set-state-in-effect가 걸린다.
+  const activeTab = TABS.some((tab) => tab.key === requestedTab) ? requestedTab : TABS[0].key;
   const [qaOpen, setQaOpen] = useState(false);
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
@@ -94,6 +111,19 @@ export default function Microsite({
       if (requestIdRef.current === requestId) setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
     } finally {
       if (requestIdRef.current === requestId) setLoadingDocId(null);
+    }
+  }
+
+  // 탭 전환 자체를 여기서 다룬다 — 자료 탭을 벗어날 때 대기 중인 서명 URL 요청을
+  // 무효화한다(코드 리뷰 발견). 안 그러면 자료를 누르고 응답을 기다리는 사이 다른
+  // 탭으로 넘어가도 요청은 계속 유효해서, 뒤늦게 도착한 응답이 지금 보고 있는(자료가
+  // 아닌) 탭 위에 PDF 뷰어를 불쑥 띄운다 — requestIdRef를 올리면 위 openDocument의
+  // "이미 낡은 응답" 판정(FE-32)에 그대로 걸려 무시된다.
+  function changeTab(key: (typeof TABS)[number]['key']) {
+    setActiveTab(key);
+    if (key !== 'docs') {
+      requestIdRef.current++;
+      setLoadingDocId(null);
     }
   }
   const agendaRef = useRef<HTMLOListElement>(null);
@@ -155,6 +185,16 @@ export default function Microsite({
   }, [eventId, preview, sessions]);
   const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
   const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
+
+  // Q&A·설문 탭 둘 다 오프라인이면 같은 안내를 보여준다 — 한 곳만 계산해 재사용한다
+  // (코드 리뷰 발견 — 예전엔 두 자리에 그대로 복붙돼 있었다).
+  const offlineBanner =
+    !preview && !online ? (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: t.muted, marginBottom: 10 }}>
+        <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+        오프라인 상태 — 연결되면 다시 시도하세요
+      </div>
+    ) : null;
 
   const bg = kv ? `url("${kv}") center/cover` : KV_PATTERNS[kvPattern](t);
   const heroFg = `oklch(0.985 0.006 ${t.h})`;
@@ -267,9 +307,22 @@ export default function Microsite({
       </div>
 
       <div
+        role="tablist"
+        aria-label="참가자 화면 섹션"
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          const idx = TABS.findIndex((tab) => tab.key === activeTab);
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const next = TABS[(idx + dir + TABS.length) % TABS.length];
+          changeTab(next.key);
+          // 포커스도 같이 옮겨야 화살표를 계속 눌러 다음 탭으로 이어갈 수 있다 —
+          // activeTab만 바꾸면 포커스는 이전 탭 버튼에 그대로 남는다.
+          (e.currentTarget.querySelector(`#tab-${next.key}`) as HTMLElement | null)?.focus();
+        }}
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
           background: t.surface,
           borderBottom: `1px solid ${t.line}`,
           position: 'sticky',
@@ -277,34 +330,47 @@ export default function Microsite({
           zIndex: 2,
         }}
       >
-        {['아젠다', '자료', 'Q&A', '설문'].map((label, i) => (
-          <div
-            key={label}
-            style={{
-              height: 60,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              cursor: 'pointer',
-              color: i === 0 ? t.brand : t.muted,
-              borderBottom: `3px solid ${i === 0 ? t.brand : 'transparent'}`,
-            }}
-          >
-            <div
+        {TABS.map((tab) => {
+          const on = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              id={`tab-${tab.key}`}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              aria-controls={`panel-${tab.key}`}
+              tabIndex={on ? 0 : -1}
+              onClick={() => changeTab(tab.key)}
               style={{
-                fontSize: numberIcons ? 12 : 16,
-                lineHeight: 1,
-                fontFamily: numberIcons ? MONO : 'inherit',
-                fontWeight: 700,
+                height: 60,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                fontFamily: 'inherit',
+                color: on ? t.brand : t.muted,
+                borderBottom: `3px solid ${on ? t.brand : 'transparent'}`,
               }}
             >
-              {icons[i]}
-            </div>
-            <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{label}</div>
-          </div>
-        ))}
+              <div
+                style={{
+                  fontSize: numberIcons ? 12 : 16,
+                  lineHeight: 1,
+                  fontFamily: numberIcons ? MONO : 'inherit',
+                  fontWeight: 700,
+                }}
+              >
+                {icons[tab.glyphIndex]}
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{tab.label}</div>
+            </button>
+          );
+        })}
       </div>
 
       <div
@@ -314,6 +380,12 @@ export default function Microsite({
           margin: '0 auto',
         }}
       >
+        <div
+          role="tabpanel"
+          id="panel-agenda"
+          aria-labelledby="tab-agenda"
+          style={{ display: activeTab === 'agenda' ? undefined : 'none' }}
+        >
         <div style={sectionLabel}>아젠다</div>
         <ol
           ref={agendaRef}
@@ -386,7 +458,14 @@ export default function Microsite({
             </li>
           ))}
         </ol>
+        </div>
 
+        <div
+          role="tabpanel"
+          id="panel-docs"
+          aria-labelledby="tab-docs"
+          style={{ display: activeTab === 'docs' ? undefined : 'none' }}
+        >
         <div style={sectionLabel}>자료</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
           {docs.length === 0 ? (
@@ -461,24 +540,17 @@ export default function Microsite({
             <div style={{ fontSize: 12, color: t.muted }}>{docError}</div>
           ) : null}
         </div>
+        </div>
 
-        {!preview && !online && (ev.engage.qa !== false || ev.engage.survey !== false) ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 12.5,
-              color: t.muted,
-              marginBottom: 10,
-            }}
-          >
-            <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
-            오프라인 상태 — 연결되면 다시 시도하세요
-          </div>
-        ) : null}
-        {ev.engage.qa !== false &&
-          (preview ? (
+        {ev.engage.qa !== false ? (
+        <div
+          role="tabpanel"
+          id="panel-qa"
+          aria-labelledby="tab-qa"
+          style={{ display: activeTab === 'qa' ? undefined : 'none' }}
+        >
+        {offlineBanner}
+        {(preview ? (
             <div
               aria-disabled
               style={{
@@ -499,7 +571,7 @@ export default function Microsite({
               질문 남기기 (미리보기 — 참가자 페이지에서만 동작)
             </div>
           ) : qaOpen && eventId != null ? (
-            <QaPanel theme={t} online={online} eventId={eventId} />
+            <QaPanel theme={t} online={online} eventId={eventId} active={activeTab === 'qa'} />
           ) : (
             <button
               type="button"
@@ -524,8 +596,17 @@ export default function Microsite({
               질문 남기기
             </button>
           ))}
-        {ev.engage.survey !== false &&
-          (preview ? (
+        </div>
+        ) : null}
+        {ev.engage.survey !== false ? (
+        <div
+          role="tabpanel"
+          id="panel-survey"
+          aria-labelledby="tab-survey"
+          style={{ display: activeTab === 'survey' ? undefined : 'none' }}
+        >
+        {offlineBanner}
+        {(preview ? (
             <div
               aria-disabled
               style={{
@@ -579,6 +660,8 @@ export default function Microsite({
               설문 참여 · 2분
             </button>
           ))}
+        </div>
+        ) : null}
       </div>
       {openDoc && openDoc.url ? (
         <PdfViewer theme={t} url={openDoc.url} title={openDoc.name} onClose={() => setOpenDoc(null)} />
