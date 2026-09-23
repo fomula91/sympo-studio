@@ -46,11 +46,17 @@ function readGuestWorkspace(): EventItem[] | null {
   }
 }
 
-function writeGuestWorkspace(events: EventItem[]) {
+// 성공 여부를 돌려준다(FE-19 이후 키 비주얼이 base64로 몇백KB~1MB대까지 커질 수 있어
+// 용량 초과가 더는 드문 일이 아니다 — 실패를 그냥 삼키면 화면엔 이미지가 반영된 것처럼
+// 보이다가 새로고침하면 그 편집뿐 아니라 이후 다른 편집까지 조용히 사라진다, 코드
+// 리뷰 발견). 호출자가 실패를 `saved` 상태 문구로 드러낸다.
+function writeGuestWorkspace(events: EventItem[]): boolean {
   try {
     window.localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(events));
+    return true;
   } catch {
     // 용량 초과·프라이빗 모드 등 — 화면 동작을 막을 이유는 아니다.
+    return false;
   }
 }
 
@@ -156,6 +162,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 정체성이 렌더를 넘나들며 그대로라, 오래된 클로저도 `.current`를 읽으면 항상 최신값을
   // 얻는다(`detailLoadedRef`와 같은 수법, 코드 리뷰 발견).
   const customPresetIdsRef = useRef<Set<string>>(new Set());
+  // 로그아웃 이후 도착하는 마운트 시점 조회 응답(느린 네트워크 등)이 방금 지운
+  // 개인 프리셋을 다시 채우지 않도록 막는다(공용 기기 — 코드 리뷰 발견). 마운트
+  // 이펙트는 한 번만 도니 로그인 상태가 다시 필요하면 OAuth 리다이렉트로 페이지가
+  // 통째로 새로고침된다 — true로 한 번 세팅되면 이 컴포넌트 생애주기 안에서 되돌릴
+  // 필요가 없다.
+  const loggedOutRef = useRef(false);
 
   // FE-15 — 로그인 여부를 한 번 확인하고, 그 결과에 따라 콘솔 목록의 출처를 가른다.
   // 로그인이면 실제 D1 목록(GET /api/events)으로 교체, 게스트면 localStorage에
@@ -196,7 +208,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           // 프리셋이 목록에 남아 있다"는 완료 기준이 성립하지 않는다(내장은 이미
           // `PRESETS` 상수에 있으니 서버 응답에서 'extracted' origin만 가져온다).
           const presets = await presetsPromise;
-          if (!cancelled) {
+          if (!cancelled && !loggedOutRef.current) {
             setS((prev) => ({ ...prev, customPresets: presets }));
             presets.forEach((p) => customPresetIdsRef.current.add(p.id));
           }
@@ -220,8 +232,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 아직 모름)에는 건너뛴다 — 안 그러면 시드값이 실제 저장분을 덮어쓸 수 있다.
   useEffect(() => {
     if (user || !guestHydratedRef.current) return;
-    writeGuestWorkspace(s.events);
-  }, [s.events, user]);
+    if (!writeGuestWorkspace(s.events)) {
+      // 이펙트 본문에서 곧바로 setState하면 react-hooks/set-state-in-effect가 걸린다
+      // (연쇄 렌더 유발 경고) — 마이크로태스크로 한 틱 미룬다.
+      queueMicrotask(() => patch({ saved: '저장 용량 초과 — 이 편집은 저장되지 않았습니다. 이미지를 지우거나 줄여주세요' }));
+    }
+  }, [s.events, user, patch]);
 
   // 404가 확인된 id만 실제 state로 둔다(비동기 콜백 안에서만 갱신 — 아래 참조).
   // "loading"은 상태로 따로 안 두고 렌더마다 파생시킨다 — 이펙트 본문에서 곧바로
@@ -432,8 +448,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     await logoutStudioUser();
     setUser(null);
     setServerIds(new Set());
+    // 개인 추출 프리셋(이름·색)도 함께 비운다 — 안 그러면 공용 기기에서 로그아웃한
+    // 뒤에도 이전 사용자의 프리셋이 테마 탭에 그대로 남는다(코드 리뷰 발견).
+    // loggedOutRef를 먼저 세워 로그아웃 전에 시작된 조회·저장 응답이 뒤늦게 와도
+    // 이 화면에 다시 채워 넣지 못하게 막는다(fetchStudioPresets·createPreset 참조).
+    loggedOutRef.current = true;
+    customPresetIdsRef.current = new Set();
     const stored = readGuestWorkspace();
-    setS((prev) => ({ ...prev, events: stored ?? seedEvents() }));
+    setS((prev) => ({ ...prev, events: stored ?? seedEvents(), customPresets: [] }));
     guestHydratedRef.current = true;
   }, []);
 
@@ -486,15 +508,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   const createPreset = useCallback(
     async (input: { id: string; label: string; hue: number; chroma: number }): Promise<Preset> => {
       const created = await createStudioPreset(input);
-      customPresetIdsRef.current.add(created.id);
-      setS((prev) => {
-        const idx = prev.customPresets.findIndex((p) => p.id === created.id);
-        const customPresets =
-          idx >= 0
-            ? prev.customPresets.map((p, i) => (i === idx ? created : p))
-            : [...prev.customPresets, created];
-        return { ...prev, customPresets };
-      });
+      // 저장 요청이 나간 뒤 응답이 오기 전에 로그아웃했다면(공용 기기) 개인 프리셋을
+      // 화면 state에 반영하지 않는다 — id는 이미 서버에 등록됐지만 그건 서버 쪽
+      // 사실일 뿐, 이 브라우저 화면에 노출할지는 별개다.
+      if (!loggedOutRef.current) {
+        customPresetIdsRef.current.add(created.id);
+        setS((prev) => {
+          const idx = prev.customPresets.findIndex((p) => p.id === created.id);
+          const customPresets =
+            idx >= 0
+              ? prev.customPresets.map((p, i) => (i === idx ? created : p))
+              : [...prev.customPresets, created];
+          return { ...prev, customPresets };
+        });
+      }
       return created;
     },
     [],

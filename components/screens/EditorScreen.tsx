@@ -32,7 +32,12 @@ function slugifyLabel(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return base || 'preset';
+  // 한글 등 비ASCII 라벨은 위 치환으로 전부 걸러져 항상 같은 자리표시자로 뭉친다
+  // (코드 리뷰 발견) — 고정 문자열 'preset'을 쓰면, 다른 계정이 이미 그 id를 쓰고
+  // 있을 때 서버가 409를 내고(id는 계정을 가로지르는 공유 이름공간이다), 사용자가
+  // 라벨을 아무리 바꿔도 매번 같은 'preset'으로 재요청돼 절대 통과할 수 없었다.
+  // 매번 다른 임의 접미사를 붙여 재시도할 때마다 새 id를 시도하게 한다.
+  return base || `preset-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function uniquePresetId(label: string, existing: Preset[]): string {
@@ -43,19 +48,34 @@ function uniquePresetId(label: string, existing: Preset[]): string {
   return `${base}-${n}`;
 }
 
-const KEY_VISUAL_MAX_BYTES = 2 * 1024 * 1024;
+// base64는 원본보다 약 4/3(약 33%)만큼 커진다 — D1의 문자열·행 크기 한도(약
+// 2,000,000바이트)를 원본 파일 크기로 막으면 그 한도를 넘는 인코딩 결과가 나올 수
+// 있다(코드 리뷰 발견: 1.8MB 파일 → 약 2.4MB 문자열). 인코딩 후 크기 기준으로
+// 여유 있게 잡는다 — 원본 1MB → 약 1.37MB 문자열, 같은 행의 다른 컬럼(제목·장소
+// 등)까지 감안해도 한도에서 충분히 떨어져 있다.
+const KEY_VISUAL_MAX_BYTES = 1 * 1024 * 1024;
+const KEY_VISUAL_MAX_ENCODED_BYTES = 1_500_000;
 
 // 키 비주얼을 base64 data URL로 바꾼다(FE-19) — blob: URL은 이 탭에서만 유효해
 // 새로고침·서버 저장에서 살아남지 못했다. 별도 업로드 엔드포인트(R2) 없이 기존
 // PATCH 본문에 그대로 실어 보낼 수 있는 값이라 이 방식을 골랐다 — 대신 요청 본문·
-// 게스트 localStorage(5MB 한도) 둘 다에 부담이 되므로 원본 파일 크기를 미리 제한한다.
+// 게스트 localStorage(5MB 한도)·D1 문자열 한도 셋 다에 부담이 되므로 크기를 제한한다.
 function fileToDataUrl(file: File): Promise<string> {
   if (file.size > KEY_VISUAL_MAX_BYTES) {
-    return Promise.reject(new Error('이미지가 너무 큽니다 — 2MB 이하 파일을 사용해주세요.'));
+    return Promise.reject(new Error('이미지가 너무 큽니다 — 1MB 이하 파일을 사용해주세요.'));
   }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // 원본 크기 체크만으로는 부족하다 — 압축률이 낮은 포맷은 인코딩 후에도
+      // 한도를 넘을 수 있어 실제로 전송될 값의 길이를 한 번 더 확인한다.
+      if (result.length > KEY_VISUAL_MAX_ENCODED_BYTES) {
+        reject(new Error('이미지가 너무 큽니다 — 1MB 이하 파일을 사용해주세요.'));
+        return;
+      }
+      resolve(result);
+    };
     reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
     reader.readAsDataURL(file);
   });
