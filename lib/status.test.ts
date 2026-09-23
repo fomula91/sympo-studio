@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { EVENT_STATUSES, eventPhase, isEventStatus, PUBLIC_STATUSES, todayKst } from './status';
 
 describe('isEventStatus', () => {
-  it('발행 상태 4종을 통과시킨다', () => {
+  it('발행 상태 3종을 통과시킨다', () => {
     for (const s of EVENT_STATUSES) expect(isEventStatus(s)).toBe(true);
   });
 
   it('시점은 발행 상태가 아니다 — BE-23 이전 값이 되살아나지 않게 막는다', () => {
     for (const s of ['공개예정', '진행중', '완료']) expect(isEventStatus(s)).toBe(false);
+  });
+
+  it('검수대기는 발행 상태가 아니다 — FE-24가 뺐다(승인자 개념 없음)', () => {
+    expect(isEventStatus('검수대기')).toBe(false);
   });
 
   it('문자열이 아닌 값과 목록 밖 문자열을 막는다', () => {
@@ -18,7 +22,7 @@ describe('isEventStatus', () => {
 describe('PUBLIC_STATUSES', () => {
   it('공개만 참가자에게 열린다', () => {
     expect(PUBLIC_STATUSES.has('공개')).toBe(true);
-    for (const s of ['초안', '검수대기', '보관']) expect(PUBLIC_STATUSES.has(s)).toBe(false);
+    for (const s of ['초안', '보관']) expect(PUBLIC_STATUSES.has(s)).toBe(false);
   });
 });
 

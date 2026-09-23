@@ -33,6 +33,13 @@ function slugifyLabel(label: string): string {
   return base || 'preset';
 }
 
+// FE-24 ③ — 아젠다 편집이 실제로 PUT .../sessions에 나가게 되면서(서버 이벤트에 한해)
+// "미리보기에만 반영됨" 고정 문구가 거짓이 됐다. 게스트·로컬 전용 이벤트는 여전히
+// 진짜 미리보기뿐이라 그 문구를 유지한다.
+function agendaSavingMessage(isServerEvent: boolean): string {
+  return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
+}
+
 function uniquePresetId(label: string, existing: Preset[]): string {
   const base = slugifyLabel(label);
   if (!existing.some((p) => p.id === base)) return base;
@@ -80,11 +87,13 @@ function AgendaSection({
   ev,
   patch,
   patchEvent,
+  isServerEvent,
 }: {
   s: StudioState;
   ev: EventItem;
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  isServerEvent: boolean;
 }) {
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
 
@@ -106,12 +115,12 @@ function AgendaSection({
         arr.splice(to, 0, it);
         return { sessions: arr };
       });
-      patch({ dragIdx: to, saved: '미리보기 반영 중…' });
+      patch({ dragIdx: to, saved: agendaSavingMessage(isServerEvent) });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      patch({ dragIdx: -1, saved: '미리보기에만 반영됨' });
+      patch({ dragIdx: -1, saved: agendaSavingMessage(isServerEvent) });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -127,7 +136,7 @@ function AgendaSection({
       arr.splice(to, 0, it);
       return { sessions: arr };
     });
-    patch({ saved: '미리보기에만 반영됨' });
+    patch({ saved: agendaSavingMessage(isServerEvent) });
     setMoveAnnouncement(`${moved.title}을(를) ${ev.sessions.length}개 중 ${to + 1}번째로 이동했습니다.`);
   };
 
@@ -154,7 +163,7 @@ function AgendaSection({
                 const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
                 return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
               });
-              patch({ saved: '미리보기에만 반영됨' });
+              patch({ saved: agendaSavingMessage(isServerEvent) });
             }}
             style={{ ...ghostBtn, fontWeight: 600 }}
           >
@@ -251,7 +260,7 @@ function AgendaSection({
               className="hv-x"
               onClick={() => {
                 patchEvent((curEv) => ({ sessions: curEv.sessions.filter((_, j) => j !== i) }));
-                patch({ saved: '미리보기에만 반영됨' });
+                patch({ saved: agendaSavingMessage(isServerEvent) });
               }}
               style={{
                 width: 44,
@@ -1102,7 +1111,9 @@ export default function EditorScreen({
       </div>
 
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
-        {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'agenda' ? (
+          <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
         {s.section === 'theme' ? (
           <ThemeSection
             s={s}

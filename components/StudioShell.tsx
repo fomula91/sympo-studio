@@ -9,18 +9,33 @@ import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
+import { patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
 const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
 
+// 참가자 화면 주소는 이 도메인 아래에 slug로 열린다(콘솔·에디터의 "생성될 URL" 표시와 동일).
+const PUBLIC_HOST = 'sympo.superjacob.com';
+
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
-  const { s, ev, presets, patch, resetSessions, createEvent } = useStudio();
+  const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds } =
+    useStudio();
   const router = useRouter();
   const pathname = usePathname();
+  // StudioShell은 화면 전환에도 언마운트되지 않는 공용 레이아웃이라, 진행 중인
+  // 이벤트 id를 담아 두지 않으면(그냥 boolean이면) 공개 처리 중에 다른 이벤트로
+  // 넘어갔을 때 그 이벤트의 버튼까지 엉뚱하게 비활성으로 보인다(`/code-review` 발견).
+  const [statusPendingId, setStatusPendingId] = useState<number | null>(null);
+  const statusPending = statusPendingId === ev.id;
+  const [copied, setCopied] = useState(false);
+  const [bulkPending, setBulkPending] = useState(false);
+  // s.saved(위)는 에디터 헤더 전용이라 콘솔의 일괄 변경 결과가 보일 자리가 없었다
+  // (팀원 코드리뷰가 PR #63에서 발견) — 콘솔에서도 보이는 별도 토스트로 띄운다.
+  const [bulkResult, setBulkResult] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   // POST /api/events가 401(세션 만료)로 실패하면, 계정 아이콘은 로그인 상태 그대로
   // 남아 있어 사용자가 같은 버튼을 다시 눌러도 또 실패한다 — 재로그인 링크로 다음
@@ -74,6 +89,92 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   const canPublish = contrastAllPass(preset, ev.mode);
   const openViewer = () => {
     if (canPublish) patch({ viewerOpen: true });
+  };
+
+  // FE-23 — 공개·비공개는 디바운스 없이 즉시 서버에 반영한다. 실패하면 로컬 상태는
+  // 그대로 두고 사유를 저장 상태 문구에 남긴다(버튼만 낙관적으로 바뀌는 일이 없게).
+  const handlePublish = async () => {
+    if (!canPublish || statusPending) return;
+    setStatusPendingId(ev.id);
+    patch({ saved: '공개하는 중…' });
+    try {
+      await setEventStatus('공개');
+      patch({ saved: '공개됨' });
+    } catch (e) {
+      console.warn('이벤트 공개 실패:', e);
+      patch({ saved: '공개하지 못했습니다 — 다시 시도해주세요' });
+    } finally {
+      setStatusPendingId(null);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (statusPending) return;
+    setStatusPendingId(ev.id);
+    patch({ saved: '비공개로 전환하는 중…' });
+    try {
+      await setEventStatus('초안');
+      patch({ saved: '비공개로 전환됨' });
+    } catch (e) {
+      console.warn('이벤트 비공개 전환 실패:', e);
+      patch({ saved: '전환하지 못했습니다 — 다시 시도해주세요' });
+    } finally {
+      setStatusPendingId(null);
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(`https://${PUBLIC_HOST}/${ev.slug}`);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      console.warn('URL 복사 실패:', e);
+    }
+  };
+
+  // FE-24 ① — 콘솔의 일괄 상태 변경을 실제 서버에 반영한다. 선택 항목 중 서버 이벤트만
+  // PATCH로 내보내고(게스트·시드는 로컬만 바꾼다 — 애초에 보낼 D1 행이 없다), 실패한
+  // 건은 로컬 상태를 낙관적으로 바꾸지 않는다.
+  const handleBulkAction = async (a: string) => {
+    if (bulkPending) return;
+    if (a === '복제') {
+      patch({ sel: [] });
+      return;
+    }
+    const targetIds = s.sel;
+    setBulkPending(true);
+    setBulkResult(null);
+    patch({ saved: '일괄 반영 중…' });
+    const serverTargets = targetIds.filter((id) => serverIds.has(id));
+    const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
+    const failedIds = new Set<number>();
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        failedIds.add(serverTargets[i]);
+        console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
+      }
+    });
+    const successCount = targetIds.length - failedIds.size;
+    patch((st) => ({
+      events: st.events.map((e) => (targetIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
+      // 처리한 항목 중 성공한 것만 선택에서 뺀다. 실패한 건은 선택을 그대로 둬서
+      // 바로 다시 시도할 수 있게 한다 — 요청이 진행되는 동안 사용자가 선택을
+      // 바꿨다면(체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면 그 새 선택도
+      // 조용히 사라진다(팀원 코드리뷰가 PR #63에서 발견).
+      sel: st.sel.filter((id) => !targetIds.includes(id) || failedIds.has(id)),
+      // s.saved는 에디터 헤더에만 보인다 — 일괄 변경은 콘솔에서 일어나는데 그
+      // 결과가 콘솔 화면 어디에도 안 보였다(같은 리뷰가 발견). 콘솔에서도 보이는
+      // 별도 배너(bulkResult, 아래)로 성공·실패 건수를 알린다.
+      saved: failedIds.size > 0 ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요` : '일괄 반영됨',
+    }));
+    setBulkResult(
+      failedIds.size > 0
+        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+        : `${successCount}건 반영됨`,
+    );
+    setTimeout(() => setBulkResult(null), 4000);
+    setBulkPending(false);
   };
 
   const goTo = (target: 'console' | 'editor' | 'theme' | 'report' | 'viewer') => {
@@ -261,14 +362,40 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               {!canPublish ? (
                 <div style={{ fontSize: 12, color: 'oklch(0.5 0.15 28)' }}>대비비 미달로 공개할 수 없음</div>
               ) : null}
-              <button
-                className="hv-brandpress"
-                onClick={openViewer}
-                disabled={!canPublish}
-                style={{ ...primaryBtn, opacity: canPublish ? 1 : 0.4, cursor: canPublish ? 'pointer' : 'not-allowed' }}
-              >
-                공개하기
-              </button>
+              {isServerEvent && ev.status === '공개' ? (
+                <>
+                  <button
+                    className="hv-bg965"
+                    onClick={handleCopyUrl}
+                    title={`https://${PUBLIC_HOST}/${ev.slug}`}
+                    style={{ ...ghostBtn, fontFamily: MONO, fontSize: 11.5, maxWidth: 260 }}
+                  >
+                    {copied ? '복사됨' : `${PUBLIC_HOST}/${ev.slug}`}
+                  </button>
+                  <button
+                    className="hv-bg965"
+                    onClick={handleUnpublish}
+                    disabled={statusPending}
+                    style={{ ...ghostBtn, opacity: statusPending ? 0.5 : 1, cursor: statusPending ? 'not-allowed' : 'pointer' }}
+                  >
+                    비공개로 전환
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="hv-brandpress"
+                  onClick={isServerEvent ? handlePublish : undefined}
+                  disabled={!canPublish || !isServerEvent || statusPending}
+                  title={!isServerEvent ? '로그인해야 실제로 공개할 수 있어요' : undefined}
+                  style={{
+                    ...primaryBtn,
+                    opacity: canPublish && isServerEvent && !statusPending ? 1 : 0.4,
+                    cursor: canPublish && isServerEvent && !statusPending ? 'pointer' : 'not-allowed',
+                  }}
+                >
+                  공개하기
+                </button>
+              )}
             </div>
           ) : null}
           {screenKind === 'console' ? (
@@ -353,6 +480,28 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         </main>
       </div>
 
+      {bulkResult ? (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            // 선택 토스트가 함께 떠 있으면(일부 실패해 선택이 남은 경우) 겹치지 않게 위로.
+            bottom: s.bulk && s.sel.length > 0 ? 88 : 24,
+            transform: 'translateX(-50%)',
+            background: 'oklch(0.22 0.008 250)',
+            color: '#fff',
+            borderRadius: 12,
+            padding: '9px 16px',
+            fontSize: 12.5,
+            fontWeight: 600,
+            boxShadow: '0 18px 40px -12px oklch(0.3 0.02 250 / 0.5)',
+            zIndex: 21,
+          }}
+        >
+          {bulkResult}
+        </div>
+      ) : null}
+
       {s.bulk && s.sel.length > 0 ? (
         <div
           style={{
@@ -378,16 +527,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
             <button
               key={a}
               className="hv-glass"
-              onClick={() =>
-                patch((st) => ({
-                  events:
-                    a === '복제'
-                      ? st.events
-                      : st.events.map((e) => (st.sel.includes(e.id) ? { ...e, status: a } : e)),
-                  sel: [],
-                  saved: '일괄 반영됨',
-                }))
-              }
+              onClick={() => void handleBulkAction(a)}
+              disabled={bulkPending}
               style={{
                 height: 44,
                 padding: '0 14px',
@@ -397,7 +538,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                 color: '#fff',
                 fontSize: 12.5,
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: bulkPending ? 'not-allowed' : 'pointer',
+                opacity: bulkPending ? 0.5 : 1,
               }}
             >
               {a === '복제' ? '템플릿으로 복제' : `${a}으로 변경`}
