@@ -20,10 +20,26 @@ export function TextInput({
   type?: 'text' | 'date';
   inputMode?: 'numeric';
 }) {
+  // 글자 수 제한이 있는 필드는 한도를 미리 알려준다 — maxLength만 걸어두면
+  // 한도에 닿는 순간 입력이 조용히 막혀서, 왜 더 안 써지는지 사용자가 알 방법이
+  // 없었다(사용자 지적). 입력 중엔 한도에 닿았을 때 색으로도 눈에 띄게 한다.
+  const atLimit = maxLength != null && value.length >= maxLength;
   return (
     <label style={{ display: 'block' }}>
-      <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 7, letterSpacing: '-0.01em' }}>
-        {label}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          marginBottom: 7,
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, letterSpacing: '-0.01em' }}>{label}</div>
+        {maxLength != null ? (
+          <div style={{ fontSize: 11, color: atLimit ? UI.toneWarningFg : UI.faint }}>
+            {value.length}/{maxLength}
+          </div>
+        ) : null}
       </div>
       <input
         className="inp"
