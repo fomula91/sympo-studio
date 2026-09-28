@@ -8,6 +8,8 @@ export function TextInput({
   value,
   onChange,
   maxLength,
+  type = 'text',
+  inputMode,
 }: {
   label: string;
   hint?: string;
@@ -15,6 +17,8 @@ export function TextInput({
   value: string;
   onChange: (v: string) => void;
   maxLength?: number;
+  type?: 'text' | 'date';
+  inputMode?: 'numeric';
 }) {
   return (
     <label style={{ display: 'block' }}>
@@ -23,6 +27,8 @@ export function TextInput({
       </div>
       <input
         className="inp"
+        type={type}
+        inputMode={inputMode}
         value={value}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}

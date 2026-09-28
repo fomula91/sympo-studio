@@ -303,9 +303,15 @@ function BasicSection({
               hint={brandNeedsInput ? '참가자에게 표시될 브랜드명을 입력해 주세요' : f.hint}
               warn={brandNeedsInput}
               value={ev[f.k]}
-              maxLength={200}
+              maxLength={f.k === 'cap' ? 6 : 200}
+              type={'type' in f ? f.type : 'text'}
+              inputMode={'inputMode' in f ? f.inputMode : undefined}
               onChange={(v) => {
-                patchEvent({ [f.k]: v });
+                // 예상 참여 인원은 숫자만 받는다(팀원 리뷰 지적) — 여기서 걸러야
+                // detailPatchToBody가 파싱 실패로 capacity를 조용히 null로 보내
+                // "저장됨"인데 실제로는 값이 지워지는 상황 자체가 안 생긴다.
+                const next = f.k === 'cap' ? v.replace(/[^0-9]/g, '') : v;
+                patchEvent({ [f.k]: next });
                 patch({ saved: savingMessage(isServerEvent) });
               }}
             />
