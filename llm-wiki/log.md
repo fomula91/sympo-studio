@@ -15,6 +15,8 @@
 
 ## 2026-09-28
 
+- **[BE] BE-34 종료 — 운영 D1 조회 결과 상한 초과 0건, 과제를 Closed-Tasks로 옮김**: `wrangler login` 재발급(이전 토큰은 `user`·`account` read뿐이라 7403) 후 원격 D1을 조회했다 — `events` 1행, title·brand·venue·host 초과 0건, capacity 이상값 0건. 정리할 데이터가 없다. FE 쪽 확인 항목(서버 400 → "저장 실패")은 `StudioProvider.tsx` `flushServerSave`의 `.catch`로 코드 확인했다. 브랜치 `be-34-event-text-limits`.
+
 - **[BE] BE-34 코드 반영 — 이벤트 텍스트 상한을 `lib/event-limits.ts` 한 벌로 모으고 POST·PATCH에 적용 (원격 D1 조회는 남음)**: 상한(title·venue 120 / brand·host 80)과 인원 상한(`MAX_CAPACITY` 999,999 — 에디터 6자리의 최댓값)을 새 모듈 `lib/event-limits.ts`로 뺐다. 클라이언트(`lib/data.ts`)도 읽으므로 서버 모듈을 import하지 않고 상수·순수 함수만 둔다. 이 상수를 네 곳이 참조한다: `POST /api/events`(`str()`에 `max` 인자 추가, trim 후 길이), `PATCH /api/events/[id]`(원문 길이 — 에디터 `maxLength`와 같은 기준), `lib/import.ts`, `FIELD_DEFS.maxLength`. 초과 시 400 `"<필드>는 N자 이하여야 합니다."`. 같은 김에 **PATCH가 `title`·`brand`에 null·숫자를 받으면 NOT NULL 위반으로 사유 없는 500이 나던 것**을 타입 검사로 400에 접었고, capacity는 세 경로 모두 **정수**도 요구한다(컬럼이 INTEGER이고 에디터는 숫자만 받는다). `lib/event-limits.test.ts`(4건: 에디터 maxLength = 서버 상한, 경계값 통과·+1 거절, capacity 범위)를 추가했다. `npm run lint`·`build`·`test`(103건) 통과. **완료 기준 ③ 미완** — 원격 D1 조회가 7403으로 막혔다(wrangler OAuth 토큰 권한이 `user`·`account` read뿐). 로컬 D1은 events 0행. 재로그인 후 `SELECT … SUM(length(title)>120) …` 조회가 남아 있어 과제를 닫지 않았다.
 
 - **[PROJ] BE-35·BE-36 등록 — R2 고아 객체, 목록 응답의 키 비주얼·자료 개수**: PR #64(FE-25) 리뷰 중 자료·이벤트 삭제 경로 어디에도 R2 `delete`가 없음을 확인했다 — 스튜디오에서 실제 업로드·삭제가 붙는 순간 지운 파일이 R2에 영구히 남는다(PR 본문의 "서버가 best-effort로 정리"는 사실이 아니라 정정을 요청). 이벤트 삭제도 `ON DELETE CASCADE`로 D1 행만 사라진다. 같은 리뷰 흐름에서 목록 API가 base64 키 비주얼(PR #65)을 원문으로 싣고 자료 개수는 안 실어 콘솔 "자료 N"이 로그인 사용자에게 0인 문제를 BE-36으로 묶었다.
