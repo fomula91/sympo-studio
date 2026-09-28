@@ -1,7 +1,7 @@
 // FE-30 — 스튜디오(운영자 화면)가 실제 D1 이벤트를 읽고 쓰기 위한 클라이언트 헬퍼.
 // 참가자용 클라이언트(lib/api.ts)와 분리한다 — 인증·용도가 다르다.
 import { ApiClientError, fetchWithTimeout } from '@/lib/api';
-import type { AuthUser, EventDetail, EventItem, Session } from '@/lib/types';
+import type { AuthUser, EventDetail, EventItem, Preset, Session } from '@/lib/types';
 
 async function readError(res: Response): Promise<string> {
   try {
@@ -95,12 +95,8 @@ export function detailPatchToBody(delta: Partial<EventDetail>): Record<string, u
   if (delta.mode !== undefined) body.mode = delta.mode;
   if (delta.iconSet !== undefined) body.iconSet = delta.iconSet;
   if (delta.density !== undefined) body.density = delta.density;
-  // blob: URL은 이 브라우저 탭에서만 유효하다 — 그대로 저장하면 참가자 브라우저에서는
-  // 절대 안 열리고 새로고침만 해도 깨진다(FE-19). 실제 업로드(R2)가 붙기 전까지는
-  // 지우는 것(빈 문자열)만 서버에 보내고 blob: 값 자체는 동기화에서 뺀다.
-  if (delta.keyVisual !== undefined && !delta.keyVisual.startsWith('blob:')) {
-    body.keyVisual = delta.keyVisual;
-  }
+  // base64 data URL(FE-19) 또는 빈 문자열(비움) — 둘 다 그대로 서버에 보낸다.
+  if (delta.keyVisual !== undefined) body.keyVisual = delta.keyVisual;
   if (delta.kvPattern !== undefined) body.kvPattern = delta.kvPattern;
   if (delta.engage !== undefined) body.engage = delta.engage;
   // sessions는 여기서 다루지 않는다 — 아젠다 쓰기는 PUT /api/events/[id]/sessions로
@@ -170,4 +166,44 @@ export async function createStudioEvent(input: {
   if (!res.ok) throw new ApiClientError(res.status, await readError(res));
   const dto = (await res.json()) as EventDTO;
   return dtoToEventItem(dto);
+}
+
+interface PresetDTO {
+  id: string;
+  label: string;
+  h: number;
+  c: number;
+  origin: string;
+}
+
+/**
+ * GET /api/presets — 로그인한 사용자가 볼 수 있는 프리셋(내장 + 본인 추출본, BE-25).
+ * 내장 5종은 `lib/theme.ts`의 `PRESETS` 상수로 이미 있으니 `origin: 'extracted'`만
+ * 골라 `customPresets`에 합친다(FE-40).
+ */
+export async function fetchStudioPresets(): Promise<Preset[]> {
+  const res = await fetchWithTimeout('/api/presets', { cache: 'no-store' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const data = (await res.json()) as { presets: PresetDTO[] };
+  return data.presets.filter((p) => p.origin === 'extracted').map((p) => ({ id: p.id, label: p.label, h: p.h, c: p.c }));
+}
+
+/**
+ * POST /api/presets — 이미지에서 추출한 브랜드 프리셋을 실제로 저장한다(FE-40).
+ * 로그인 필수(401) — 게스트는 이 함수를 부르지 않고 로컬에만 둔다.
+ */
+export async function createStudioPreset(input: {
+  id: string;
+  label: string;
+  hue: number;
+  chroma: number;
+}): Promise<Preset> {
+  const res = await fetchWithTimeout('/api/presets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, sourceKey: null }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  const dto = (await res.json()) as PresetDTO;
+  return { id: dto.id, label: dto.label, h: dto.h, c: dto.c };
 }

@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { SectionTitle } from '@/components/ui/SectionTitle';
 import { TextInput } from '@/components/ui/TextInput';
+import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
+  AuthUser,
   Density,
   Device,
   EventItem,
@@ -30,7 +32,12 @@ function slugifyLabel(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return base || 'preset';
+  // 한글 등 비ASCII 라벨은 위 치환으로 전부 걸러져 항상 같은 자리표시자로 뭉친다
+  // (코드 리뷰 발견) — 고정 문자열 'preset'을 쓰면, 다른 계정이 이미 그 id를 쓰고
+  // 있을 때 서버가 409를 내고(id는 계정을 가로지르는 공유 이름공간이다), 사용자가
+  // 라벨을 아무리 바꿔도 매번 같은 'preset'으로 재요청돼 절대 통과할 수 없었다.
+  // 매번 다른 임의 접미사를 붙여 재시도할 때마다 새 id를 시도하게 한다.
+  return base || `preset-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function uniquePresetId(label: string, existing: Preset[]): string {
@@ -41,6 +48,39 @@ function uniquePresetId(label: string, existing: Preset[]): string {
   return `${base}-${n}`;
 }
 
+// base64는 원본보다 약 4/3(약 33%)만큼 커진다 — D1의 문자열·행 크기 한도(약
+// 2,000,000바이트)를 원본 파일 크기로 막으면 그 한도를 넘는 인코딩 결과가 나올 수
+// 있다(코드 리뷰 발견: 1.8MB 파일 → 약 2.4MB 문자열). 인코딩 후 크기 기준으로
+// 여유 있게 잡는다 — 원본 1MB → 약 1.37MB 문자열, 같은 행의 다른 컬럼(제목·장소
+// 등)까지 감안해도 한도에서 충분히 떨어져 있다.
+const KEY_VISUAL_MAX_BYTES = 1 * 1024 * 1024;
+const KEY_VISUAL_MAX_ENCODED_BYTES = 1_500_000;
+
+// 키 비주얼을 base64 data URL로 바꾼다(FE-19) — blob: URL은 이 탭에서만 유효해
+// 새로고침·서버 저장에서 살아남지 못했다. 별도 업로드 엔드포인트(R2) 없이 기존
+// PATCH 본문에 그대로 실어 보낼 수 있는 값이라 이 방식을 골랐다 — 대신 요청 본문·
+// 게스트 localStorage(5MB 한도)·D1 문자열 한도 셋 다에 부담이 되므로 크기를 제한한다.
+function fileToDataUrl(file: File): Promise<string> {
+  if (file.size > KEY_VISUAL_MAX_BYTES) {
+    return Promise.reject(new Error('이미지가 너무 큽니다 — 1MB 이하 파일을 사용해주세요.'));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // 원본 크기 체크만으로는 부족하다 — 압축률이 낮은 포맷은 인코딩 후에도
+      // 한도를 넘을 수 있어 실제로 전송될 값의 길이를 한 번 더 확인한다.
+      if (result.length > KEY_VISUAL_MAX_ENCODED_BYTES) {
+        reject(new Error('이미지가 너무 큽니다 — 1MB 이하 파일을 사용해주세요.'));
+        return;
+      }
+      resolve(result);
+    };
+    reader.onerror = () => reject(new Error('이미지를 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 // isServerEvent가 아니면 patchEvent가 서버로 아무것도 안 보낸다(StudioProvider.tsx) — 그때
 // "저장 중"이라고 말하면 거짓이다(FE-36). isServerEvent라도 필드 변경 직후 "반영됨"류
 // 문구를 먼저 찍으면 700ms 뒤 flushServerSave가 "변경 저장 중…"으로 덮어써 순서가
@@ -48,16 +88,6 @@ function uniquePresetId(label: string, existing: Preset[]): string {
 // 항상 이 한 판정으로 고른다. 호출부마다 따로 적으면 이번처럼 일부 자리를 빠뜨리기 쉽다.
 function savingMessage(isServerEvent: boolean): string {
   return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
-}
-
-// StudioProvider.tsx의 patchEvent는 커스텀(내장이 아닌) presetId를 서버로 보내기
-// 직전에 지운다(남의 프리셋 id를 추측해 붙이는 걸 막는 가드, BE-25 경계) — 그 델타가
-// presetId 하나뿐이면 보낼 게 없어(detailPatchToBody가 null) PATCH 자체가 안 걸리고
-// flushServerSave도 영영 안 불린다. isServerEvent만 보고 "변경 저장 중…"을 찍으면
-// 이 경우 그 문구에 영영 멈춘다(/code-review 지적) — 프리셋을 고를 때는 내장인지도
-// 함께 확인한다.
-function isBuiltInPreset(presetId: string): boolean {
-  return PRESETS.some((p) => p.id === presetId);
 }
 
 const MODES: { k: Mode; label: string }[] = [
@@ -551,6 +581,9 @@ function ThemeSection({
   patch,
   patchEvent,
   isServerEvent,
+  user,
+  createPreset,
+  isKnownPreset,
   showContrast,
 }: {
   s: StudioState;
@@ -559,6 +592,9 @@ function ThemeSection({
   patch: PatchFn;
   patchEvent: PatchEventFn;
   isServerEvent: boolean;
+  user: AuthUser | null;
+  createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
+  isKnownPreset: (presetId: string) => boolean;
   showContrast: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
@@ -568,9 +604,15 @@ function ThemeSection({
 
   const [draft, setDraft] = useState<{ h: number; extractedC: number; c: number; label: string } | null>(null);
   const [extractError, setExtractError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [kvError, setKvError] = useState('');
 
   const handleFile = async (file: File) => {
     setExtractError('');
+    // 이전 draft의 저장 실패 메시지(409·401 등)가 새 draft에 그대로 남아 있으면
+    // 아직 시도조차 안 한 새 이미지가 이미 실패한 것처럼 보인다(코드 리뷰 발견).
+    setSaveError('');
     try {
       const { h, c } = await extractPresetColor(file);
       setDraft({ h, extractedC: c, c, label: file.name.replace(/\.[^.]+$/, '') });
@@ -586,15 +628,43 @@ function ThemeSection({
     ? contrastAllPass(draftPreset, 'light') && contrastAllPass(draftPreset, 'dark')
     : false;
 
-  const saveDraft = () => {
-    if (!draft || !draftPass) return;
+  const saveDraft = async () => {
+    if (!draft || !draftPass || saving) return;
+    setSaveError('');
     const id = uniquePresetId(draft.label, presets);
-    const newPreset: Preset = { id, label: draft.label || '새 브랜드', h: draft.h, c: draft.c };
-    patch({ customPresets: [...s.customPresets, newPreset] });
-    patchEvent({ presetId: id });
-    // 방금 만든 프리셋은 항상 커스텀(내장 아님) — isBuiltInPreset(id)는 늘 거짓이다.
-    patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(id)) });
-    setDraft(null);
+    const label = draft.label || '새 브랜드';
+    // 게스트는 POST /api/presets를 호출할 수 없다(FE-40, 로그인 필수) — FE-40 이전엔
+    // 게스트도 로컬 customPresets에 저장할 수 있었는데, 서버 저장 경로로 바꾸며 그
+    // 대안을 안 남겨 게스트가 아예 저장을 못 하게 된 회귀였다(팀원 리뷰, PR #65).
+    // 서버 이벤트가 아니므로 patchEvent의 presetId FK 문제도 없다 — 그대로 되살린다.
+    if (!user) {
+      const newPreset: Preset = { id, label, h: draft.h, c: draft.c };
+      patch({ customPresets: [...s.customPresets, newPreset] });
+      patchEvent({ presetId: id });
+      patch({ saved: savingMessage(false) });
+      setDraft(null);
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await createPreset({ id, label, hue: draft.h, chroma: draft.c });
+      patchEvent({ presetId: created.id });
+      // isBuiltInPreset만 보면 방금 등록한 커스텀 프리셋은 항상 거짓이 돼 실제로는
+      // PATCH되는데도 "미리보기에만 반영됨"으로 거짓 표시했다(팀원 리뷰) — 내장 또는
+      // 서버 등록 프리셋을 함께 보는 isKnownPreset으로 바꿨다.
+      patch({ saved: savingMessage(isServerEvent && isKnownPreset(created.id)) });
+      setDraft(null);
+    } catch (err) {
+      if (err instanceof ApiClientError && err.status === 401) {
+        setSaveError('로그인해야 프리셋을 저장할 수 있어요.');
+      } else if (err instanceof ApiClientError && err.status === 409) {
+        setSaveError('이미 사용 중인 이름입니다 — 다른 이름으로 저장해주세요.');
+      } else {
+        setSaveError(err instanceof ApiClientError ? err.message : '프리셋을 저장하지 못했습니다 — 다시 시도해주세요.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -626,7 +696,7 @@ function ThemeSection({
               className="hv-border78"
               onClick={() => {
                 patchEvent({ presetId: p.id });
-                patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(p.id)) });
+                patch({ saved: savingMessage(isServerEvent && isKnownPreset(p.id)) });
               }}
               style={{
                 display: 'flex',
@@ -752,15 +822,24 @@ function ThemeSection({
                 : '대비비 미달 — 채도를 낮추면 통과할 수 있습니다.'}
             </div>
           ) : null}
+          {saveError ? (
+            <div style={{ fontSize: 12, color: UI.toneDangerFg, marginBottom: 14 }} role="alert">
+              {saveError}
+            </div>
+          ) : null}
           <div style={{ display: 'flex', gap: 8 }}>
             <button
-              onClick={saveDraft}
-              disabled={!draftPass}
-              style={{ ...primaryBtn, opacity: draftPass ? 1 : 0.4, cursor: draftPass ? 'pointer' : 'not-allowed' }}
+              onClick={() => void saveDraft()}
+              disabled={!draftPass || saving}
+              style={{
+                ...primaryBtn,
+                opacity: draftPass && !saving ? 1 : 0.4,
+                cursor: draftPass && !saving ? 'pointer' : 'not-allowed',
+              }}
             >
-              프리셋으로 저장
+              {saving ? '저장 중…' : '프리셋으로 저장'}
             </button>
-            <button onClick={() => setDraft(null)} style={ghostBtn}>
+            <button onClick={() => setDraft(null)} style={ghostBtn} disabled={saving}>
               취소
             </button>
           </div>
@@ -855,13 +934,13 @@ function ThemeSection({
           patch({ dragOver: false });
           const f = e.dataTransfer?.files?.[0];
           if (f && f.type.startsWith('image')) {
-            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
-            patchEvent({ keyVisual: URL.createObjectURL(f) });
-            // savingMessage로 안 바꾼다 — blob: URL은 detailPatchToBody가 항상 걸러내서
-            // (lib/studio-api.ts, FE-19) isServerEvent라도 이 변경은 서버로 안 나간다.
-            // "변경 저장 중…"이라고 하면 오히려 거짓이 된다 — 실제로 반영된 것(미리보기)만
-            // 정직하게 말한다.
-            patch({ saved: '키 비주얼 교체됨' });
+            setKvError('');
+            fileToDataUrl(f)
+              .then((dataUrl) => {
+                patchEvent({ keyVisual: dataUrl });
+                patch({ saved: savingMessage(isServerEvent) });
+              })
+              .catch((err: Error) => setKvError(err.message));
           }
         }}
         onDragOver={(e) => {
@@ -907,12 +986,13 @@ function ThemeSection({
           </div>
         )}
       </div>
+      {kvError ? <div style={{ fontSize: 12, color: UI.toneDangerFg, marginTop: 8 }}>{kvError}</div> : null}
       <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
         {KV_CHOICES.map((p) => (
           <button
             key={p.k}
             onClick={() => {
-              if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+              setKvError('');
               patchEvent({ kvPattern: p.k, keyVisual: '' });
               patch({ saved: savingMessage(isServerEvent) });
             }}
@@ -934,7 +1014,7 @@ function ThemeSection({
         <button
           className="hv-bg965"
           onClick={() => {
-            if (ev.keyVisual.startsWith('blob:')) URL.revokeObjectURL(ev.keyVisual);
+            setKvError('');
             patchEvent({ keyVisual: '', kvPattern: 'none' });
             patch({ saved: savingMessage(isServerEvent) });
           }}
@@ -1014,6 +1094,12 @@ function ThemeSection({
               </Badge>
             </div>
           ))}
+          {/* FE-18 — 이 게이트는 브랜드 프리셋 색으로 합성한 배경만 검사한다. 키 비주얼로
+              올린 이미지 위 텍스트는 실측하지 않으니 그 한계를 문구로 밝혀 둔다. */}
+          <div style={{ padding: '10px 16px', fontSize: 11.5, color: UI.faint, lineHeight: 1.6 }}>
+            이 검증은 브랜드 색 배경만 검사합니다. 키 비주얼로 올린 이미지 위 텍스트 대비는 별도로
+            확인해주세요 — 밝은 이미지에 흰 라벨을 겹치면 실제로는 기준에 못 미칠 수 있습니다.
+          </div>
         </Card>
       ) : null}
     </div>
@@ -1027,6 +1113,9 @@ export default function EditorScreen({
   patch,
   patchEvent,
   isServerEvent,
+  user,
+  createPreset,
+  isKnownPreset,
 }: {
   s: StudioState;
   ev: EventItem;
@@ -1034,6 +1123,9 @@ export default function EditorScreen({
   patch: PatchFn;
   patchEvent: PatchEventFn;
   isServerEvent: boolean;
+  user: AuthUser | null;
+  createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
+  isKnownPreset: (presetId: string) => boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
@@ -1130,6 +1222,9 @@ export default function EditorScreen({
             patch={patch}
             patchEvent={patchEvent}
             isServerEvent={isServerEvent}
+            user={user}
+            createPreset={createPreset}
+            isKnownPreset={isKnownPreset}
             showContrast
           />
         ) : null}
