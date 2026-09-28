@@ -104,6 +104,12 @@ interface StudioContextValue {
   createEvent: () => Promise<number>;
   // 로그인 사용자만 호출 가능(FE-40) — 실패(401·409 등)는 그대로 던진다.
   createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
+  // 이 presetId가 서버에도 알려져 있는가(내장 PRESETS 또는 POST /api/presets로 이미
+  // 등록됨) — patchEvent가 presetId를 서버로 보낼지 가르는 것과 정확히 같은 판정이다.
+  // 화면이 "변경 저장 중…" 문구를 고를 때도 같은 판정을 써야 어긋나지 않는다
+  // (팀원 리뷰, PR #65) — 한 곳(`isKnownPreset`)에서만 계산해 두 군데가 따로 판정하며
+  // 어긋날 여지를 없앴다.
+  isKnownPreset: (presetId: string) => boolean;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -169,6 +175,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 정체성이 렌더를 넘나들며 그대로라, 오래된 클로저도 `.current`를 읽으면 항상 최신값을
   // 얻는다(`detailLoadedRef`와 같은 수법, 코드 리뷰 발견).
   const customPresetIdsRef = useRef<Set<string>>(new Set());
+  // patchEvent(아래)와 화면(EditorScreen의 저장 문구)이 똑같이 쓰는 판정 — 하나로
+  // 합쳐 두 자리가 따로 계산하다 어긋나는 일을 없앴다(팀원 리뷰, PR #65: 새로 등록한
+  // 커스텀 프리셋이 실제로는 PATCH되는데 화면은 `isBuiltInPreset`만 보고 "미리보기에만
+  // 반영됨"이라고 거짓 표시했다).
+  const isKnownPreset = useCallback(
+    (presetId: string) => PRESETS.some((preset) => preset.id === presetId) || customPresetIdsRef.current.has(presetId),
+    [],
+  );
   // 로그아웃 이후 도착하는 마운트 시점 조회 응답(느린 네트워크 등)이 방금 지운
   // 개인 프리셋을 다시 채우지 않도록 막는다(공용 기기 — 코드 리뷰 발견). 마운트
   // 이펙트는 한 번만 도니 로그인 상태가 다시 필요하면 OAuth 리다이렉트로 페이지가
@@ -412,8 +426,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         let serverDelta = delta;
         if (serverDelta?.presetId !== undefined) {
           const { presetId } = serverDelta;
-          const known = PRESETS.some((preset) => preset.id === presetId) || customPresetIdsRef.current.has(presetId);
-          if (!known) {
+          if (!isKnownPreset(presetId)) {
             serverDelta = { ...serverDelta };
             delete serverDelta.presetId;
           }
@@ -433,7 +446,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [effectiveId, ev, flushServerSave, isServerEvent],
+    [effectiveId, ev, flushServerSave, isServerEvent, isKnownPreset],
   );
 
   const resetSessions = useCallback(() => {
@@ -551,6 +564,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       logout,
       createEvent,
       createPreset,
+      isKnownPreset,
     }),
     [
       s,
@@ -566,6 +580,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       logout,
       createEvent,
       createPreset,
+      isKnownPreset,
     ],
   );
 

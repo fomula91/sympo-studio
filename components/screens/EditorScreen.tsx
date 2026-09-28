@@ -10,7 +10,7 @@ import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { DOCS, ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
-import { contrastAllPass, contrastRows, derive, ICONSETS, PRESETS } from '@/lib/theme';
+import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
   AuthUser,
   Density,
@@ -88,16 +88,6 @@ function fileToDataUrl(file: File): Promise<string> {
 // 항상 이 한 판정으로 고른다. 호출부마다 따로 적으면 이번처럼 일부 자리를 빠뜨리기 쉽다.
 function savingMessage(isServerEvent: boolean): string {
   return isServerEvent ? '변경 저장 중…' : '미리보기에만 반영됨';
-}
-
-// StudioProvider.tsx의 patchEvent는 커스텀(내장이 아닌) presetId를 서버로 보내기
-// 직전에 지운다(남의 프리셋 id를 추측해 붙이는 걸 막는 가드, BE-25 경계) — 그 델타가
-// presetId 하나뿐이면 보낼 게 없어(detailPatchToBody가 null) PATCH 자체가 안 걸리고
-// flushServerSave도 영영 안 불린다. isServerEvent만 보고 "변경 저장 중…"을 찍으면
-// 이 경우 그 문구에 영영 멈춘다(/code-review 지적) — 프리셋을 고를 때는 내장인지도
-// 함께 확인한다.
-function isBuiltInPreset(presetId: string): boolean {
-  return PRESETS.some((p) => p.id === presetId);
 }
 
 const MODES: { k: Mode; label: string }[] = [
@@ -574,6 +564,7 @@ function ThemeSection({
   isServerEvent,
   user,
   createPreset,
+  isKnownPreset,
   showContrast,
 }: {
   s: StudioState;
@@ -584,6 +575,7 @@ function ThemeSection({
   isServerEvent: boolean;
   user: AuthUser | null;
   createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
+  isKnownPreset: (presetId: string) => boolean;
   showContrast: boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
@@ -620,17 +612,28 @@ function ThemeSection({
   const saveDraft = async () => {
     if (!draft || !draftPass || saving) return;
     setSaveError('');
+    const id = uniquePresetId(draft.label, presets);
+    const label = draft.label || '새 브랜드';
+    // 게스트는 POST /api/presets를 호출할 수 없다(FE-40, 로그인 필수) — FE-40 이전엔
+    // 게스트도 로컬 customPresets에 저장할 수 있었는데, 서버 저장 경로로 바꾸며 그
+    // 대안을 안 남겨 게스트가 아예 저장을 못 하게 된 회귀였다(팀원 리뷰, PR #65).
+    // 서버 이벤트가 아니므로 patchEvent의 presetId FK 문제도 없다 — 그대로 되살린다.
     if (!user) {
-      setSaveError('로그인해야 프리셋을 저장할 수 있어요.');
+      const newPreset: Preset = { id, label, h: draft.h, c: draft.c };
+      patch({ customPresets: [...s.customPresets, newPreset] });
+      patchEvent({ presetId: id });
+      patch({ saved: savingMessage(false) });
+      setDraft(null);
       return;
     }
     setSaving(true);
     try {
-      const id = uniquePresetId(draft.label, presets);
-      const created = await createPreset({ id, label: draft.label || '새 브랜드', hue: draft.h, chroma: draft.c });
+      const created = await createPreset({ id, label, hue: draft.h, chroma: draft.c });
       patchEvent({ presetId: created.id });
-      // 방금 만든 프리셋은 항상 커스텀(내장 아님) — isBuiltInPreset(id)는 늘 거짓이다.
-      patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(created.id)) });
+      // isBuiltInPreset만 보면 방금 등록한 커스텀 프리셋은 항상 거짓이 돼 실제로는
+      // PATCH되는데도 "미리보기에만 반영됨"으로 거짓 표시했다(팀원 리뷰) — 내장 또는
+      // 서버 등록 프리셋을 함께 보는 isKnownPreset으로 바꿨다.
+      patch({ saved: savingMessage(isServerEvent && isKnownPreset(created.id)) });
       setDraft(null);
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 401) {
@@ -674,7 +677,7 @@ function ThemeSection({
               className="hv-border78"
               onClick={() => {
                 patchEvent({ presetId: p.id });
-                patch({ saved: savingMessage(isServerEvent && isBuiltInPreset(p.id)) });
+                patch({ saved: savingMessage(isServerEvent && isKnownPreset(p.id)) });
               }}
               style={{
                 display: 'flex',
@@ -1093,6 +1096,7 @@ export default function EditorScreen({
   isServerEvent,
   user,
   createPreset,
+  isKnownPreset,
 }: {
   s: StudioState;
   ev: EventItem;
@@ -1102,6 +1106,7 @@ export default function EditorScreen({
   isServerEvent: boolean;
   user: AuthUser | null;
   createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
+  isKnownPreset: (presetId: string) => boolean;
 }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];
   const theme = derive(preset, ev.mode);
@@ -1200,6 +1205,7 @@ export default function EditorScreen({
             isServerEvent={isServerEvent}
             user={user}
             createPreset={createPreset}
+            isKnownPreset={isKnownPreset}
             showContrast
           />
         ) : null}
