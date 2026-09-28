@@ -310,7 +310,7 @@ function BasicSection({
               hint={brandNeedsInput ? '참가자에게 표시될 브랜드명을 입력해 주세요' : dateInvalid ? '저장된 날짜 형식이 올바르지 않습니다 — 다시 선택해 주세요' : f.hint}
               warn={needsInput}
               value={ev[f.k]}
-              maxLength={f.k === 'cap' ? 6 : 200}
+              maxLength={f.maxLength}
               type={f.type}
               inputMode={f.inputMode}
               onChange={(v) => {
