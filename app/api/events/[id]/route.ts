@@ -16,6 +16,9 @@ import {
 } from '@/lib/db';
 import { assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
+import {
+  EVENT_TEXT_MAX, capacityBadRequestMessage, isEventTextField, isValidCapacity, textTooLongMessage,
+} from '@/lib/event-limits';
 
 /**
  * GET /api/events/[id] — 이벤트 단건 + 아젠다 + 자료
@@ -126,9 +129,22 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (key === 'status' && !isEventStatus(value)) {
       throw new BadRequest(statusBadRequestMessage());
     }
-    // 음수 금지 — 응답률·참석률의 분모다(BE-19 ②).
-    if (key === 'capacity' && value !== null && (typeof value !== 'number' || value < 0)) {
-      throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
+    // 음수 금지 — 응답률·참석률의 분모다(BE-19 ②). 상한은 에디터 입력칸과 같다(BE-34).
+    if (key === 'capacity' && value !== null && !isValidCapacity(value)) {
+      throw new BadRequest(capacityBadRequestMessage());
+    }
+    // 글자 수 상한 — POST·가져오기·에디터와 같은 상수다(BE-34). 예전엔 이 경로가 길이를
+    // 보지 않아 API를 직접 부르면 한도를 넘는 값이 저장됐고, 에디터에서 `150/120`처럼
+    // 초과 상태로 열렸다. 타입도 여기서 본다 — brand·title은 NOT NULL이라 null이나
+    // 숫자를 통과시키면 UPDATE가 사유 없는 500으로 터진다.
+    if (isEventTextField(key)) {
+      const nullable = key === 'venue' || key === 'host';
+      if (value === null ? !nullable : typeof value !== 'string') {
+        throw new BadRequest(`${key}는 문자열이어야 합니다.`);
+      }
+      if (typeof value === 'string' && value.length > EVENT_TEXT_MAX[key]) {
+        throw new BadRequest(textTooLongMessage(key, EVENT_TEXT_MAX[key]));
+      }
     }
     // **남의 프리셋은 붙일 수 없다** (BE-25 경계의 구멍, `/code-review` 발견).
     // 목록과 쓰기는 소유권으로 갈랐는데 이 경로만 FK에만 기대고 있었다 — 프리셋 id는

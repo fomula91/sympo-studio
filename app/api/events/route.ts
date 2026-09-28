@@ -15,6 +15,9 @@ import {
   evaluateRateLimit, rateCounterStatement, rateUsageStatements, userRateKeys,
 } from '@/lib/rate-limit';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
+import {
+  EVENT_TEXT_MAX, capacityBadRequestMessage, isValidCapacity, textTooLongMessage,
+} from '@/lib/event-limits';
 
 /**
  * GET /api/events — 이벤트 목록
@@ -90,13 +93,17 @@ interface CreateBody {
   slug?: unknown;
 }
 
-function str(v: unknown, field: string, required = false): string | null {
+function str(v: unknown, field: string, required = false, max?: number): string | null {
   if (v === undefined || v === null || v === '') {
     if (required) throw new BadRequest(`${field}는 필수입니다.`);
     return null;
   }
   if (typeof v !== 'string') throw new BadRequest(`${field}는 문자열이어야 합니다.`);
-  return v.trim();
+  const t = v.trim();
+  // 상한은 가져오기(`lib/import.ts`)·에디터와 같은 상수를 본다(BE-34). 예전엔 이 경로만
+  // 길이를 보지 않아, API를 직접 부르면 한도를 넘는 값이 slug·헤더까지 번졌다.
+  if (max !== undefined && t.length > max) throw new BadRequest(textTooLongMessage(field, max));
+  return t;
 }
 
 /**
@@ -140,11 +147,11 @@ export const POST = withRoute(async (request: NextRequest) => {
     );
   }
 
-  const brand = str(body.brand, 'brand', true)!;
-  const title = str(body.title, 'title', true)!;
-  const venue = str(body.venue, 'venue');
+  const brand = str(body.brand, 'brand', true, EVENT_TEXT_MAX.brand)!;
+  const title = str(body.title, 'title', true, EVENT_TEXT_MAX.title)!;
+  const venue = str(body.venue, 'venue', false, EVENT_TEXT_MAX.venue);
   const date = str(body.date, 'date');
-  const host = str(body.host, 'host');
+  const host = str(body.host, 'host', false, EVENT_TEXT_MAX.host);
   // 목록 밖의 값을 막는 것이 요점이다(BE-23) — PATCH와 같은 이유다. 생성 경로도
   // 아무 문자열이나 받아 201로 돌려주고 있었고, 그렇게 만들어진 이벤트는 공개
   // 페이지가 처음부터 404라 운영자가 원인을 짚을 단서가 없다.
@@ -157,9 +164,7 @@ export const POST = withRoute(async (request: NextRequest) => {
   if (body.capacity !== undefined && body.capacity !== null) {
     // 음수를 막는 것이 요점이다(BE-19 ②) — capacity는 응답률·참석률의 분모라,
     // 음수가 들어가면 집계가 음수 비율을 내보내고 화면이 막대를 반대로 그린다.
-    if (typeof body.capacity !== 'number' || body.capacity < 0) {
-      throw new BadRequest('capacity는 0 이상의 숫자여야 합니다(응답률·참석률의 분모).');
-    }
+    if (!isValidCapacity(body.capacity)) throw new BadRequest(capacityBadRequestMessage());
   }
 
   const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
