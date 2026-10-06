@@ -91,6 +91,23 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     if (creating) setCreating(false);
   }
 
+  // 선택(s.sel)이 바뀌면 삭제 확인(armed) 상태를 즉시 푼다 — 안 그러면 A를 선택해
+  // '삭제'를 눌러 확인 대기로 만든 뒤, 그 상태에서 ConsoleScreen의 카드 클릭으로
+  // B를 추가 선택하고(그쪽은 confirmDeleteArmed를 전혀 모르고 s.sel을 자유롭게
+  // 토글한다) 다시 '삭제'를 누르면 B가 한 번도 확인을 거치지 않은 채 함께 영구
+  // 삭제된다(`/code-review` 발견). ref(타이머) 클린업은 위 pathname 블록과 같은
+  // 이유로 여기서 안 하고 아래 effect에서 한다(렌더 중 ref 접근은 react-hooks/refs가 막는다).
+  const [prevSel, setPrevSel] = useState(s.sel);
+  if (s.sel !== prevSel) {
+    setPrevSel(s.sel);
+    if (confirmDeleteArmed) setConfirmDeleteArmed(false);
+  }
+  useEffect(() => {
+    if (!confirmDeleteArmed && confirmDeleteTimerRef.current) {
+      clearTimeout(confirmDeleteTimerRef.current);
+    }
+  }, [confirmDeleteArmed]);
+
   const inEditor = pathname.startsWith('/events/');
   const screenKind: ScreenKind = s.viewerOpen
     ? 'viewer'
