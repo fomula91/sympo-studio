@@ -16,7 +16,7 @@ export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: 
     host: ev.host,
     cap: ev.cap,
     engage: ev.engage,
-    brandLabel: preset.label,
+    brandLabel: ev.brand,
   };
   // 실제 이 이벤트의 자료로 미리보기를 그린다(FE-25) — 안 넘기면 EditorScreen의 라이브
   // 미리보기와 마찬가지로 Microsite가 대표 예시 2건(DEMO_DOCUMENTS)을 보여준다.
