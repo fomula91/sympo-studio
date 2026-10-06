@@ -564,7 +564,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const current = s.events.find((e) => e.id === id)?.documents ?? [];
         const metaBody = [
           ...current.map(toDocumentMetaBody),
-          { id: null, sessionId: null, displayName: file.name.replace(/\.[^.]+$/, ''), tag: null },
+          // 160자는 lib/agenda.ts DOC_NAME_MAX와 같다 — 안 자르면 긴 파일명이 메타
+          // PUT을 400으로 거절해, 등록까지 끝낸 뒤에야 기술적인 에러 메시지로 실패한다.
+          { id: null, sessionId: null, displayName: file.name.replace(/\.[^.]+$/, '').slice(0, 160), tag: null },
         ];
         const saved = await putStudioEventDocuments(id, metaBody);
         const existingIds = new Set(current.map((d) => d.id));

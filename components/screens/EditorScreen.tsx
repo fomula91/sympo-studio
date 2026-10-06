@@ -357,6 +357,19 @@ function formatBytes(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+// 서버 상한과 값을 맞춘다(lib/r2.ts MAX_FILE_BYTES, lib/agenda.ts DOC_NAME_MAX) — 두
+// 모듈 다 서버 전용 의존성을 끌고 있어 클라이언트 번들에 직접 import하지 않는다.
+const DOC_MAX_BYTES = 20 * 1024 * 1024;
+
+// 드롭·선택 즉시 걸러낸다 — 서버 거절까지 왕복하면 등록→업로드 거절→되돌리기가
+// 한 번 더 돌아 느리고, 에러 메시지도 기술적이다(팀원 코드리뷰).
+function validateDocFile(file: File): string | null {
+  const looksLikePdf = file.type ? file.type === 'application/pdf' : file.name.toLowerCase().endsWith('.pdf');
+  if (!looksLikePdf) return 'PDF 파일만 올릴 수 있어요';
+  if (file.size > DOC_MAX_BYTES) return '20MB를 넘는 파일은 올릴 수 없어요';
+  return null;
+}
+
 function DocsSection({
   ev,
   isServerEvent,
@@ -370,34 +383,60 @@ function DocsSection({
 }) {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 현장 태블릿에서 ×가 오터치로 눌리기 쉽다(팀원 코드리뷰) — 한 번 누르면 바로
+  // 지우지 않고 그 문서 id만 "확인 대기" 상태로 표시하고, 같은 버튼을 다시 누를
+  // 때만 실제로 지운다. 4초 안에 다시 안 누르면 자동으로 풀린다.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+    };
+  }, []);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 드롭존 하나·삭제 버튼 하나뿐이라, 업로드·삭제 중 하나라도 진행 중이면 나머지를
   // 막아 둘이 겹치지 않게 한다 — 자료 PUT은 전체 교체 계약이라 겹치면 나중 응답이
   // 먼저 응답을 덮어쓸 수 있다(StudioProvider의 addDocument 주석 참조).
   const busy = uploading || deletingId !== null;
 
-  // 한 번에 한 건만 받는다 — 여러 개를 동시에 드롭해도 첫 파일만 처리한다(단순함
-  // 우선, 완료 기준은 "등록→업로드 완주"이지 다중 업로드가 아니다).
+  // 여러 개를 드롭하면 순서대로 하나씩 올린다 — 동시에 보내면 StudioProvider의
+  // 자료 PUT(전체 교체 계약)이 겹쳐 나중 응답이 먼저 응답을 덮어쓸 수 있다.
+  // 파일 하나가 실패해도 나머지는 계속 진행하고, 실패한 파일명만 모아 보여준다.
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0 || !isServerEvent || busy) return;
-    const file = files[0];
+    const list = Array.from(files);
     setUploading(true);
     setUploadError(null);
-    try {
-      await addDocument(file);
-    } catch (e) {
-      console.warn('자료 업로드 실패:', e);
-      setUploadError(e instanceof ApiClientError ? e.message : '업로드하지 못했습니다 — 다시 시도해주세요.');
-    } finally {
-      setUploading(false);
+    setUploadProgress(list.length > 1 ? { done: 0, total: list.length } : null);
+    const failed: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const file = list[i];
+      const invalidReason = validateDocFile(file);
+      if (invalidReason) {
+        failed.push(`${file.name} — ${invalidReason}`);
+      } else {
+        try {
+          await addDocument(file);
+        } catch (e) {
+          console.warn('자료 업로드 실패:', file.name, e);
+          failed.push(`${file.name} — ${e instanceof ApiClientError ? e.message : '업로드하지 못했습니다'}`);
+        }
+      }
+      if (list.length > 1) setUploadProgress({ done: i + 1, total: list.length });
     }
+    if (failed.length > 0) setUploadError(failed.join(' · '));
+    setUploading(false);
+    setUploadProgress(null);
   }
 
   async function handleDelete(docId: number) {
     if (!isServerEvent || busy) return;
+    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+    setConfirmDeleteId(null);
     setDeletingId(docId);
     setDeleteError(null);
     try {
@@ -502,29 +541,38 @@ function DocsSection({
             <button
               type="button"
               className="hv-x"
-              onClick={() => void handleDelete(d.id)}
+              onClick={() => {
+                if (confirmDeleteId === d.id) {
+                  void handleDelete(d.id);
+                  return;
+                }
+                if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                setConfirmDeleteId(d.id);
+                confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteId(null), 4000);
+              }}
               disabled={!isServerEvent || busy}
-              aria-label={`${d.displayName} 삭제`}
+              aria-label={confirmDeleteId === d.id ? `${d.displayName} 삭제 확인 — 다시 누르면 삭제됩니다` : `${d.displayName} 삭제`}
               style={{
                 width: 32,
                 height: 32,
                 flex: '0 0 32px',
                 borderRadius: 8,
                 border: 'none',
-                background: 'transparent',
-                color: UI.faint,
-                fontSize: 15,
+                background: confirmDeleteId === d.id ? UI.toneDangerBg : 'transparent',
+                color: confirmDeleteId === d.id ? UI.toneDangerFg : UI.faint,
+                fontSize: confirmDeleteId === d.id ? 11 : 15,
+                fontWeight: confirmDeleteId === d.id ? 700 : 400,
                 cursor: !isServerEvent || busy ? 'not-allowed' : 'pointer',
               }}
             >
-              ×
+              {confirmDeleteId === d.id ? '확인' : '×'}
             </button>
           </div>
         ))}
         <button
           type="button"
           disabled={!isServerEvent || busy}
-          aria-label="PDF 업로드 — 드롭 또는 클릭"
+          aria-label="PDF 업로드 — 드롭 또는 클릭, 여러 개 선택 가능"
           onClick={() => {
             if (isServerEvent && !busy) fileInputRef.current?.click();
           }}
@@ -558,13 +606,16 @@ function DocsSection({
           {!isServerEvent
             ? '로그인해야 자료를 올릴 수 있어요'
             : uploading
-              ? '업로드 중…'
-              : 'PDF 드롭 또는 클릭 · 표시명 자동 추론'}
+              ? uploadProgress
+                ? `업로드 중… (${uploadProgress.done}/${uploadProgress.total})`
+                : '업로드 중…'
+              : 'PDF 드롭 또는 클릭(여러 개 가능) · 표시명 자동 추론'}
         </button>
         <input
           ref={fileInputRef}
           type="file"
           accept="application/pdf"
+          multiple
           style={{ display: 'none' }}
           onChange={(e) => {
             void handleFiles(e.target.files);
