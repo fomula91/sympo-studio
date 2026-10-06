@@ -335,12 +335,25 @@ function BasicSection({
           // 그대로 보여주고 있어(별도 검증 없음) 화면끼리 어긋나 보인다 — 빈 칸이 "미입력"이
           // 아니라 "저장된 값이 깨졌다"는 것을 드러내야 사용자가 다시 골라 스스로 고칠 수 있다.
           const dateInvalid = f.k === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(ev.date);
-          const needsInput = brandNeedsInput || dateInvalid;
+          // FE-46 — 참가자 화면이 행사명 빈 값의 데모 폴백을 걷어내면서(PR #67 리뷰),
+          // 빈 채로 공개하면 히어로 제목 자리가 그냥 빈다. brand와 달리 "새 이벤트"는
+          // 임시값이 아니라 title 자체의 정상 기본값이라(defaultEventDetail) 빈 문자열일
+          // 때만 경고한다.
+          const titleNeedsInput = f.k === 'title' && ev.title === '';
+          const needsInput = brandNeedsInput || dateInvalid || titleNeedsInput;
           return (
             <TextInput
               key={f.k}
               label={f.label}
-              hint={brandNeedsInput ? '참가자에게 표시될 브랜드명을 입력해 주세요' : dateInvalid ? '저장된 날짜 형식이 올바르지 않습니다 — 다시 선택해 주세요' : f.hint}
+              hint={
+                brandNeedsInput
+                  ? '참가자에게 표시될 브랜드명을 입력해 주세요'
+                  : dateInvalid
+                    ? '저장된 날짜 형식이 올바르지 않습니다 — 다시 선택해 주세요'
+                    : titleNeedsInput
+                      ? '참가자에게 표시될 행사명을 입력해 주세요'
+                      : f.hint
+              }
               warn={needsInput}
               value={ev[f.k]}
               maxLength={f.maxLength}
