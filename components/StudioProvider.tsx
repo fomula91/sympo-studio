@@ -554,6 +554,19 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 진행 중일 수 있다) — 겹쳐 나가면(둘 다 같은 "현재 목록" 스냅샷에서 시작해 서로의
   // 결과를 모른 채 PUT하는 전체 교체 계약이라) 나중 응답이 먼저 응답을 덮어쓸 수 있다.
   const docsBusyRef = useRef<Set<number>>(new Set());
+  // addDocument는 useCallback 인스턴스 하나를 여러 파일에 걸쳐 그대로 재사용한다
+  // (DocsSection이 여러 파일을 순차로 올릴 때 매번 같은 함수 참조를 호출한다) — 그
+  // 인스턴스가 캡처한 s.events는 호출 시점이 아니라 **그 인스턴스가 만들어진
+  // 렌더 시점**의 값으로 고정된다. 그래서 같은 배치에서 file1을 올린 뒤 바로
+  // file2를 올리면, file2 쪽 current는 file1이 아직 없던 옛 목록을 본다 — PUT이
+  // 전체 교체 계약이라 file1의 행이 "제출 목록에 없는 기존 id"로 보여 서버가
+  // 지운다(/code-review 발견, 실측: 2파일 드롭 시 첫 파일이 삭제됨). s.events를
+  // 미러링하는 ref로 항상 최신 값을 읽게 해 해결한다 — ref 객체 자체는 안 바뀌므로
+  // 오래된 addDocument 인스턴스라도 `.current`는 그 사이의 setS를 그대로 본다.
+  const eventsRef = useRef(s.events);
+  useEffect(() => {
+    eventsRef.current = s.events;
+  }, [s.events]);
   const addDocument = useCallback(
     async (file: File): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
@@ -561,7 +574,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (docsBusyRef.current.has(id)) return;
       docsBusyRef.current.add(id);
       try {
-        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const current = eventsRef.current.find((e) => e.id === id)?.documents ?? [];
         const metaBody = [
           ...current.map(toDocumentMetaBody),
           // 160자는 lib/agenda.ts DOC_NAME_MAX와 같다 — 안 자르면 긴 파일명이 메타
@@ -619,7 +632,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         docsBusyRef.current.delete(id);
       }
     },
-    [effectiveId, serverIds, s.events],
+    [effectiveId, serverIds],
   );
 
   const removeDocument = useCallback(
@@ -629,7 +642,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (docsBusyRef.current.has(id)) return;
       docsBusyRef.current.add(id);
       try {
-        const current = s.events.find((e) => e.id === id)?.documents ?? [];
+        const current = eventsRef.current.find((e) => e.id === id)?.documents ?? [];
         const metaBody = current.filter((d) => d.id !== docId).map(toDocumentMetaBody);
         const saved = await putStudioEventDocuments(id, metaBody);
         setS((prev) => {
@@ -643,7 +656,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         docsBusyRef.current.delete(id);
       }
     },
-    [effectiveId, serverIds, s.events],
+    [effectiveId, serverIds],
   );
 
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
