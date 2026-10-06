@@ -115,7 +115,10 @@ export default function AccountMenu() {
           <div style={{ padding: '8px 10px 2px', fontSize: 12.5, fontWeight: 650, color: UI.ink }}>
             {user.name ?? '이름 없음'}
           </div>
-          <div style={{ padding: '0 10px 8px', fontSize: 11, color: UI.faint, fontFamily: MONO }}>{user.email}</div>
+          <div style={{ padding: '0 10px 4px', fontSize: 11, color: UI.faint, fontFamily: MONO }}>{user.email}</div>
+          {/* FE-39 — 연결된 제공자. 지금은 Google SSO 하나뿐이라(BE-12) 고정 문구로
+              충분하다 — 로그인 수단이 늘면 AuthUser에 provider를 실어 읽는다. */}
+          <div style={{ padding: '0 10px 8px', fontSize: 11, color: UI.faint }}>Google 계정 연동됨</div>
           <button
             type="button"
             className="hv-x"
