@@ -69,7 +69,17 @@ export default function Microsite({
     ...(ev.engage.qa !== false ? [{ key: 'qa' as const, label: 'Q&A', glyphIndex: 2 }] : []),
     ...(ev.engage.survey !== false ? [{ key: 'survey' as const, label: '설문', glyphIndex: 3 }] : []),
   ];
-  const [requestedTab, setActiveTab] = useState<(typeof TABS)[number]['key']>('agenda');
+  // 마운트 시 URL 해시를 한 번 읽어 그 탭으로 연다(팀원 코드리뷰, PR #66) — 안 그러면
+  // "자료 탭 바로가기" 같은 링크를 받아도 항상 아젠다로 열린다. 참가자 공개 페이지
+  // (app/[slug]/page.tsx)는 데이터 fetch가 끝나기 전엔 이 컴포넌트를 렌더하지 않아
+  // Microsite는 서버에서 그려지는 일이 없다 — useState 초기값에서 window를 바로 읽어도
+  // 하이드레이션 불일치가 생기지 않는다(effect+setState로 돌리면 이 저장소 lint의
+  // react-hooks/set-state-in-effect가 걸린다).
+  const [requestedTab, setActiveTab] = useState<(typeof TABS)[number]['key']>(() => {
+    if (preview || !slug) return 'agenda';
+    const hash = window.location.hash.slice(1);
+    return TABS.some((tab) => tab.key === hash) ? (hash as (typeof TABS)[number]['key']) : 'agenda';
+  });
   // 스튜디오 라이브 프리뷰에서는 이 컴포넌트가 다시 마운트되지 않고 engage 토글이
   // 바뀔 때마다 새 props로 리렌더된다(EditorScreen.tsx가 Microsite에 key를 안 준다) —
   // Q&A 탭을 보던 중 그 토글을 끄면 TABS에서 'qa'가 빠지는데 activeTab을 그대로
@@ -130,6 +140,12 @@ export default function Microsite({
       requestIdRef.current++;
       setLoadingDocId(null);
     }
+    // "자료 탭 바로가기" 같은 링크를 보낼 수 있게 URL 해시에도 반영한다(팀원
+    // 코드리뷰, PR #66) — 참가자 공개 페이지에서만 한다. 스튜디오 미리보기는
+    // 모바일·태블릿 두 인스턴스가 동시에 떠서 location.hash를 서로 덮어쓴다.
+    // pushState가 아니라 replaceState인 이유 — pushState였다면 탭 전환마다
+    // 히스토리가 쌓여 뒤로가기가 참가자 페이지를 떠나지 않고 탭만 오가게 된다.
+    if (!preview && slug) window.history.replaceState(null, '', `#${key}`);
   }
   const agendaRef = useRef<HTMLOListElement>(null);
   // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
@@ -315,11 +331,18 @@ export default function Microsite({
         role="tablist"
         aria-label="참가자 화면 섹션"
         onKeyDown={(e) => {
-          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          // WAI-ARIA 탭 패턴 권장대로 Home/End로 첫·마지막 탭 이동도 지원한다
+          // (팀원 코드리뷰, PR #66 — 화살표만으로도 쓰는 데 지장은 없어 선택
+          // 사항이었지만 넘기지 않고 바로 추가했다).
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
           e.preventDefault();
           const idx = TABS.findIndex((tab) => tab.key === activeTab);
-          const dir = e.key === 'ArrowRight' ? 1 : -1;
-          const next = TABS[(idx + dir + TABS.length) % TABS.length];
+          const next =
+            e.key === 'Home'
+              ? TABS[0]
+              : e.key === 'End'
+                ? TABS[TABS.length - 1]
+                : TABS[(idx + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length];
           changeTab(next.key);
           // 포커스도 같이 옮겨야 화살표를 계속 눌러 다음 탭으로 이어갈 수 있다 —
           // activeTab만 바꾸면 포커스는 이전 탭 버튼에 그대로 남는다.
