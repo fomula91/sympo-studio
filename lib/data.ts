@@ -92,7 +92,7 @@ function todayLocalDate(): string {
 export const SECTIONS: { id: Section; label: string; meta: string }[] = [
   { id: 'basic', label: '기본 정보', meta: '5' },
   { id: 'agenda', label: '아젠다', meta: '' },
-  { id: 'docs', label: '자료', meta: '4' },
+  { id: 'docs', label: '자료', meta: '' },
   { id: 'engage', label: '참여', meta: '2' },
   { id: 'theme', label: '테마', meta: '' },
 ];
@@ -116,7 +116,7 @@ export function seedEvents(): EventItem[] {
     const venue = VENUES[(i * 3) % VENUES.length];
     // 발행 상태만 배정한다 — '진행중'·'완료' 같은 시점은 event_date에서 파생되므로
     // 여기서 고를 값이 아니다(BE-23).
-    const st = i === 1 ? '검수대기' : i === 3 ? '초안' : i > 11 ? '보관' : '공개';
+    const st = i === 1 || i === 3 ? '초안' : i > 11 ? '보관' : '공개';
     const dd = new Date(today.getTime() + (12 - i * 6) * 86400000);
     const code =
       String(dd.getFullYear()).slice(2) +
@@ -129,7 +129,6 @@ export function seedEvents(): EventItem[] {
       status: st,
       dateCode: code,
       slug: `${brand.toLowerCase()}-${venueSlug(venue)}-${code}`,
-      docs: 2 + (i % 5),
       title: `${brand} 심포지엄`,
       date: `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`,
       host: '좌장 서정우',
@@ -142,12 +141,15 @@ export function seedEvents(): EventItem[] {
       keyVisual: '',
       kvPattern: 'stripe',
       sessions: SESSIONS0.slice(),
+      // 순수 로컬 목업이라 실제 업로드된 파일이 없다 — 콘솔 카드의 "자료" 개수도
+      // 이제 이 배열 길이에서 그대로 파생된다(FE-25, docs 필드 자체를 없앴다).
+      documents: [],
     });
   }
   return events;
 }
 
-export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' | 'dateCode' | 'slug' | 'docs'> {
+export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' | 'dateCode' | 'slug'> {
   return {
     title: '새 이벤트',
     venue: '',
@@ -162,15 +164,9 @@ export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' 
     keyVisual: '',
     kvPattern: 'stripe',
     sessions: [],
+    documents: [],
   };
 }
-
-export const DOCS = [
-  { name: 'Early Intervention Strategies with ATELOVAN', meta: 'lecture · 24p · 4.1MB', tag: '강의자료' },
-  { name: 'Long-Term Adherence: Real-World Evidence Review', meta: 'lecture · 18p · 3.2MB', tag: '강의자료' },
-  { name: '아텔로반 제품 정보', meta: 'product · 6p · 1.1MB', tag: '제품소개' },
-  { name: '케이로스타 제품 정보', meta: 'product · 5p · 0.9MB', tag: '제품소개' },
-];
 
 // 'chat'(현장 채팅)은 목록에서 뺐다(FE-17) — 실제 채팅 화면이 어디에도 없어 토글을
 // 남겨두면 없는 기능을 켜는 것처럼 보인다. engage.chat 필드 자체(타입·DB)는 그대로
