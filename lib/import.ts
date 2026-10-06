@@ -38,6 +38,37 @@ export interface ImportTheme {
   kvPattern: string | null;
 }
 
+/**
+ * 참여 설정(BE-40). 예전엔 이 필드를 아예 읽지 않아, 가져온 이벤트는 원래 설정과 무관하게
+ * Q&A·설문·채팅·수료증이 **전부 꺼진 채로**(스키마 기본값 0) 들어왔다 — 운영자는 Q&A를
+ * 켜 둔 줄 알고 링크를 공유하는데 참가자 화면엔 Q&A가 없다. 빠진 키는 꺼짐으로 본다
+ * (예전 동작·스키마 기본값과 같다).
+ */
+export interface ImportEngage {
+  qa: boolean;
+  survey: boolean;
+  chat: boolean;
+  cert: boolean;
+}
+
+const ENGAGE_KEYS = ['qa', 'survey', 'chat', 'cert'] as const;
+
+function engageOrDefault(v: unknown, i: number): ImportEngage {
+  const e = v === undefined || v === null ? {} : obj(v, `events[${i}].engage`);
+  const out: ImportEngage = { qa: false, survey: false, chat: false, cert: false };
+  for (const k of ENGAGE_KEYS) {
+    const value = e[k];
+    if (value === undefined || value === null) continue;
+    // PATCH는 참/거짓으로 느슨하게 받지만, 여기는 묵은 로컬 데이터가 들어오는 입구라
+    // 엄격히 본다 — `"false"` 같은 문자열을 참으로 읽으면 끈 기능이 켜진다.
+    if (typeof value !== 'boolean') {
+      throw new BadRequest(`events[${i}].engage.${k}는 true/false여야 합니다.`);
+    }
+    out[k] = value;
+  }
+  return out;
+}
+
 export interface ImportEvent {
   clientRef: string;
   brand: string;
@@ -49,6 +80,7 @@ export interface ImportEvent {
   status: string;
   slug: string | null;
   theme: ImportTheme;
+  engage: ImportEngage;
   sessions: SessionInput[];
 }
 
@@ -159,6 +191,7 @@ export function validateImportBody(raw: unknown): ImportEvent[] {
       status,
       slug: slugOrNull(str(o.slug, `events[${i}].slug`, 80), i),
       theme,
+      engage: engageOrDefault(o.engage, i),
       sessions,
     };
   });

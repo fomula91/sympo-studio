@@ -314,31 +314,42 @@ export default function Microsite({
             </div>
           </div>
           <div>
-            <div
-              style={{
-                fontFamily: MONO,
-                fontSize: 11.5,
-                letterSpacing: '0.1em',
-                color: heroFg,
-                opacity: 0.86,
-                marginBottom: 7,
-              }}
-            >
-              {ev.date ? ev.date.replace(/-/g, '. ') : ''}
-            </div>
-            <div
-              style={{
-                fontSize: wide ? 30 : 25,
-                fontWeight: 750,
-                letterSpacing: '-0.035em',
-                lineHeight: 1.2,
-                color: heroFg,
-                textWrap: 'pretty',
-                marginBottom: 8,
-              }}
-            >
-              {ev.title || 'MERIDIAN 심포지엄'}
-            </div>
+            {/* FE-46 — 값이 있을 때만 렌더한다. 전에는 빈 문자열이어도 이 div 자체는
+                그대로 남아 marginBottom만큼 제목 위에 빈 여백이 생겼다(실측으로 발견). */}
+            {ev.date ? (
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 11.5,
+                  letterSpacing: '0.1em',
+                  color: heroFg,
+                  opacity: 0.86,
+                  marginBottom: 7,
+                }}
+              >
+                {ev.date.replace(/-/g, '. ')}
+              </div>
+            ) : null}
+            {/* title은 brand와 함께 생성 시 필수이고 서버는 PATCH로 비우는 것도 거절하지만
+                (BE-37), 게스트 로컬 이벤트는 서버 검증 자체를 안 거치고 서버 이벤트도 에디터
+                프리뷰엔 저장 실패 전의 빈 값이 그대로 보인다 — 화면에서 빈 값을 만날 수 있다.
+                venue·host와 같은 이유로 데모 값("MERIDIAN 심포지엄") 폴백을 걷어냈다(PR #67
+                리뷰에서 발견). */}
+            {ev.title.trim() ? (
+              <div
+                style={{
+                  fontSize: wide ? 30 : 25,
+                  fontWeight: 750,
+                  letterSpacing: '-0.035em',
+                  lineHeight: 1.2,
+                  color: heroFg,
+                  textWrap: 'pretty',
+                  marginBottom: 8,
+                }}
+              >
+                {ev.title}
+              </div>
+            ) : null}
             {/* venue·host는 생성 시 필수가 아니다(POST /api/events) — 비워 둔 채 공개하면
                 이 자리가 데모 목업 값("아르떼 호텔 서울"·"좌장 서정우")을 실제 값인 것처럼
                 보여줬다. 실제로 아무도 안 적었는데 적은 것처럼 보이는 문제라, 빈 값은

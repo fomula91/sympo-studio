@@ -5,7 +5,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { STATUS } from '@/lib/data';
-import type { AuthUser, PatchFn, SortKey, StudioState } from '@/lib/types';
+import type { AuthUser, EventItem, PatchFn, SortKey, StudioState } from '@/lib/types';
 import { eventPhase } from '@/lib/status';
 import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
 
@@ -88,6 +88,94 @@ function AuthErrorBanner() {
   );
 }
 
+// FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 이벤트가 있으면 묻는다.
+// "체험 중" 배너(위 AuthErrorBanner 아래)와 같은 자리·같은 톤을 쓴다.
+function ImportBanner({
+  importPrompt,
+  importBusy,
+  importMessage,
+  confirmImport,
+  dismissImport,
+}: {
+  importPrompt: EventItem[] | null;
+  importBusy: boolean;
+  importMessage: string | null;
+  confirmImport: () => Promise<void>;
+  dismissImport: () => void;
+}) {
+  if (!importPrompt && !importMessage) return null;
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 14,
+        padding: '10px 16px',
+        borderRadius: 12,
+        background: UI.brandSoft,
+        fontSize: 12.5,
+        color: UI.ink2,
+      }}
+    >
+      <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.brand, flex: '0 0 6px' }} />
+      {importPrompt ? (
+        <>
+          <span style={{ flex: 1 }}>
+            체험 중 만든 이벤트 {importPrompt.length}개를 계정으로 가져올까요?
+            {importMessage ? ` — ${importMessage}` : ''}
+          </span>
+          <button
+            type="button"
+            disabled={importBusy}
+            onClick={() => void confirmImport()}
+            style={{
+              border: 'none',
+              borderRadius: 8,
+              padding: '6px 12px',
+              background: UI.brand,
+              color: UI.surface,
+              fontSize: 12,
+              fontWeight: 650,
+              cursor: importBusy ? 'default' : 'pointer',
+              opacity: importBusy ? 0.6 : 1,
+            }}
+          >
+            {importBusy ? '가져오는 중…' : '가져오기'}
+          </button>
+          <button
+            type="button"
+            disabled={importBusy}
+            onClick={dismissImport}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: UI.muted2,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: importBusy ? 'default' : 'pointer',
+            }}
+          >
+            아니요
+          </button>
+        </>
+      ) : (
+        <>
+          <span style={{ flex: 1 }}>{importMessage}</span>
+          <button
+            type="button"
+            onClick={dismissImport}
+            style={{ border: 'none', background: 'transparent', color: UI.muted2, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            닫기
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function filterEvents(s: StudioState) {
   const q = s.query.trim().toLowerCase();
   let list = s.events.filter(
@@ -105,11 +193,21 @@ export default function ConsoleScreen({
   patch,
   user,
   authStatus,
+  importPrompt,
+  importBusy,
+  importMessage,
+  confirmImport,
+  dismissImport,
 }: {
   s: StudioState;
   patch: PatchFn;
   user: AuthUser | null;
   authStatus: 'checking' | 'ready';
+  importPrompt: EventItem[] | null;
+  importBusy: boolean;
+  importMessage: string | null;
+  confirmImport: () => Promise<void>;
+  dismissImport: () => void;
 }) {
   const router = useRouter();
   const list = filterEvents(s);
@@ -119,6 +217,13 @@ export default function ConsoleScreen({
       <Suspense fallback={null}>
         <AuthErrorBanner />
       </Suspense>
+      <ImportBanner
+        importPrompt={importPrompt}
+        importBusy={importBusy}
+        importMessage={importMessage}
+        confirmImport={confirmImport}
+        dismissImport={dismissImport}
+      />
       {authStatus === 'ready' && !user ? (
         <div
           style={{
