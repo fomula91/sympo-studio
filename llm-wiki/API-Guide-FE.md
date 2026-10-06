@@ -22,6 +22,7 @@ FE가 호출하는 경로 **16개**를 아래 표에 먼저 둔다(라우트 파
 | `/api/auth/me` | GET | 공통 | 현재 사용자. **비로그인은 401이 아니라 `200 + null`** |
 | `/api/auth/google` | GET | 공통 | 로그인 시작(302). `?next=`로 복귀 경로(같은 출처 경로만) |
 | `/api/auth/logout` | POST | 로그인 | 로그아웃 — 쿠키와 D1 세션 행을 모두 지운다 |
+| `/api/account` | DELETE | 로그인 | **계정 영구 삭제**(BE-41) — 내 이벤트(아젠다·자료·질문·설문·로그·R2 파일)·프리셋·Google 연결·세션까지. 응답 `{deleted: true, events: N}` + 세션 쿠키 만료. 비로그인 401. 되돌릴 수 없으니 확인 단계는 화면이 맡는다 |
 | `/api/presets` | GET · POST | 운영자 | 브랜드 프리셋 목록 / 저장(업서트) |
 | `/api/events` | GET · POST | 운영자 | 이벤트 목록 / 생성 |
 | `/api/events/[id]` | GET · PATCH · DELETE | 운영자 | 단건(+아젠다+자료) / 부분 수정 / 삭제 |
