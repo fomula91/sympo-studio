@@ -15,7 +15,7 @@ import {
   type IdCtx,
   type SessionRow,
 } from '@/lib/db';
-import { assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
+import { assertCanDelete, assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
 import { deleteDocumentObjects } from '@/lib/retention';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 import {
@@ -214,11 +214,14 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
  * R2 객체는 CASCADE를 따라오지 않는다 — 자료 행을 같은 배치에서 먼저 지우며
  * `RETURNING r2_key`로 키를 받아, 커밋된 뒤 R2에서도 지운다(BE-35). 배치는 한
  * 트랜잭션이라 이벤트 삭제가 실패하면 자료 행 삭제도 함께 되돌려진다.
+ *
+ * 가드는 `assertCanEdit`가 아니라 `assertCanDelete`다 — 공용 데모는 고칠 수는 있어도
+ * 지울 수는 없다(BE-38, 근거는 그 함수 주석).
  */
 export const DELETE = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
-  await assertCanEdit(db, request, id);
+  await assertCanDelete(db, request, id);
 
   const [docsRes, eventRes] = await db.batch([
     db.prepare('DELETE FROM documents WHERE event_id = ? RETURNING r2_key').bind(id),
