@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD_DEFS } from './data';
 import {
-  CAPACITY_MAX_DIGITS, EVENT_TEXT_MAX, MAX_CAPACITY, isEventTextField, isValidCapacity,
+  CAPACITY_MAX_DIGITS, EVENT_TEXT_MAX, MAX_CAPACITY, eventTextPatchError, isEventTextField,
+  isValidCapacity,
 } from './event-limits';
 import { validateImportBody } from './import';
 
@@ -51,5 +52,40 @@ describe('event-limits', () => {
     expect(() =>
       validateImportBody({ events: [{ ...base, capacity: MAX_CAPACITY + 1 }] }),
     ).toThrow(/capacity/);
+  });
+});
+
+/**
+ * BE-37 — 생성 때 필수인 행사명·브랜드명은 수정(PATCH)으로도 비울 수 없다.
+ *
+ * 되돌아가면 에디터에서 행사명을 지우는 순간 `""`가 저장되고, 참가자 화면은 빈 자리에
+ * 데모 값("MERIDIAN 심포지엄")을 보여준다(FE-46).
+ */
+describe('eventTextPatchError', () => {
+  it('title·brand는 빈 문자열·공백만 있는 값을 거절한다', () => {
+    expect(eventTextPatchError('title', '')).toBe('title는 필수입니다.');
+    expect(eventTextPatchError('brand', '   ')).toBe('brand는 필수입니다.');
+  });
+
+  it('title·brand는 null도 거절한다 — NOT NULL 컬럼이다', () => {
+    expect(eventTextPatchError('title', null)).toMatch(/문자열/);
+  });
+
+  it('venue·host는 지금처럼 비우거나 null로 둘 수 있다', () => {
+    expect(eventTextPatchError('venue', '')).toBeNull();
+    expect(eventTextPatchError('host', null)).toBeNull();
+  });
+
+  it('문자열이 아니면 거절한다', () => {
+    expect(eventTextPatchError('venue', 3)).toMatch(/문자열/);
+  });
+
+  it('글자 수 상한은 그대로다 — 경계값 통과, 한 글자 넘으면 거절', () => {
+    expect(eventTextPatchError('title', 'a'.repeat(EVENT_TEXT_MAX.title))).toBeNull();
+    expect(eventTextPatchError('title', 'a'.repeat(EVENT_TEXT_MAX.title + 1))).toMatch(/120자 이하/);
+  });
+
+  it('앞뒤 공백이 있어도 내용이 있으면 통과한다 — 저장 값은 다듬지 않는다', () => {
+    expect(eventTextPatchError('brand', ' MERIDIAN ')).toBeNull();
   });
 });
