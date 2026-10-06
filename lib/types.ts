@@ -39,6 +39,11 @@ export interface EventItem extends EventDetail {
   // 게스트가 로컬에서 만든 이벤트에만 있다(FE-15) — 로그인 시 가져오기(FE-39)가
   // 이 값으로 멱등성을 잡는다. 서버 이벤트는 없음(undefined).
   localRef?: string;
+  // 목록 조회(GET /api/events)로만 받은 서버 이벤트에만 있다(BE-36) — 목록엔 세션·자료
+  // 배열이 없어 개수만 따로 온다. 상세를 불러오면 배열이 채워지고 이 값은 지운다
+  // (남겨 두면 그 뒤 편집으로 바뀐 배열과 어긋난다). 화면은 `?? 배열.length`로 읽는다.
+  sessionCount?: number;
+  documentCount?: number;
 }
 
 /** GET /api/auth/me가 돌려주는 로그인 사용자. 비로그인이면 null(에러 아님). */

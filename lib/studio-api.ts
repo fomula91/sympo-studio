@@ -27,10 +27,15 @@ interface EventDTO {
     mode: string;
     iconSet: string;
     density: string;
-    keyVisual: string | null;
+    // 목록 응답엔 원문 대신 유무만 온다(BE-36) — base64라 이벤트마다 최대 약 1.5MB다.
+    keyVisual?: string | null;
+    hasKeyVisual?: boolean;
     kvPattern: string;
   };
   engage: { qa: boolean; survey: boolean; chat: boolean; cert: boolean };
+  // 목록 응답만 싣는다(BE-36) — 목록엔 sessions·documents 배열이 없어서다.
+  sessionCount?: number;
+  documentCount?: number;
   // 단건 조회(GET /api/events/[id])만 세션·자료를 함께 싣는다 — 목록·생성 응답엔 없다.
   sessions?: { id: number; time: string | null; title: string; speaker: string | null; kind: string }[];
   documents?: {
@@ -96,6 +101,8 @@ function dtoToEventItem(dto: EventDTO): EventItem {
     kvPattern: dto.theme.kvPattern as EventItem['kvPattern'],
     sessions,
     documents,
+    sessionCount: dto.sessionCount,
+    documentCount: dto.documentCount,
   };
 }
 
@@ -249,8 +256,9 @@ export async function logoutStudioUser(): Promise<void> {
 }
 
 /**
- * GET /api/events — 로그인한 사용자의 이벤트 목록(FE-15). 세션 배열은 없다(EventDTO
- * 참조) — 콘솔 카드는 개수만 보여주므로 열 때(FE-30의 단건 조회)만 채워지면 된다.
+ * GET /api/events — 로그인한 사용자의 이벤트 목록(FE-15). 세션·자료 배열과 키 비주얼
+ * 원문은 없다(BE-36) — 콘솔 카드는 개수(`sessionCount`·`documentCount`)만 보여주고,
+ * 배열·원문은 열 때(FE-30의 단건 조회) 채워진다. 그래서 여기서 온 `keyVisual`은 빈 값이다.
  */
 export async function fetchStudioEvents(): Promise<EventItem[]> {
   const res = await fetchWithTimeout('/api/events', { cache: 'no-store' });

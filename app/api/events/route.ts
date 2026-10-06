@@ -2,11 +2,14 @@ import type { NextRequest } from 'next/server';
 import { autoSlug } from '@/lib/data';
 import {
   BadRequest,
+  EVENT_LIST_COLUMNS,
   ensureUniqueSlug,
   getDb,
   json,
   toEventDTO,
+  toEventListDTO,
   withRoute,
+  type EventListRow,
   type EventRow,
 } from '@/lib/db';
 import { requireUser, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
@@ -32,6 +35,9 @@ import {
  * 데모를 로그인 사용자에게도 남겨 두는 이유: 데모는 숨길 남의 데이터가 아니라
  * **제품이 스스로를 보여주는 화면**이고, 로그인했다고 그것이 사라지면 "로그인하면
  * 잃는다"가 또 하나 생긴다(ADR 0007).
+ *
+ * 각 행은 키 비주얼 원문 대신 유무(`theme.hasKeyVisual`)와 세션·자료 개수를 싣는다
+ * (BE-36, 근거는 `EVENT_LIST_COLUMNS` 주석). 원문이 필요하면 단건 조회를 쓴다.
  */
 export const GET = withRoute(async (request: NextRequest) => {
   const db = await getDb();
@@ -70,16 +76,16 @@ export const GET = withRoute(async (request: NextRequest) => {
     sort === '행사일' ? 'event_date DESC' : sort === '이름' ? 'title ASC' : 'created_at DESC';
 
   const sql =
-    'SELECT * FROM events' +
+    `SELECT ${EVENT_LIST_COLUMNS} FROM events` +
     (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
     ` ORDER BY ${orderBy} LIMIT 200`;
 
   const { results } = await db
     .prepare(sql)
     .bind(...binds)
-    .all<EventRow>();
+    .all<EventListRow>();
 
-  return json({ events: results.map(toEventDTO) });
+  return json({ events: results.map(toEventListDTO) });
 });
 
 interface CreateBody {

@@ -328,7 +328,8 @@ export default function ConsoleScreen({
                 }}
               >
                 <div style={{ fontSize: 12, color: UI.muted }}>
-                  세션 {e.sessions.length} · 자료 {e.documents.length}
+                  {/* 목록으로만 받은 서버 이벤트는 배열이 비어 있고 개수만 따로 온다(BE-36). */}
+                  세션 {e.sessionCount ?? e.sessions.length} · 자료 {e.documentCount ?? e.documents.length}
                 </div>
                 <div style={{ flex: 1 }} />
                 <div style={{ fontSize: 12, fontWeight: 600, color: on ? UI.brand : UI.muted2 }}>
