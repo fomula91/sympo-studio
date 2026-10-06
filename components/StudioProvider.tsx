@@ -299,6 +299,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       setAuthStatus('ready');
 
       if (me) {
+        // FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 게 있으면 묻는다.
+        // localRef가 있는 항목만(게스트가 실제로 만든 이벤트) — 시드는 없다.
+        // localStorage만 읽는 동기 작업이라 아래 네트워크 조회를 기다릴 이유가
+        // 없다 — 배너가 먼저 뜬다(코드 리뷰 발견).
+        const guestStored = readGuestWorkspace();
+        const importable = (guestStored ?? []).filter((e) => e.localRef);
+        if (importable.length > 0 && !cancelled) setImportPrompt(importable);
+
         // 목록·프리셋 둘 다 독립 요청이라 동시에 쏜다(순서대로 await하면 왕복 시간이
         // 그냥 더해진다 — 코드 리뷰 발견). 각자 실패해도 나머지 하나는 그대로 반영되도록
         // try/catch는 분리해 둔다.
@@ -333,11 +341,6 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         } catch (e) {
           console.warn('프리셋 목록 조회 실패:', e);
         }
-        // FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 게 있으면 묻는다.
-        // localRef가 있는 항목만(게스트가 실제로 만든 이벤트) — 시드는 없다.
-        const guestStored = readGuestWorkspace();
-        const importable = (guestStored ?? []).filter((e) => e.localRef);
-        if (importable.length > 0 && !cancelled) setImportPrompt(importable);
       } else {
         const stored = readGuestWorkspace();
         if (stored && !cancelled) setS((prev) => ({ ...prev, events: stored }));
@@ -760,25 +763,40 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setImportBusy(true);
     setImportMessage(null);
     try {
-      // 배치 하나가 던지면(네트워크 오류 등) 거기서 멈춘다 — 이미 성공한 앞 배치의
-      // 결과까지 버리면 그 이벤트들은 서버엔 이미 만들어졌는데 게스트 워크스페이스엔
-      // 그대로 남아, 다음 가져오기 때 또 보내게 된다(`/code-review` 발견). 못 보낸
-      // 나머지는 아래서 재시도 대상으로 묶인다.
       const results: ImportResultDTO[] = [];
-      let batchError: string | null = null;
       for (let i = 0; i < pending.length; i += IMPORT_BATCH_SIZE) {
-        const batch = pending.slice(i, i + IMPORT_BATCH_SIZE).map(toImportBody);
+        const batch = pending.slice(i, i + IMPORT_BATCH_SIZE);
         try {
-          results.push(...(await importGuestEvents(batch)));
+          results.push(...(await importGuestEvents(batch.map(toImportBody))));
         } catch (e) {
-          batchError = e instanceof ApiClientError ? e.message : '가져오기에 실패했습니다. 다시 시도해 주세요.';
-          break;
+          // 배치 전체가 한 번에 검증된다(`validateImportBody`) — 묵은 게스트 데이터
+          // 하나가 지금 서버 규칙(글자 수 등)을 어기면 그 하나 때문에 같은 배치의
+          // 멀쩡한 나머지까지 통째로 거절된다. 건별로 다시 보내 문제 있는 것만
+          // 가려낸다(`/code-review` 발견 — 안 그러면 같은 배치를 다시 시도해도
+          // 영원히 같은 이유로 막혀, 건강한 나머지 19개도 영영 못 들어간다).
+          const fallback = e instanceof ApiClientError ? e.message : '가져오기에 실패했습니다. 다시 시도해 주세요.';
+          for (const ev of batch) {
+            try {
+              results.push(...(await importGuestEvents([toImportBody(ev)])));
+            } catch (e2) {
+              results.push({
+                clientRef: ev.localRef!,
+                status: 'failed',
+                error: e2 instanceof ApiClientError ? e2.message : fallback,
+              });
+            }
+          }
         }
       }
 
+      // 로그인한 사이에 로그아웃했다면(응답을 기다리는 동안) 이 결과는 이미 끝난
+      // 세션의 것이다 — 게스트로 돌아간 화면에 반영하면 안 된다(`/code-review`
+      // 발견: 안 그러면 logout()이 비운 상태를 이 응답이 되살리고, 전 계정의
+      // 이벤트가 guest-persist 이펙트를 타고 게스트 localStorage에까지 섞여 들어간다).
+      if (loggedOutRef.current) return;
+
       const byRef = new Map(results.map((r) => [r.clientRef, r]));
       const imported = (status: string | undefined) => status === 'created' || status === 'exists';
-      // 재시도 대상 = 서버가 명시적으로 실패라 한 것 + 배치 오류로 아예 못 보낸 나머지.
       const retry = pending.filter((e) => !imported(byRef.get(e.localRef!)?.status));
       const succeeded = pending.length - retry.length;
 
@@ -795,23 +813,36 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       if (succeeded > 0) {
         try {
           const events = await fetchStudioEvents();
-          setS((prev) => ({
-            ...prev,
-            events: mergeDetailLoadedEvents(prev.events, events, detailLoadedRef.current),
-          }));
-          setServerIds(new Set(events.map((e) => e.id)));
+          if (!loggedOutRef.current) {
+            setS((prev) => ({
+              ...prev,
+              events: mergeDetailLoadedEvents(prev.events, events, detailLoadedRef.current),
+            }));
+            setServerIds(new Set(events.map((e) => e.id)));
+          }
         } catch (e) {
           console.warn('가져오기 후 목록 재조회 실패:', e);
         }
       }
 
       const slugChanged = results.some((r) => r.slugChanged);
+      // 서버에 없는 프리셋이라 테마 색이 빈 채로 저장된 경우(게스트가 로컬에서만
+      // 만든 추출 프리셋) — 조용히 넘어가면 "가져왔는데 브랜드 색이 사라졌다"를
+      // 사용자가 알 방법이 없다(코드 리뷰 발견).
+      const presetDropped = results.some((r) => r.presetDropped);
+      // 실패 사유는 서버가 돌려준 문구를 그대로 보여준다(여러 건이 같은 이유로
+      // 실패하는 게 보통이라 중복은 한 번만) — StudioShell 일괄 작업의 실패 토스트와
+      // 같은 패턴. 계정당 한도 초과처럼 다시 눌러도 똑같이 막히는 사유도 이걸로
+      // 드러난다(코드 리뷰 발견: "다시 시도할 수 있습니다"라는 문구만 보면 재시도가
+      // 통할 것처럼 읽힌다).
+      const reasons = [...new Set(retry.map((e) => byRef.get(e.localRef!)?.error).filter((r): r is string => !!r))];
       setImportMessage(
         `${succeeded}개 가져왔습니다.`
           + (retry.length > 0
-              ? ` ${retry.length}개는 다시 시도할 수 있습니다${batchError ? `(${batchError})` : ''}.`
+              ? ` ${retry.length}개는 가져오지 못했습니다${reasons.length > 0 ? ` — ${reasons.join(' / ')}` : ''}.`
               : '')
-          + (slugChanged ? ' 주소가 겹쳐 일부 이벤트의 주소가 바뀌었습니다.' : ''),
+          + (slugChanged ? ' 주소가 겹쳐 일부 이벤트의 주소가 바뀌었습니다.' : '')
+          + (presetDropped ? ' 일부 이벤트의 브랜드 테마는 서버에 없어 기본값으로 저장됐습니다.' : ''),
       );
       setImportPrompt(retry.length > 0 ? retry : null);
     } finally {
