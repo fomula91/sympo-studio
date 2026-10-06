@@ -66,7 +66,8 @@ export async function resetDemoData(db: D1Database): Promise<void> {
   // 삭제는 건너뛰고, 재삽입이 `UNIQUE constraint failed: events.id`로 터진다(실측).
   // `db.batch`는 원자적이라 리셋 전체가 롤백되고, worker/index.ts가 이걸 await한 뒤
   // 부르는 **R2 고아 정리(스스로 "유일한 상한"이라 적힌 것)까지 영영 안 돈다.**
-  // 이 사고 경로는 BE-12 코드리뷰가 찾았다.
+  // 이 사고 경로는 BE-12 코드리뷰가 찾았다. (지금은 worker가 리셋을 `finally`로 감싸
+  // 리셋이 실패해도 정리는 돈다 — BE-35. 리셋 자체가 실패하지 않아야 하는 건 그대로다.)
   //
   // 그래서 id를 고정하지 않는다. 대신 **slug로 데모 행을 찾아 UPDATE**하고, 없을 때만
   // INSERT한다 — id가 매일 흔들리지도 않고(지웠다 만들면 AUTOINCREMENT가 새 번호를

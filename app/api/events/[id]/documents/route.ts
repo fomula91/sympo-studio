@@ -6,6 +6,7 @@ import {
   BadRequest,
   eventId,
   getDb,
+  getEnv,
   json,
   toDocumentDTO,
   withRoute,
@@ -13,6 +14,7 @@ import {
   type IdCtx,
 } from '@/lib/db';
 import { assertCanEdit } from '@/lib/auth';
+import { deleteDocumentObjects } from '@/lib/retention';
 
 /**
  * PUT /api/events/[id]/documents — 자료 목록(메타) 저장 (BE-14)
@@ -79,11 +81,13 @@ export const PUT = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   if (removed.length > 0) {
     const ph = removed.map(() => '?').join(', ');
-    // R2 객체는 여기서 지우지 않는다 — D1 행만 지운다. BE-6이 업로드를 붙인
-    // 뒤로는 r2_key가 채워진 행도 이 경로로 지워져 R2에 고아 객체가 남는다
-    // (BE-35로 등록, 서버 수정 필요 — best-effort 정리는 아직 없다).
+    // 지운 행의 r2_key를 RETURNING으로 받아 배치가 커밋된 뒤 R2에서도 지운다(BE-35).
+    // 따로 SELECT하지 않는 이유 — 같은 문이 돌려주므로 읽은 뒤 지우기 전까지의 틈에
+    // 교체 업로드가 끼어 키가 어긋날 수 없다. 이 문은 배치의 첫 문이다(아래 [0]).
     statements.push(
-      db.prepare(`DELETE FROM documents WHERE event_id = ? AND id IN (${ph})`).bind(id, ...removed),
+      db
+        .prepare(`DELETE FROM documents WHERE event_id = ? AND id IN (${ph}) RETURNING r2_key`)
+        .bind(id, ...removed),
     );
   }
 
@@ -125,6 +129,12 @@ export const PUT = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     // 자정 리셋과의 경합은 결함이 아니라 '이벤트가 없어졌다'다(근거는 헬퍼 주석).
     if (isMissingEventFk(e)) throw eventNotFound();
     throw e;
+  }
+
+  if (removed.length > 0) {
+    const gone = results[0].results as { r2_key: string | null }[];
+    const env = await getEnv();
+    await deleteDocumentObjects(env.DOCS, gone.map((r) => r.r2_key), `event ${id} documents`);
   }
 
   const final = results[results.length - 1].results as unknown as DocumentRow[];
