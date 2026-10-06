@@ -12,12 +12,16 @@ import {
   fetchStudioEvent,
   fetchStudioEvents,
   fetchStudioPresets,
+  importGuestEvents,
+  IMPORT_BATCH_SIZE,
   logoutStudioUser,
   patchStudioEvent,
   putStudioEventDocuments,
   uploadStudioDocument,
   patchStudioEventStatus,
   putStudioEventSessions,
+  toImportBody,
+  type ImportResultDTO,
 } from '@/lib/studio-api';
 import type { EventStatus } from '@/lib/status';
 import { PRESETS } from '@/lib/theme';
@@ -71,6 +75,25 @@ function writeGuestWorkspace(events: EventItem[]): boolean {
     // 용량 초과·프라이빗 모드 등 — 화면 동작을 막을 이유는 아니다.
     return false;
   }
+}
+
+// 목록 응답엔 sessions·documents·키 비주얼 원문이 없다(BE-36) — 이미 상세를 불러온
+// 이벤트가 있으면 그 값을 목록의 빈 값으로 덮지 않는다. 로그인 시 최초 조회(마운트
+// 이펙트)와 가져오기 완료 뒤 재조회(FE-39) 둘 다 같은 판정이 필요해 함수로 뺐다
+// (`/code-review` 발견 — 가져오기 쪽이 이 병합 없이 통째로 덮어써, 상세를 이미 본
+// 이벤트의 키 비주얼·세션·자료가 가져오기 한 번으로 화면에서 사라질 뻔했다).
+function mergeDetailLoadedEvents(
+  prevEvents: EventItem[],
+  freshEvents: EventItem[],
+  loadedIds: ReadonlySet<number>,
+): EventItem[] {
+  const priorById = new Map(prevEvents.map((e) => [e.id, e]));
+  return freshEvents.map((e) => {
+    const prior = priorById.get(e.id);
+    return loadedIds.has(e.id) && prior
+      ? { ...e, keyVisual: prior.keyVisual, sessions: prior.sessions, documents: prior.documents, sessionCount: undefined, documentCount: undefined }
+      : e;
+  });
 }
 
 // addDocument·removeDocument가 PUT .../documents(전체 교체 계약)에 보내는 메타 행
@@ -145,6 +168,13 @@ interface StudioContextValue {
   // (팀원 리뷰, PR #65) — 한 곳(`isKnownPreset`)에서만 계산해 두 군데가 따로 판정하며
   // 어긋날 여지를 없앴다.
   isKnownPreset: (presetId: string) => boolean;
+  // FE-39 — 로그인 직후 가져올 게스트 이벤트가 있으면 담긴다(없으면 null, 배너
+  // 안 그림). 가져오기 실패분은 confirmImport가 다시 여기 채워 재시도할 수 있게 한다.
+  importPrompt: EventItem[] | null;
+  importBusy: boolean;
+  importMessage: string | null;
+  confirmImport: () => Promise<void>;
+  dismissImport: () => void;
 }
 
 const StudioContext = createContext<StudioContextValue | null>(null);
@@ -159,6 +189,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 게스트 워크스페이스를 localStorage에서 읽어온 뒤에야 그 변경을 다시 저장한다 —
   // 안 그러면 마운트 시의 시드값이 실제 저장된 값을 먼저 덮어쓸 수 있다.
   const guestHydratedRef = useRef(false);
+  // FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 이벤트(localRef 있음)가 있으면
+  // 여기 채운다. 가져오기 수락·거절·완료로만 비우거나 교체한다 — null이면 배너를
+  // 안 그린다. importMessage는 가져오기 수락 뒤의 결과(성공·실패 건수)를 한 번
+  // 보여주고, 다음 가져오기 시도나 배너 해제로 지운다.
+  const [importPrompt, setImportPrompt] = useState<EventItem[] | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  // importBusy(state)만으로는 막지 못하는 틈이 있다 — 버튼을 빠르게 두 번 누르면
+  // 두 클릭 모두 state가 아직 갱신되기 전에 confirmImport를 부를 수 있다(`docsBusyRef`와
+  // 같은 이유로 ref를 따로 둔다, `/code-review` 발견).
+  const importBusyRef = useRef(false);
   // "지금 편집 중인 이벤트"는 URL이 정본이다 — 컨텍스트 state로 따로 들고 effect로 동기화하면
   // 첫 렌더(들)에 URL과 다른 이전 값이 잠깐 보인다(하드 리로드 시 헤더·게이트 오표시, PR #9 리뷰).
   const params = useParams<{ id?: string }>();
@@ -258,6 +299,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       setAuthStatus('ready');
 
       if (me) {
+        // FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 게 있으면 묻는다.
+        // localRef가 있는 항목만(게스트가 실제로 만든 이벤트) — 시드는 없다.
+        // localStorage만 읽는 동기 작업이라 아래 네트워크 조회를 기다릴 이유가
+        // 없다 — 배너가 먼저 뜬다(코드 리뷰 발견).
+        const guestStored = readGuestWorkspace();
+        const importable = (guestStored ?? []).filter((e) => e.localRef);
+        if (importable.length > 0 && !cancelled) setImportPrompt(importable);
+
         // 목록·프리셋 둘 다 독립 요청이라 동시에 쏜다(순서대로 await하면 왕복 시간이
         // 그냥 더해진다 — 코드 리뷰 발견). 각자 실패해도 나머지 하나는 그대로 반영되도록
         // try/catch는 분리해 둔다.
@@ -266,28 +315,13 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         try {
           const events = await eventsPromise;
           if (!cancelled) {
-            // 목록 응답엔 sessions·documents·키 비주얼 원문이 없다(BE-36) — 이미 상세를
-            // 불러온 이벤트가 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그 값을 목록의
-            // 빈 값으로 덮어쓰지 않는다(위 detailLoadedRef 주석 참조). 키 비주얼을 덮어쓰면
-            // 서버엔 멀쩡히 있는데 에디터·프리뷰에서 이미지가 사라진다. 개수는 배열이
-            // 있으니 지운다 — 남기면 그 뒤 편집과 어긋난다.
-            setS((prev) => {
-              const priorById = new Map(prev.events.map((e) => [e.id, e]));
-              const merged = events.map((e) => {
-                const prior = priorById.get(e.id);
-                return detailLoadedRef.current.has(e.id) && prior
-                  ? {
-                      ...e,
-                      keyVisual: prior.keyVisual,
-                      sessions: prior.sessions,
-                      documents: prior.documents,
-                      sessionCount: undefined,
-                      documentCount: undefined,
-                    }
-                  : e;
-              });
-              return { ...prev, events: merged };
-            });
+            // 상세를 이미 불러온 이벤트가 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그
+            // 값을 목록의 빈 값으로 덮어쓰지 않는다(위 detailLoadedRef 주석 참조) —
+            // mergeDetailLoadedEvents 참조.
+            setS((prev) => ({
+              ...prev,
+              events: mergeDetailLoadedEvents(prev.events, events, detailLoadedRef.current),
+            }));
             setServerIds(new Set(events.map((e) => e.id)));
           }
         } catch (e) {
@@ -713,6 +747,114 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     const stored = readGuestWorkspace();
     setS((prev) => ({ ...prev, events: stored ?? seedEvents(), customPresets: [] }));
     guestHydratedRef.current = true;
+    // 로그인 중에만 의미 있는 배너다 — 로그아웃하면 지운다(다시 로그인하면 마운트
+    // 이펙트가 다시 판정한다, 이 컴포넌트는 로그아웃으로 리마운트되지 않는다).
+    setImportPrompt(null);
+    setImportMessage(null);
+  }, []);
+
+  // FE-39 — 게스트 워크스페이스를 계정으로 가져온다. `IMPORT_BATCH_SIZE`씩 나눠
+  // 보낸다(서버 상한). 성공(created·exists)한 항목만 로컬에서 지운다 — 실패분은
+  // `importPrompt`에 남겨 재시도 경로를 만든다.
+  const confirmImport = useCallback(async (): Promise<void> => {
+    const pending = importPrompt;
+    if (!pending || pending.length === 0 || importBusyRef.current) return;
+    importBusyRef.current = true;
+    setImportBusy(true);
+    setImportMessage(null);
+    try {
+      const results: ImportResultDTO[] = [];
+      for (let i = 0; i < pending.length; i += IMPORT_BATCH_SIZE) {
+        const batch = pending.slice(i, i + IMPORT_BATCH_SIZE);
+        try {
+          results.push(...(await importGuestEvents(batch.map(toImportBody))));
+        } catch (e) {
+          // 배치 전체가 한 번에 검증된다(`validateImportBody`) — 묵은 게스트 데이터
+          // 하나가 지금 서버 규칙(글자 수 등)을 어기면 그 하나 때문에 같은 배치의
+          // 멀쩡한 나머지까지 통째로 거절된다. 건별로 다시 보내 문제 있는 것만
+          // 가려낸다(`/code-review` 발견 — 안 그러면 같은 배치를 다시 시도해도
+          // 영원히 같은 이유로 막혀, 건강한 나머지 19개도 영영 못 들어간다).
+          const fallback = e instanceof ApiClientError ? e.message : '가져오기에 실패했습니다. 다시 시도해 주세요.';
+          for (const ev of batch) {
+            try {
+              results.push(...(await importGuestEvents([toImportBody(ev)])));
+            } catch (e2) {
+              results.push({
+                clientRef: ev.localRef!,
+                status: 'failed',
+                error: e2 instanceof ApiClientError ? e2.message : fallback,
+              });
+            }
+          }
+        }
+      }
+
+      // 로그인한 사이에 로그아웃했다면(응답을 기다리는 동안) 이 결과는 이미 끝난
+      // 세션의 것이다 — 게스트로 돌아간 화면에 반영하면 안 된다(`/code-review`
+      // 발견: 안 그러면 logout()이 비운 상태를 이 응답이 되살리고, 전 계정의
+      // 이벤트가 guest-persist 이펙트를 타고 게스트 localStorage에까지 섞여 들어간다).
+      if (loggedOutRef.current) return;
+
+      const byRef = new Map(results.map((r) => [r.clientRef, r]));
+      const imported = (status: string | undefined) => status === 'created' || status === 'exists';
+      const retry = pending.filter((e) => !imported(byRef.get(e.localRef!)?.status));
+      const succeeded = pending.length - retry.length;
+
+      // 성공분만 게스트 워크스페이스에서 지운다 — 남기면 재로그인 때 중복 제안된다.
+      const remaining = (readGuestWorkspace() ?? []).filter(
+        (e) => !e.localRef || !imported(byRef.get(e.localRef)?.status),
+      );
+      writeGuestWorkspace(remaining);
+
+      // 가져온 이벤트를 화면에 반영한다 — 목록을 다시 받아와 통째로 맞춘다
+      // (가져오기 응답엔 id·slug뿐이라 테마·아젠다까지 포함한 완전한 모양이 아니다).
+      // 이미 상세를 불러온 이벤트가 있으면 그 값을 지키며 병합한다(mergeDetailLoadedEvents —
+      // 그냥 덮어쓰면 방금 본 이벤트의 키 비주얼·세션·자료가 사라질 뻔했다, 코드 리뷰 발견).
+      if (succeeded > 0) {
+        try {
+          const events = await fetchStudioEvents();
+          if (!loggedOutRef.current) {
+            setS((prev) => ({
+              ...prev,
+              events: mergeDetailLoadedEvents(prev.events, events, detailLoadedRef.current),
+            }));
+            setServerIds(new Set(events.map((e) => e.id)));
+          }
+        } catch (e) {
+          console.warn('가져오기 후 목록 재조회 실패:', e);
+        }
+      }
+
+      const slugChanged = results.some((r) => r.slugChanged);
+      // 서버에 없는 프리셋이라 테마 색이 빈 채로 저장된 경우(게스트가 로컬에서만
+      // 만든 추출 프리셋) — 조용히 넘어가면 "가져왔는데 브랜드 색이 사라졌다"를
+      // 사용자가 알 방법이 없다(코드 리뷰 발견).
+      const presetDropped = results.some((r) => r.presetDropped);
+      // 실패 사유는 서버가 돌려준 문구를 그대로 보여준다(여러 건이 같은 이유로
+      // 실패하는 게 보통이라 중복은 한 번만) — StudioShell 일괄 작업의 실패 토스트와
+      // 같은 패턴. 계정당 한도 초과처럼 다시 눌러도 똑같이 막히는 사유도 이걸로
+      // 드러난다(코드 리뷰 발견: "다시 시도할 수 있습니다"라는 문구만 보면 재시도가
+      // 통할 것처럼 읽힌다).
+      const reasons = [...new Set(retry.map((e) => byRef.get(e.localRef!)?.error).filter((r): r is string => !!r))];
+      setImportMessage(
+        `${succeeded}개 가져왔습니다.`
+          + (retry.length > 0
+              ? ` ${retry.length}개는 가져오지 못했습니다${reasons.length > 0 ? ` — ${reasons.join(' / ')}` : ''}.`
+              : '')
+          + (slugChanged ? ' 주소가 겹쳐 일부 이벤트의 주소가 바뀌었습니다.' : '')
+          + (presetDropped ? ' 일부 이벤트의 브랜드 테마는 서버에 없어 기본값으로 저장됐습니다.' : ''),
+      );
+      setImportPrompt(retry.length > 0 ? retry : null);
+    } finally {
+      importBusyRef.current = false;
+      setImportBusy(false);
+    }
+  }, [importPrompt]);
+
+  // 거절 — 로컬 워크스페이스는 그대로 둔다("거절 시 로컬 보존").
+  const dismissImport = useCallback(() => {
+    setImportPrompt(null);
+    setImportMessage(null);
   }, []);
 
   // FE-15 — 로그인이면 실제 POST, 게스트면 로컬에만 추가(기존 StudioShell 로직을
@@ -945,6 +1087,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       removeDocument,
       createPreset,
       isKnownPreset,
+      importPrompt,
+      importBusy,
+      importMessage,
+      confirmImport,
+      dismissImport,
     }),
     [
       s,
@@ -965,6 +1112,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       removeDocument,
       createPreset,
       isKnownPreset,
+      importPrompt,
+      importBusy,
+      importMessage,
+      confirmImport,
+      dismissImport,
     ],
   );
 
