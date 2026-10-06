@@ -75,3 +75,34 @@ export async function purgeOrphanDocuments(db: D1Database, bucket: R2Bucket): Pr
 
   return deleted;
 }
+
+/** `R2Bucket.delete`가 한 번에 받는 키 수의 상한. */
+const R2_DELETE_BATCH = 1000;
+
+/**
+ * 방금 D1에서 지운 자료 행의 R2 객체를 바로 지운다 (BE-35).
+ *
+ * 위 Cron만으로도 객체는 결국 회수되지만, **지운 뒤 최대 하루 동안 남는다** — 운영자가
+ * "지웠다"고 믿는 강의자료(제약사 자료 포함)가 그동안 보관된다. 그래서 삭제 경로가
+ * 지운 키를 그 자리에서 함께 지운다.
+ *
+ * 실패해도 던지지 않는다 — D1이 정본이고 행은 이미 지워졌으므로, 여기서 터뜨리면
+ * 성공한 삭제가 실패로 보인다. 남은 객체는 위 Cron이 회수하고, 로그로 흔적만 남긴다.
+ * **반드시 D1 삭제가 커밋된 뒤에 부른다** — 먼저 지우면 D1 실패 시 행은 남고 파일만
+ * 사라져, 참가자 화면에 열 수 없는 "준비됨" 자료가 생긴다.
+ */
+export async function deleteDocumentObjects(
+  bucket: R2Bucket,
+  keys: readonly (string | null)[],
+  context: string,
+): Promise<void> {
+  const list = keys.filter((k): k is string => typeof k === 'string' && k !== '');
+  for (let i = 0; i < list.length; i += R2_DELETE_BATCH) {
+    const chunk = list.slice(i, i + R2_DELETE_BATCH);
+    try {
+      await bucket.delete(chunk);
+    } catch (e) {
+      console.error(`[r2] ${context} — ${chunk.length}건 삭제 실패, 자정 Cron이 회수한다`, e);
+    }
+  }
+}

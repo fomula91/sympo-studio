@@ -29,10 +29,17 @@ export default {
     // 만료 세션도 같다(BE-12). 리셋보다 먼저 도는 정리 묶음에 함께 둔다 —
     // 세션은 events와 무관하므로 리셋이 실패해도 상한이 지켜져야 한다.
     await purgeExpiredSessions(env.DB);
-    await resetDemoData(env.DB);
     // 리셋이 자료 행을 CASCADE로 날린 **뒤에** 돌아야 그 객체들이 고아로 잡힌다.
-    // R2 객체는 D1 CASCADE를 따라오지 않으므로 이 정리가 유일한 상한이다(BE-6).
-    await purgeOrphanDocuments(env.DB, env.DOCS);
+    // R2 객체는 D1 CASCADE를 따라오지 않는다 — 삭제 경로가 그 자리에서 지우지만
+    // (BE-35) 그건 실패해도 넘어가는 경로라, 이 정리가 마지막 상한이다(BE-6).
+    // finally로 묶는다 — 리셋이 실패해도 정리는 돈다(BE-35). 판정이 "참조되지 않는
+    // 키"라 리셋이 중간에 멈춰도 살아 있는 자료를 지우지 않고, 리셋의 실패는
+    // 정리가 끝난 뒤 그대로 전파돼 Cron 지표에 남는다.
+    try {
+      await resetDemoData(env.DB);
+    } finally {
+      await purgeOrphanDocuments(env.DB, env.DOCS);
+    }
   },
 } satisfies ExportedHandler<CloudflareEnv>;
 

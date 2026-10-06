@@ -4,6 +4,7 @@ import {
   BadRequest,
   eventId,
   getDb,
+  getEnv,
   json,
   toDocumentDTO,
   toEventDTO,
@@ -15,6 +16,7 @@ import {
   type SessionRow,
 } from '@/lib/db';
 import { assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
+import { deleteDocumentObjects } from '@/lib/retention';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 import {
   EVENT_TEXT_MAX, capacityBadRequestMessage, isEventTextField, isValidCapacity, textTooLongMessage,
@@ -208,17 +210,25 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
  * DELETE /api/events/[id]
  *
  * 세션·자료·질문·설문응답·로그는 FK의 ON DELETE CASCADE로 함께 지워진다.
+ *
+ * R2 객체는 CASCADE를 따라오지 않는다 — 자료 행을 같은 배치에서 먼저 지우며
+ * `RETURNING r2_key`로 키를 받아, 커밋된 뒤 R2에서도 지운다(BE-35). 배치는 한
+ * 트랜잭션이라 이벤트 삭제가 실패하면 자료 행 삭제도 함께 되돌려진다.
  */
 export const DELETE = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
   const id = await eventId(ctx);
   await assertCanEdit(db, request, id);
 
-  const row = await db
-    .prepare('DELETE FROM events WHERE id = ? RETURNING id')
-    .bind(id)
-    .first<{ id: number }>();
+  const [docsRes, eventRes] = await db.batch([
+    db.prepare('DELETE FROM documents WHERE event_id = ? RETURNING r2_key').bind(id),
+    db.prepare('DELETE FROM events WHERE id = ? RETURNING id').bind(id),
+  ]);
+  const row = (eventRes.results as { id: number }[])[0];
 
   if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+  const gone = docsRes.results as { r2_key: string | null }[];
+  const env = await getEnv();
+  await deleteDocumentObjects(env.DOCS, gone.map((r) => r.r2_key), `event ${id} delete`);
   return json({ deleted: row.id });
 });

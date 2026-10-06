@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { purgeOrphanDocuments } from './retention';
+import { describe, expect, it, vi } from 'vitest';
+import { deleteDocumentObjects, purgeOrphanDocuments } from './retention';
 
 /**
  * 고아 R2 객체 정리가 **살아 있는 이벤트 안까지 본다**는 것을 고정한다 (BE-29).
@@ -102,5 +102,41 @@ describe('페이징', () => {
     const { bucket, deleted } = fakeBucket(objects, 1);
     await purgeOrphanDocuments(fakeDb(['events/1/b-live.pdf']), bucket);
     expect(deleted).toEqual(['events/1/a-old.pdf', 'events/1/c-old.pdf']);
+  });
+});
+
+/**
+ * 삭제 경로가 그 자리에서 R2를 지운다 (BE-35).
+ *
+ * 요점은 둘이다 — 파일이 없던 자료(`r2_key` NULL)는 건너뛰고, R2가 실패해도
+ * **던지지 않는다.** 던지면 이미 커밋된 D1 삭제가 호출자에게 실패로 보인다.
+ */
+describe('deleteDocumentObjects', () => {
+  it('파일이 붙은 자료의 키만 지운다', async () => {
+    const { bucket, deleted } = fakeBucket([]);
+    await deleteDocumentObjects(bucket, ['events/1/5-a.pdf', null, 'events/1/6-b.pdf'], 'test');
+    expect(deleted).toEqual(['events/1/5-a.pdf', 'events/1/6-b.pdf']);
+  });
+
+  it('지울 키가 없으면 R2를 부르지 않는다', async () => {
+    const del = vi.fn();
+    await deleteDocumentObjects({ delete: del } as unknown as R2Bucket, [null], 'test');
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it('R2 삭제가 실패해도 던지지 않고 로그만 남긴다', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const bucket = { delete: async () => { throw new Error('r2 down'); } } as unknown as R2Bucket;
+    await expect(deleteDocumentObjects(bucket, ['events/1/5-a.pdf'], 'test')).resolves.toBeUndefined();
+    expect(err).toHaveBeenCalledOnce();
+    err.mockRestore();
+  });
+
+  it('1000건을 넘으면 나눠서 지운다', async () => {
+    const calls: number[] = [];
+    const bucket = { delete: async (keys: string[]) => { calls.push(keys.length); } } as unknown as R2Bucket;
+    const keys = Array.from({ length: 1500 }, (_, i) => `events/1/${i}-x.pdf`);
+    await deleteDocumentObjects(bucket, keys, 'test');
+    expect(calls).toEqual([1000, 500]);
   });
 });

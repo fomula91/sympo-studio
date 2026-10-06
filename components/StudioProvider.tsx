@@ -134,8 +134,8 @@ interface StudioContextValue {
   // 서버 이벤트가 아니면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
   // 업로드 실패 시 방금 만든 메타 행도 되돌려 목록에 빈 'pending' 자료가 남지 않는다.
   addDocument: (file: File) => Promise<void>;
-  // 자료 한 건을 지운다(메타 목록에서 빼고 PUT). 서버는 D1 행만 지우고 R2 객체는
-  // 정리하지 않는다 — 지울 때마다 고아 객체가 남는다(BE-35로 등록, 서버 수정 필요).
+  // 자료 한 건을 지운다(메타 목록에서 빼고 PUT). R2 객체는 서버가 D1 삭제 뒤 함께
+  // 지우고, 그게 실패해도 자정 Cron이 회수한다(BE-35) — 클라이언트가 할 일은 없다.
   removeDocument: (docId: number) => Promise<void>;
   // 로그인 사용자만 호출 가능(FE-40) — 실패(401·409 등)는 그대로 던진다.
   createPreset: (input: { id: string; label: string; hue: number; chroma: number }) => Promise<Preset>;
