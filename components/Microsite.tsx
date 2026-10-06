@@ -315,7 +315,7 @@ export default function Microsite({
                 빈 문자열을 그대로 저장하고(BE-37) 게스트 로컬 이벤트는 서버 검증 자체를
                 안 거친다 — 에디터에서 지우면 비울 수 있다. venue·host와 같은 이유로
                 데모 값("MERIDIAN 심포지엄") 폴백을 걷어냈다(PR #67 리뷰에서 발견). */}
-            {ev.title ? (
+            {ev.title.trim() ? (
               <div
                 style={{
                   fontSize: wide ? 30 : 25,

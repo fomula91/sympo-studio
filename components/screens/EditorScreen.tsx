@@ -339,7 +339,7 @@ function BasicSection({
           // 빈 채로 공개하면 히어로 제목 자리가 그냥 빈다. brand와 달리 "새 이벤트"는
           // 임시값이 아니라 title 자체의 정상 기본값이라(defaultEventDetail) 빈 문자열일
           // 때만 경고한다.
-          const titleNeedsInput = f.k === 'title' && ev.title === '';
+          const titleNeedsInput = f.k === 'title' && ev.title.trim() === '';
           const needsInput = brandNeedsInput || dateInvalid || titleNeedsInput;
           return (
             <TextInput
