@@ -23,6 +23,12 @@ const PUBLIC_HOST = 'sympo.superjacob.com';
 
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
 
+// 일괄 삭제·상태 변경 실패 토스트에 사유를 보여준다 — 전에는 console.warn에만 남고
+// 화면엔 "N건 실패"로만 떠서 사용자가 원인을 알 방법이 없었다(사용자 지적).
+function failureReasonText(reason: unknown): string {
+  return reason instanceof ApiClientError ? reason.message : '알 수 없는 오류';
+}
+
 export default function StudioShell({ children }: { children: React.ReactNode }) {
   const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds } =
     useStudio();
@@ -160,23 +166,26 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       const serverTargets = targetIds.filter((id) => serverIds.has(id));
       const results = await Promise.allSettled(serverTargets.map((id) => deleteStudioEvent(id)));
       const failedIds = new Set<number>();
+      const failedReasons = new Set<string>();
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
           failedIds.add(serverTargets[i]);
+          failedReasons.add(failureReasonText(r.reason));
           console.warn(`이벤트 ${serverTargets[i]} 삭제 실패:`, r.reason);
         }
       });
       const deletedIds = targetIds.filter((id) => !failedIds.has(id));
       const successCount = deletedIds.length;
+      const reasonText = [...failedReasons].join(' · ');
       patch((st) => ({
         events: st.events.filter((e) => !deletedIds.includes(e.id)),
         // 실패한 건은 선택된 채로 남겨 바로 다시 시도할 수 있게 한다(상태 변경과 같은 패턴).
         sel: st.sel.filter((id) => !deletedIds.includes(id)),
-        saved: failedIds.size > 0 ? `${failedIds.size}건 삭제 실패 — 다시 시도해주세요` : '삭제됨',
+        saved: failedIds.size > 0 ? `${failedIds.size}건 삭제 실패 — ${reasonText}` : '삭제됨',
       }));
       setBulkResult(
         failedIds.size > 0
-          ? `${successCount}건 삭제됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+          ? `${successCount}건 삭제됨 · ${failedIds.size}건 실패(${reasonText}) — 실패한 항목은 선택된 채로 남아 있어요`
           : `${successCount}건 삭제됨`,
       );
       if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
@@ -204,12 +213,23 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     const serverTargets = effectiveIds.filter((id) => serverIds.has(id));
     const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
     const failedIds = new Set<number>();
+    const failedReasons = new Set<string>();
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
         failedIds.add(serverTargets[i]);
+        failedReasons.add(failureReasonText(r.reason));
         console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
       }
     });
+    const reasonText = [...failedReasons].join(' · ');
+    // '공개'로 바꿀 때 게스트·시드 이벤트는 서버에 PATCH가 안 나가 로컬 상태만 바뀐다
+    // (원래 설계 — 애초에 보낼 D1 행이 없다). 그런데 결과 메시지가 그 경우도 그냥
+    // "N건 반영됨"으로 묶어 보여줘서, 사용자가 실제로 공개됐다고 믿고 참가자에게
+    // 링크를 공유하면 /{slug}가 404가 난다(사용자 실측으로 발견) — '공개'일 때만
+    // 구분해서 알린다. 초안·보관은 로컬에서만 바뀌어도 원래 비공개라 위험이 적어
+    // 그대로 "성공"으로 둔다.
+    const guestOnlyIds =
+      a === '공개' ? effectiveIds.filter((id) => !failedIds.has(id) && !serverIds.has(id)) : [];
     const successCount = effectiveIds.length - failedIds.size;
     patch((st) => ({
       events: st.events.map((e) => (effectiveIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
@@ -223,17 +243,21 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       // 별도 배너(bulkResult, 아래)로 성공·실패·제외 건수를 알린다.
       saved:
         failedIds.size > 0
-          ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요`
+          ? `${failedIds.size}건 반영 실패 — ${reasonText}`
           : gateBlockedIds.length > 0
             ? `${gateBlockedIds.length}건은 대비비 미달로 제외됨`
-            : '일괄 반영됨',
+            : guestOnlyIds.length > 0
+              ? `${guestOnlyIds.length}건은 로그인해야 실제 공개됨`
+              : '일괄 반영됨',
     }));
     setBulkResult(
       failedIds.size > 0
-        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패(${reasonText}) — 실패한 항목은 선택된 채로 남아 있어요`
         : gateBlockedIds.length > 0
           ? `${successCount}건 반영됨 · ${gateBlockedIds.length}건은 대비비 미달로 제외됨 — 에디터에서 먼저 고쳐주세요`
-          : `${successCount}건 반영됨`,
+          : guestOnlyIds.length > 0
+            ? `${successCount}건 반영됨 · ${guestOnlyIds.length}건은 로그인해야 실제 공개돼요 — 참가자 링크는 아직 안 열려요`
+            : `${successCount}건 반영됨`,
     );
     if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
     bulkResultTimerRef.current = setTimeout(() => setBulkResult(null), 4000);
