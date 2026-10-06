@@ -279,6 +279,11 @@ export function isMissingEventFk(e: unknown): boolean {
   return e instanceof Error && e.message.includes('FOREIGN KEY constraint failed');
 }
 
+/** `events.slug` UNIQUE 위반인가 — 주소 변경(PATCH)이 409로 접는다(BE-39). */
+export function isSlugTaken(e: unknown): boolean {
+  return e instanceof Error && e.message.includes('UNIQUE constraint failed: events.slug');
+}
+
 /** HTTP 상태를 아는 예외의 공통 부모. withRoute가 status 그대로 응답을 만든다. */
 export class ApiError extends Error {
   constructor(

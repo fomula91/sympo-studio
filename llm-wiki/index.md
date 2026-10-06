@@ -63,6 +63,7 @@
 | [[0011-account-link-key]] | 계정 연결 키는 `oauth_accounts` 하나, 이메일은 식별자가 아니다 (0007 부분 개정) |
 | [[0012-upload-admission]] | 업로드 한도를 예약으로 판정 (0008의 증가 시점을 업로드에 한해 개정) |
 | [[0013-edge-rate-limiting-rejected]] | 엣지 rate limiting을 쓰지 않는다 — 무료 플랜 IP 단독 카운팅이 0006과 충돌 (0008 부분 개정) |
+| [[0014-slug-edit-draft-only]] | 공개 주소(slug)는 초안일 때만 바꿀 수 있다 — 옛 주소는 리다이렉트하지 않는다 (BE-39) |
 
 ## Reviews
 

@@ -274,7 +274,7 @@ await fetch('/api/auth/logout', { method: 'POST' });
 - 로그인 실패·취소는 `/console?auth=failed` 또는 `?auth=cancelled`로 돌아옵니다 — 사유를 화면에 흘리지 않습니다
 - 세션 쿠키는 httpOnly라 JS에서 읽을 수 없습니다. 로그인 여부는 `/api/auth/me`로만 판단하세요
 
-**이벤트 소유권이 붙습니다** — 로그인 상태로 `POST /api/events`를 하면 그 이벤트에 `owner_id`가 박히고, 이후 **`PATCH`·`DELETE`는 소유자만** 됩니다. 남의 것이면 403이 아니라 **404**입니다(존재를 흘리지 않습니다). 비로그인으로 만든 이벤트는 소유자가 없어 누구나 고칠 수 있고, **자정 리셋에 지워집니다.**
+**이벤트 소유권이 붙습니다** — 로그인 상태로 `POST /api/events`를 하면 그 이벤트에 `owner_id`가 박히고, 이후 **`PATCH`·`DELETE`는 소유자만** 됩니다. 남의 것이면 403이 아니라 **404**입니다(존재를 흘리지 않습니다). 비로그인으로 만든 이벤트는 소유자가 없어 누구나 고칠 수 있고, **자정 리셋에 지워집니다.** 단 소유자 없는 이벤트(공용 데모)는 **지울 수 없고(403, BE-38) 주소도 못 바꿉니다(403, BE-39)**.
 
 아직 없는 것: `POST /api/events`의 로그인 강제(게스트도 만들 수 있습니다), `GET /api/events`의 내 이벤트 필터링, 운영자 쓰기 rate limit — 전부 BE-13입니다.
 
@@ -369,11 +369,11 @@ BE-24가 `/ops`를 잠그면서 갈라 낸 경로다 — 그 전까지 두 화�
 
 | 메서드 | 경로 | 용도 |
 |---|---|---|
-| GET | `/api/events?q=&status=&sort=최신\|행사일\|이름` | 목록 (콘솔의 검색·필터·정렬 그대로) |
-| POST | `/api/events` | 생성. `brand`·`title` 필수, `slug` 생략 시 자동 파생 |
+| GET | `/api/events?q=&status=&sort=최신\|행사일\|이름` | 목록 (콘솔의 검색·필터·정렬 그대로). 각 행은 키 비주얼 원문 대신 `theme.hasKeyVisual`, 세션·자료 배열 대신 `sessionCount`·`documentCount`(BE-36) — 원문·배열은 단건 조회로 |
+| POST | `/api/events` | 생성. `brand`·`title` 필수, `slug` 생략 시 자동 파생. 지정하면 형식(소문자·숫자·하이픈 80자)·예약어(`console`·`api` 등 최상위 경로) 검사 → 위반 400, 중복은 `-2` 접미사(BE-39) |
 | GET | `/api/events/[id]` | 단건 + `sessions` 포함 |
-| PATCH | `/api/events/[id]` | 부분 수정. `engage`는 중첩 객체(`{"engage":{"qa":true}}`). slug는 변경 불가 |
-| DELETE | `/api/events/[id]` | 삭제(세션·자료·질문 CASCADE) |
+| PATCH | `/api/events/[id]` | 부분 수정. `engage`는 중첩 객체(`{"engage":{"qa":true}}`). `title`·`brand`를 빈 값으로 보내면 400(BE-37). **`slug`는 초안일 때만 변경**(BE-39, ADR 0014) — 형식·예약어 400 / 초안 아님·공용 데모 403 / 다른 이벤트가 쓰는 주소 409(접미사 안 붙임) / 같은 값 재전송은 통과. 응답의 `slug`가 새 주소 |
+| DELETE | `/api/events/[id]` | 삭제(세션·자료·질문 CASCADE, R2 파일도 즉시 — BE-35). 공용 데모는 403(BE-38) |
 
 ## 아젠다·자료 저장 — `/api/events/[id]/{sessions,documents}` (BE-14)
 
