@@ -80,11 +80,13 @@ function AgendaSection({
   ev,
   patch,
   patchEvent,
+  isServerEvent,
 }: {
   s: StudioState;
   ev: EventItem;
   patch: PatchFn;
   patchEvent: PatchEventFn;
+  isServerEvent: boolean;
 }) {
   const [moveAnnouncement, setMoveAnnouncement] = useState('');
 
@@ -106,12 +108,12 @@ function AgendaSection({
         arr.splice(to, 0, it);
         return { sessions: arr };
       });
-      patch({ dragIdx: to, saved: '미리보기 반영 중…' });
+      patch({ dragIdx: to, saved: savingMessage(isServerEvent) });
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      patch({ dragIdx: -1, saved: '미리보기에만 반영됨' });
+      patch({ dragIdx: -1, saved: savingMessage(isServerEvent) });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -127,7 +129,7 @@ function AgendaSection({
       arr.splice(to, 0, it);
       return { sessions: arr };
     });
-    patch({ saved: '미리보기에만 반영됨' });
+    patch({ saved: savingMessage(isServerEvent) });
     setMoveAnnouncement(`${moved.title}을(를) ${ev.sessions.length}개 중 ${to + 1}번째로 이동했습니다.`);
   };
 
@@ -154,7 +156,7 @@ function AgendaSection({
                 const pick = SESSION_LIB[curEv.sessions.length % SESSION_LIB.length];
                 return { sessions: [...curEv.sessions, { id: Date.now(), ...pick }] };
               });
-              patch({ saved: '미리보기에만 반영됨' });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
             style={{ ...ghostBtn, fontWeight: 600 }}
           >
@@ -251,7 +253,7 @@ function AgendaSection({
               className="hv-x"
               onClick={() => {
                 patchEvent((curEv) => ({ sessions: curEv.sessions.filter((_, j) => j !== i) }));
-                patch({ saved: '미리보기에만 반영됨' });
+                patch({ saved: savingMessage(isServerEvent) });
               }}
               style={{
                 width: 44,
@@ -1121,7 +1123,9 @@ export default function EditorScreen({
       </div>
 
       <div style={{ flex: '1 1 auto', minWidth: 440, overflow: 'auto', padding: '24px 28px 64px' }}>
-        {s.section === 'agenda' ? <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} /> : null}
+        {s.section === 'agenda' ? (
+          <AgendaSection s={s} ev={ev} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+        ) : null}
         {s.section === 'theme' ? (
           <ThemeSection
             s={s}
