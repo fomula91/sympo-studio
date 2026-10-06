@@ -374,9 +374,25 @@ function BasicSection({
           <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 8 }}>
             생성될 URL
           </div>
-          <div style={{ fontFamily: MONO, fontSize: 13, color: UI.ink2, wordBreak: 'break-all' }}>
-            sympo.superjacob.com/{ev.slug}
-          </div>
+          {/* 상대 경로로 연다(참가자 리포트 링크와 같은 패턴) — 절대 도메인으로 고정하면
+              로컬 개발 환경에서 눌러도 프로덕션으로 날아가 항상 404였다(사용자 요청으로
+              추가). 공개 상태가 아니면 이 URL도 404가 뜨는 게 맞다 — 참가자 화면은
+              status='공개'일 때만 열린다(FE-23). */}
+          <a
+            href={`/${ev.slug}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: 'block',
+              fontFamily: MONO,
+              fontSize: 13,
+              color: UI.ink2,
+              wordBreak: 'break-all',
+              textDecoration: 'none',
+            }}
+          >
+            sympo.superjacob.com/{ev.slug} ↗
+          </a>
           <div
             style={{
               display: 'flex',

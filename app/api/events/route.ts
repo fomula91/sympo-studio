@@ -17,6 +17,7 @@ import { EVENT_WRITE_RATE_POLICY, MAX_EVENTS_PER_USER } from '@/lib/events';
 import {
   evaluateRateLimit, rateCounterStatement, rateUsageStatements, userRateKeys,
 } from '@/lib/rate-limit';
+import { slugFormatError } from '@/lib/slug';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 import {
   EVENT_TEXT_MAX, capacityBadRequestMessage, isValidCapacity, textTooLongMessage,
@@ -173,7 +174,17 @@ export const POST = withRoute(async (request: NextRequest) => {
     if (!isValidCapacity(body.capacity)) throw new BadRequest(capacityBadRequestMessage());
   }
 
-  const requested = str(body.slug, 'slug') ?? autoSlug(title, venue ?? '', date ?? '');
+  // 운영자가 slug를 지정하면 형식·예약어를 본다(BE-39) — 예전엔 `str()`만 거쳐 공백·
+  // 슬래시가 든 열 수 없는 주소나 `console` 같은 정적 경로 이름이 그대로 저장됐다.
+  // 중복은 지금처럼 접미사로 피하고(생성은 회차를 여러 번 만드는 정상 흐름), 데모 주소는
+  // `ensureUniqueSlug`가 건너뛴다. 수정(PATCH)만 중복을 409로 거절한다 — 거기선 운영자가
+  // 고른 주소를 서버가 몰래 바꾸면 안 된다.
+  const explicit = str(body.slug, 'slug');
+  if (explicit !== null) {
+    const error = slugFormatError(explicit);
+    if (error) throw new BadRequest(error);
+  }
+  const requested = explicit ?? autoSlug(title, venue ?? '', date ?? '');
   const slug = await ensureUniqueSlug(db, requested);
 
 

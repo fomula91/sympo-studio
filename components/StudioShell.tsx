@@ -9,17 +9,25 @@ import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
-import { patchStudioEventStatus } from '@/lib/studio-api';
+import { deleteStudioEvent, patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
-const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
+// '삭제'는 상태 전환이 아니라 영구 삭제(DELETE, FK CASCADE로 세션·자료·질문·설문·로그까지
+// 함께 지워진다)라 handleBulkAction에서 별도 분기로 처리한다.
+const BULK_ACTIONS = ['공개', '초안', '보관', '복제', '삭제'];
 
 // 참가자 화면 주소는 이 도메인 아래에 slug로 열린다(콘솔·에디터의 "생성될 URL" 표시와 동일).
 const PUBLIC_HOST = 'sympo.superjacob.com';
 
 type ScreenKind = 'console' | 'editor' | 'viewer' | 'report';
+
+// 일괄 삭제·상태 변경 실패 토스트에 사유를 보여준다 — 전에는 console.warn에만 남고
+// 화면엔 "N건 실패"로만 떠서 사용자가 원인을 알 방법이 없었다(사용자 지적).
+function failureReasonText(reason: unknown): string {
+  return reason instanceof ApiClientError ? reason.message : '알 수 없는 오류';
+}
 
 export default function StudioShell({ children }: { children: React.ReactNode }) {
   const { s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds } =
@@ -36,6 +44,12 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   // s.saved(위)는 에디터 헤더 전용이라 콘솔의 일괄 변경 결과가 보일 자리가 없었다
   // (팀원 코드리뷰가 PR #63에서 발견) — 콘솔에서도 보이는 별도 토스트로 띄운다.
   const [bulkResult, setBulkResult] = useState<string | null>(null);
+  // 영구 삭제라 한 번 클릭으로 바로 실행하지 않는다 — 버튼을 누르면 "정말 삭제" 확인
+  // 상태로 바뀌고, 그 상태에서 같은 버튼을 다시 누를 때만 실제로 지운다(자료 삭제와
+  // 같은 2클릭 패턴, EditorScreen.tsx의 confirmDeleteId 참조). 4초 안에 다시 안 누르면
+  // 자동으로 풀린다.
+  const [confirmDeleteArmed, setConfirmDeleteArmed] = useState(false);
+  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   // POST /api/events가 401(세션 만료)로 실패하면, 계정 아이콘은 로그인 상태 그대로
   // 남아 있어 사용자가 같은 버튼을 다시 눌러도 또 실패한다 — 재로그인 링크로 다음
@@ -76,6 +90,23 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     // /code-review 2라운드 이후 재발견) — 경로가 실제로 바뀐 뒤에야 푼다.
     if (creating) setCreating(false);
   }
+
+  // 선택(s.sel)이 바뀌면 삭제 확인(armed) 상태를 즉시 푼다 — 안 그러면 A를 선택해
+  // '삭제'를 눌러 확인 대기로 만든 뒤, 그 상태에서 ConsoleScreen의 카드 클릭으로
+  // B를 추가 선택하고(그쪽은 confirmDeleteArmed를 전혀 모르고 s.sel을 자유롭게
+  // 토글한다) 다시 '삭제'를 누르면 B가 한 번도 확인을 거치지 않은 채 함께 영구
+  // 삭제된다(`/code-review` 발견). ref(타이머) 클린업은 위 pathname 블록과 같은
+  // 이유로 여기서 안 하고 아래 effect에서 한다(렌더 중 ref 접근은 react-hooks/refs가 막는다).
+  const [prevSel, setPrevSel] = useState(s.sel);
+  if (s.sel !== prevSel) {
+    setPrevSel(s.sel);
+    if (confirmDeleteArmed) setConfirmDeleteArmed(false);
+  }
+  useEffect(() => {
+    if (!confirmDeleteArmed && confirmDeleteTimerRef.current) {
+      clearTimeout(confirmDeleteTimerRef.current);
+    }
+  }, [confirmDeleteArmed]);
 
   const inEditor = pathname.startsWith('/events/');
   const screenKind: ScreenKind = s.viewerOpen
@@ -143,6 +174,42 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       patch({ sel: [] });
       return;
     }
+    if (a === '삭제') {
+      const targetIds = s.sel;
+      setBulkPending(true);
+      setBulkResult(null);
+      patch({ saved: '삭제하는 중…' });
+      // 서버 이벤트만 DELETE를 보낸다 — 게스트·시드는 지울 D1 행이 없어 바로 로컬에서만 뺀다.
+      const serverTargets = targetIds.filter((id) => serverIds.has(id));
+      const results = await Promise.allSettled(serverTargets.map((id) => deleteStudioEvent(id)));
+      const failedIds = new Set<number>();
+      const failedReasons = new Set<string>();
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          failedIds.add(serverTargets[i]);
+          failedReasons.add(failureReasonText(r.reason));
+          console.warn(`이벤트 ${serverTargets[i]} 삭제 실패:`, r.reason);
+        }
+      });
+      const deletedIds = targetIds.filter((id) => !failedIds.has(id));
+      const successCount = deletedIds.length;
+      const reasonText = [...failedReasons].join(' · ');
+      patch((st) => ({
+        events: st.events.filter((e) => !deletedIds.includes(e.id)),
+        // 실패한 건은 선택된 채로 남겨 바로 다시 시도할 수 있게 한다(상태 변경과 같은 패턴).
+        sel: st.sel.filter((id) => !deletedIds.includes(id)),
+        saved: failedIds.size > 0 ? `${failedIds.size}건 삭제 실패 — ${reasonText}` : '삭제됨',
+      }));
+      setBulkResult(
+        failedIds.size > 0
+          ? `${successCount}건 삭제됨 · ${failedIds.size}건 실패(${reasonText}) — 실패한 항목은 선택된 채로 남아 있어요`
+          : `${successCount}건 삭제됨`,
+      );
+      if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
+      bulkResultTimerRef.current = setTimeout(() => setBulkResult(null), 4000);
+      setBulkPending(false);
+      return;
+    }
     const targetIds = s.sel;
     // 에디터의 공개 버튼은 대비비 게이트(canPublish, 위)를 거치는데 콘솔 일괄 변경은 그
     // 체크 없이 바로 PATCH했다(팀원 코드리뷰, PR #63) — 공개로 바꿀 때만 대상별로 같은
@@ -163,12 +230,23 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     const serverTargets = effectiveIds.filter((id) => serverIds.has(id));
     const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
     const failedIds = new Set<number>();
+    const failedReasons = new Set<string>();
     results.forEach((r, i) => {
       if (r.status === 'rejected') {
         failedIds.add(serverTargets[i]);
+        failedReasons.add(failureReasonText(r.reason));
         console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
       }
     });
+    const reasonText = [...failedReasons].join(' · ');
+    // '공개'로 바꿀 때 게스트·시드 이벤트는 서버에 PATCH가 안 나가 로컬 상태만 바뀐다
+    // (원래 설계 — 애초에 보낼 D1 행이 없다). 그런데 결과 메시지가 그 경우도 그냥
+    // "N건 반영됨"으로 묶어 보여줘서, 사용자가 실제로 공개됐다고 믿고 참가자에게
+    // 링크를 공유하면 /{slug}가 404가 난다(사용자 실측으로 발견) — '공개'일 때만
+    // 구분해서 알린다. 초안·보관은 로컬에서만 바뀌어도 원래 비공개라 위험이 적어
+    // 그대로 "성공"으로 둔다.
+    const guestOnlyIds =
+      a === '공개' ? effectiveIds.filter((id) => !failedIds.has(id) && !serverIds.has(id)) : [];
     const successCount = effectiveIds.length - failedIds.size;
     patch((st) => ({
       events: st.events.map((e) => (effectiveIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
@@ -182,17 +260,21 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       // 별도 배너(bulkResult, 아래)로 성공·실패·제외 건수를 알린다.
       saved:
         failedIds.size > 0
-          ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요`
+          ? `${failedIds.size}건 반영 실패 — ${reasonText}`
           : gateBlockedIds.length > 0
             ? `${gateBlockedIds.length}건은 대비비 미달로 제외됨`
-            : '일괄 반영됨',
+            : guestOnlyIds.length > 0
+              ? `${guestOnlyIds.length}건은 로그인해야 실제 공개됨`
+              : '일괄 반영됨',
     }));
     setBulkResult(
       failedIds.size > 0
-        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+        ? `${successCount}건 반영됨 · ${failedIds.size}건 실패(${reasonText}) — 실패한 항목은 선택된 채로 남아 있어요`
         : gateBlockedIds.length > 0
           ? `${successCount}건 반영됨 · ${gateBlockedIds.length}건은 대비비 미달로 제외됨 — 에디터에서 먼저 고쳐주세요`
-          : `${successCount}건 반영됨`,
+          : guestOnlyIds.length > 0
+            ? `${successCount}건 반영됨 · ${guestOnlyIds.length}건은 로그인해야 실제 공개돼요 — 참가자 링크는 아직 안 열려요`
+            : `${successCount}건 반영됨`,
     );
     if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
     bulkResultTimerRef.current = setTimeout(() => setBulkResult(null), 4000);
@@ -545,31 +627,63 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         >
           <div style={{ fontSize: 13, fontWeight: 650, letterSpacing: '-0.01em' }}>{s.sel.length}개 선택</div>
           <div style={{ width: 1, height: 24, background: 'oklch(1 0 0 / 0.16)', margin: '0 6px' }} />
-          {BULK_ACTIONS.map((a) => (
-            <button
-              key={a}
-              className="hv-glass"
-              onClick={() => void handleBulkAction(a)}
-              disabled={bulkPending}
-              style={{
-                height: 44,
-                padding: '0 14px',
-                borderRadius: 11,
-                border: '1px solid oklch(1 0 0 / 0.18)',
-                background: 'transparent',
-                color: '#fff',
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: bulkPending ? 'not-allowed' : 'pointer',
-                opacity: bulkPending ? 0.5 : 1,
-              }}
-            >
-              {a === '복제' ? '템플릿으로 복제' : `${a}으로 변경`}
-            </button>
-          ))}
+          {BULK_ACTIONS.map((a) => {
+            const deleteArmed = a === '삭제' && confirmDeleteArmed;
+            return (
+              <button
+                key={a}
+                // hv-glass의 :hover 배경이 !important라 danger 배경(아래 style)을 가린다 —
+                // 클릭 직후엔 커서가 보통 이 버튼 위에 그대로 있어서, armed 상태의 강조색이
+                // 실사용에서 거의 항상 안 보이는 문제였다(브라우저로 직접 확인). armed일
+                // 때만 그 클래스를 빼 hover가 danger 배경을 덮지 않게 한다.
+                className={deleteArmed ? undefined : 'hv-glass'}
+                onClick={() => {
+                  // 삭제는 영구 손실이라 한 번 더 확인받는다 — 첫 클릭은 확인 상태로만
+                  // 바꾸고, 그 상태에서 같은 버튼을 다시 눌러야 실제로 지운다.
+                  if (a === '삭제' && !confirmDeleteArmed) {
+                    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                    setConfirmDeleteArmed(true);
+                    confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
+                    return;
+                  }
+                  if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                  // 선택이 그대로인 채(위 effect가 안 풀어준다) '삭제' 아닌 다른 버튼을
+                  // 눌러도 여기서 armed를 꺼야 한다 — 안 그러면 A를 선택해 '삭제'로
+                  // 확인 대기를 만든 뒤 같은 선택으로 '공개로 변경' 등을 먼저 눌러도
+                  // armed가 true로 남아, 그 뒤 다시 '삭제'를 누르면 확인 없이 바로
+                  // 지워진다(`/code-review` 발견과 같은 뿌리, 선택 불변 버전).
+                  if (confirmDeleteArmed) setConfirmDeleteArmed(false);
+                  void handleBulkAction(a);
+                }}
+                disabled={bulkPending}
+                aria-label={deleteArmed ? `선택한 ${s.sel.length}개 삭제 확인 — 다시 누르면 영구 삭제됩니다` : undefined}
+                style={{
+                  height: 44,
+                  padding: '0 14px',
+                  borderRadius: 11,
+                  border: deleteArmed ? '1px solid oklch(0.6 0.2 28)' : '1px solid oklch(1 0 0 / 0.18)',
+                  background: deleteArmed ? 'oklch(0.5 0.18 28)' : 'transparent',
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: bulkPending ? 'not-allowed' : 'pointer',
+                  opacity: bulkPending ? 0.5 : 1,
+                }}
+              >
+                {a === '복제' ? '템플릿으로 복제' : a === '삭제' ? (deleteArmed ? '정말 삭제?' : '삭제') : `${a}으로 변경`}
+              </button>
+            );
+          })}
           <button
             className="hv-white"
-            onClick={() => patch({ sel: [] })}
+            onClick={() => {
+              // 삭제 확인 대기 중이었다면 선택을 비우는 시점에 함께 풀어 둔다 — 안 그러면
+              // 선택 모드를 다시 켜고 몇 초 안에 새로 고른 항목이 이전 armed 상태로
+              // 바로 삭제될 수 있다.
+              if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+              setConfirmDeleteArmed(false);
+              patch({ sel: [] });
+            }}
             style={{
               width: 44,
               height: 44,
