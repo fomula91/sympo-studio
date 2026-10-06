@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertCanRead, matchOAuthState, requireUser, sessionUserIdSql, upsertUser } from './auth';
+import { assertCanDelete, assertCanEdit, assertCanRead, matchOAuthState, requireUser, sessionUserIdSql, upsertUser } from './auth';
 
 /**
  * BE-26의 두 가지를 고정한다.
@@ -153,6 +153,54 @@ describe('assertCanRead', () => {
 
   it('비로그인은 소유자가 있는 이벤트를 못 본다', async () => {
     await expect(assertCanRead(sessionDb(null), withCookie(), 7)).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+});
+
+/** 이벤트 소유자 조회와 세션 조회를 SQL로 갈라 답하는 가짜 D1. `owner`가 undefined면 이벤트가 없다. */
+function ownerDb(owner: number | null | undefined, user: { id: number; email: string } | null) {
+  return {
+    prepare: (q: string) => ({
+      bind: () => ({
+        first: async () => {
+          if (/FROM events/i.test(q)) return owner === undefined ? null : { owner_id: owner };
+          return user ? { id: user.id, email: user.email, name: null, avatar_url: null } : null;
+        },
+      }),
+    }),
+  } as unknown as D1Database;
+}
+
+/**
+ * BE-38 — 공용 데모는 고칠 수는 있어도 지울 수는 없다.
+ *
+ * 되돌아가면 로그인 없이 `curl -X DELETE`만으로 데모가 모든 방문자에게서 사라지고
+ * (자정 리셋 전까지 공개 주소 404), R2 자료까지 그 자리에서 지워진다(BE-35).
+ */
+describe('assertCanDelete', () => {
+  const me = { id: 7, email: 'a@example.com' };
+
+  it('공용 데모(소유자 없음)는 로그인했어도 403으로 거절한다', async () => {
+    await expect(assertCanDelete(ownerDb(null, me), withCookie('t'), 1)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(assertCanDelete(ownerDb(null, null), withCookie(), 1)).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
+  it('데모를 고치는 것은 그대로 열려 있다 — 체험 경로가 여기에 기댄다', async () => {
+    await expect(assertCanEdit(ownerDb(null, null), withCookie(), 1)).resolves.toBeUndefined();
+  });
+
+  it('내 이벤트는 지울 수 있다', async () => {
+    await expect(assertCanDelete(ownerDb(7, me), withCookie('t'), 1)).resolves.toBeUndefined();
+  });
+
+  it('남의 이벤트·없는 이벤트는 404다 — 존재를 흘리지 않는다', async () => {
+    await expect(assertCanDelete(ownerDb(9, me), withCookie('t'), 1)).rejects.toMatchObject({ status: 404 });
+    await expect(assertCanDelete(ownerDb(undefined, me), withCookie('t'), 1)).rejects.toMatchObject({
       status: 404,
     });
   });

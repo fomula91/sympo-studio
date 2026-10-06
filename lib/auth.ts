@@ -486,13 +486,46 @@ export async function assertCanEdit(
   request: Request,
   eventId: number,
 ): Promise<void> {
+  const ownerId = await readOwnerId(db, eventId);
+  if (ownerId === null) return;
+  await assertSessionOwns(db, request, ownerId);
+}
+
+/**
+ * 이 이벤트를 **지울** 수 있는가 (BE-38).
+ *
+ * 고치기(`assertCanEdit`)와 다른 점은 하나다 — **소유자가 없는 이벤트(공용 데모)는 아무도
+ * 못 지운다.** 데모를 고치는 것은 열어 둔다(체험용이고 자정 리셋이 되돌린다). 하지만
+ * 지우면 리셋 전까지 **모든 방문자에게서** 데모가 사라지고 공개 주소가 404가 되며, R2
+ * 자료도 그 자리에서 함께 지워진다(BE-35). 예전엔 고치기와 같은 가드를 써서 로그인 없이
+ * `curl -X DELETE`만으로도 지워졌고, PR #68이 콘솔에 삭제 버튼을 붙이면서 로그인
+ * 사용자의 데모 카드에서 버튼으로 드러났다.
+ *
+ * 남의 것은 고치기와 같이 404, 데모는 403이다 — 데모의 존재는 숨길 비밀이 아니고
+ * (공개 페이지다), 사유를 알려야 콘솔이 "왜 안 지워지는지"를 보여줄 수 있다.
+ */
+export async function assertCanDelete(
+  db: D1Database,
+  request: Request,
+  eventId: number,
+): Promise<void> {
+  const ownerId = await readOwnerId(db, eventId);
+  if (ownerId === null) {
+    throw new ApiError('공용 데모 이벤트는 삭제할 수 없습니다(매일 자정에 초기화됩니다).', 403);
+  }
+  await assertSessionOwns(db, request, ownerId);
+}
+
+async function readOwnerId(db: D1Database, eventId: number): Promise<number | null> {
   const row = await db
     .prepare('SELECT owner_id FROM events WHERE id = ?')
     .bind(eventId)
     .first<{ owner_id: number | null }>();
   if (!row) throw eventNotFound();
-  if (row.owner_id === null) return;
+  return row.owner_id;
+}
 
+async function assertSessionOwns(db: D1Database, request: Request, ownerId: number): Promise<void> {
   const user = await getSessionUser(db, request);
-  if (!user || user.id !== row.owner_id) throw eventNotFound();
+  if (!user || user.id !== ownerId) throw eventNotFound();
 }
