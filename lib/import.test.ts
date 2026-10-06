@@ -63,3 +63,34 @@ describe('validateImportBody', () => {
     expect(() => validateImportBody({ events: [ev({ capacity: -1 })] })).toThrow(/capacity/);
   });
 });
+
+/**
+ * BE-40 — 가져오기가 참여 설정(engage)을 그대로 옮긴다.
+ *
+ * 되돌아가면 가져온 이벤트의 Q&A·설문·수료증이 원래 설정과 무관하게 전부 꺼진다 —
+ * 운영자는 켜 둔 줄 알고 링크를 공유한다.
+ */
+describe('validateImportBody — engage', () => {
+  it('섞인 조합을 그대로 옮긴다', () => {
+    const [out] = validateImportBody({
+      events: [ev({ engage: { qa: true, survey: false, chat: false, cert: true } })],
+    });
+    expect(out.engage).toEqual({ qa: true, survey: false, chat: false, cert: true });
+  });
+
+  it('engage가 없거나 일부 키가 빠지면 그 칸은 꺼짐이다 — 예전 동작·스키마 기본값과 같다', () => {
+    expect(validateImportBody({ events: [ev()] })[0].engage).toEqual({
+      qa: false, survey: false, chat: false, cert: false,
+    });
+    expect(validateImportBody({ events: [ev({ engage: { survey: true } })] })[0].engage).toEqual({
+      qa: false, survey: true, chat: false, cert: false,
+    });
+  });
+
+  it('참/거짓이 아니면 거절한다 — "false" 문자열을 참으로 읽으면 끈 기능이 켜진다', () => {
+    expect(() => validateImportBody({ events: [ev({ engage: { qa: 'false' } })] })).toThrow(
+      /engage\.qa는 true\/false/,
+    );
+    expect(() => validateImportBody({ events: [ev({ engage: 'on' })] })).toThrow(/engage/);
+  });
+});

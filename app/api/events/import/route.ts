@@ -218,12 +218,16 @@ async function insertEvent(
         // 사전 검사(총량)는 요청 하나 안에서만 맞다 — 동시에 들어온 다른 가져오기가
         // 같은 수를 읽고 둘 다 통과할 수 있다(Codex 교차 리뷰). 삽입문 자체에 술어를
         // 달아 **커밋 시점**에 판정한다. 걸리면 이 이벤트만 `failed`가 된다.
+        // 참여 설정 네 칸도 채운다(BE-40) — 빠지면 스키마 기본값 0이 박혀 가져온 이벤트의
+        // Q&A·설문·수료증이 전부 꺼졌다.
         `INSERT INTO events
            (slug, brand, title, venue, event_date, host, capacity, status, owner_id, client_ref,
-            preset_id, mode, icon_set, density, key_visual, kv_pattern)
+            preset_id, mode, icon_set, density, key_visual, kv_pattern,
+            engage_qa, engage_survey, engage_chat, engage_cert)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, COALESCE(?, 'light'), COALESCE(?, 'geo'), COALESCE(?, '기본'), ?,
-                COALESCE(?, 'stripe')
+                COALESCE(?, 'stripe'),
+                ?, ?, ?, ?
           WHERE (SELECT COUNT(*) FROM events WHERE owner_id = ?) < ?
          RETURNING id`,
       )
@@ -232,6 +236,7 @@ async function insertEvent(
         ownerId, ev.clientRef,
         presetId, ev.theme.mode, ev.theme.iconSet, ev.theme.density, ev.theme.keyVisual,
         ev.theme.kvPattern,
+        ev.engage.qa ? 1 : 0, ev.engage.survey ? 1 : 0, ev.engage.chat ? 1 : 0, ev.engage.cert ? 1 : 0,
         ownerId, MAX_EVENTS_PER_USER,
       ),
     ...ev.sessions.map((s, order) =>

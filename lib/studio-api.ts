@@ -361,8 +361,8 @@ export interface ImportEventInput {
     keyVisual: string | null;
     kvPattern: string;
   };
-  // 서버가 아직 이 필드를 받지 않는다(BE-40) — 받을 때까지는 조용히 버려진다.
-  // 그래도 지금부터 보내 둔다 — BE-40이 끝난 뒤 FE를 다시 건드리지 않아도 되게.
+  // 참여 설정 — 서버가 엄격한 boolean으로 받아 그대로 저장한다(BE-40). 빠뜨리면
+  // 가져온 이벤트의 Q&A·설문·수료증이 전부 꺼진 채 들어간다.
   engage: { qa: boolean; survey: boolean; chat: boolean; cert: boolean };
   sessions: { time: string | null; title: string; speaker: string | null; kind: string }[];
 }
