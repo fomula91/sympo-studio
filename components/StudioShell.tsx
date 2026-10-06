@@ -9,12 +9,14 @@ import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@/components/ThemeToggle';
 import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
-import { patchStudioEventStatus } from '@/lib/studio-api';
+import { deleteStudioEvent, patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
 import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
-const BULK_ACTIONS = ['공개', '초안', '보관', '복제'];
+// '삭제'는 상태 전환이 아니라 영구 삭제(DELETE, FK CASCADE로 세션·자료·질문·설문·로그까지
+// 함께 지워진다)라 handleBulkAction에서 별도 분기로 처리한다.
+const BULK_ACTIONS = ['공개', '초안', '보관', '복제', '삭제'];
 
 // 참가자 화면 주소는 이 도메인 아래에 slug로 열린다(콘솔·에디터의 "생성될 URL" 표시와 동일).
 const PUBLIC_HOST = 'sympo.superjacob.com';
@@ -36,6 +38,12 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   // s.saved(위)는 에디터 헤더 전용이라 콘솔의 일괄 변경 결과가 보일 자리가 없었다
   // (팀원 코드리뷰가 PR #63에서 발견) — 콘솔에서도 보이는 별도 토스트로 띄운다.
   const [bulkResult, setBulkResult] = useState<string | null>(null);
+  // 영구 삭제라 한 번 클릭으로 바로 실행하지 않는다 — 버튼을 누르면 "정말 삭제" 확인
+  // 상태로 바뀌고, 그 상태에서 같은 버튼을 다시 누를 때만 실제로 지운다(자료 삭제와
+  // 같은 2클릭 패턴, EditorScreen.tsx의 confirmDeleteId 참조). 4초 안에 다시 안 누르면
+  // 자동으로 풀린다.
+  const [confirmDeleteArmed, setConfirmDeleteArmed] = useState(false);
+  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   // POST /api/events가 401(세션 만료)로 실패하면, 계정 아이콘은 로그인 상태 그대로
   // 남아 있어 사용자가 같은 버튼을 다시 눌러도 또 실패한다 — 재로그인 링크로 다음
@@ -141,6 +149,39 @@ export default function StudioShell({ children }: { children: React.ReactNode })
     if (bulkPending) return;
     if (a === '복제') {
       patch({ sel: [] });
+      return;
+    }
+    if (a === '삭제') {
+      const targetIds = s.sel;
+      setBulkPending(true);
+      setBulkResult(null);
+      patch({ saved: '삭제하는 중…' });
+      // 서버 이벤트만 DELETE를 보낸다 — 게스트·시드는 지울 D1 행이 없어 바로 로컬에서만 뺀다.
+      const serverTargets = targetIds.filter((id) => serverIds.has(id));
+      const results = await Promise.allSettled(serverTargets.map((id) => deleteStudioEvent(id)));
+      const failedIds = new Set<number>();
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          failedIds.add(serverTargets[i]);
+          console.warn(`이벤트 ${serverTargets[i]} 삭제 실패:`, r.reason);
+        }
+      });
+      const deletedIds = targetIds.filter((id) => !failedIds.has(id));
+      const successCount = deletedIds.length;
+      patch((st) => ({
+        events: st.events.filter((e) => !deletedIds.includes(e.id)),
+        // 실패한 건은 선택된 채로 남겨 바로 다시 시도할 수 있게 한다(상태 변경과 같은 패턴).
+        sel: st.sel.filter((id) => !deletedIds.includes(id)),
+        saved: failedIds.size > 0 ? `${failedIds.size}건 삭제 실패 — 다시 시도해주세요` : '삭제됨',
+      }));
+      setBulkResult(
+        failedIds.size > 0
+          ? `${successCount}건 삭제됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
+          : `${successCount}건 삭제됨`,
+      );
+      if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
+      bulkResultTimerRef.current = setTimeout(() => setBulkResult(null), 4000);
+      setBulkPending(false);
       return;
     }
     const targetIds = s.sel;
@@ -545,31 +586,60 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         >
           <div style={{ fontSize: 13, fontWeight: 650, letterSpacing: '-0.01em' }}>{s.sel.length}개 선택</div>
           <div style={{ width: 1, height: 24, background: 'oklch(1 0 0 / 0.16)', margin: '0 6px' }} />
-          {BULK_ACTIONS.map((a) => (
-            <button
-              key={a}
-              className="hv-glass"
-              onClick={() => void handleBulkAction(a)}
-              disabled={bulkPending}
-              style={{
-                height: 44,
-                padding: '0 14px',
-                borderRadius: 11,
-                border: '1px solid oklch(1 0 0 / 0.18)',
-                background: 'transparent',
-                color: '#fff',
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: bulkPending ? 'not-allowed' : 'pointer',
-                opacity: bulkPending ? 0.5 : 1,
-              }}
-            >
-              {a === '복제' ? '템플릿으로 복제' : `${a}으로 변경`}
-            </button>
-          ))}
+          {BULK_ACTIONS.map((a) => {
+            const deleteArmed = a === '삭제' && confirmDeleteArmed;
+            return (
+              <button
+                key={a}
+                // hv-glass의 :hover 배경이 !important라 danger 배경(아래 style)을 가린다 —
+                // 클릭 직후엔 커서가 보통 이 버튼 위에 그대로 있어서, armed 상태의 강조색이
+                // 실사용에서 거의 항상 안 보이는 문제였다(브라우저로 직접 확인). armed일
+                // 때만 그 클래스를 빼 hover가 danger 배경을 덮지 않게 한다.
+                className={deleteArmed ? undefined : 'hv-glass'}
+                onClick={() => {
+                  // 삭제는 영구 손실이라 한 번 더 확인받는다 — 첫 클릭은 확인 상태로만
+                  // 바꾸고, 그 상태에서 같은 버튼을 다시 눌러야 실제로 지운다.
+                  if (a === '삭제' && !confirmDeleteArmed) {
+                    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                    setConfirmDeleteArmed(true);
+                    confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
+                    return;
+                  }
+                  if (a === '삭제') {
+                    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                    setConfirmDeleteArmed(false);
+                  }
+                  void handleBulkAction(a);
+                }}
+                disabled={bulkPending}
+                aria-label={deleteArmed ? `선택한 ${s.sel.length}개 삭제 확인 — 다시 누르면 영구 삭제됩니다` : undefined}
+                style={{
+                  height: 44,
+                  padding: '0 14px',
+                  borderRadius: 11,
+                  border: deleteArmed ? '1px solid oklch(0.6 0.2 28)' : '1px solid oklch(1 0 0 / 0.18)',
+                  background: deleteArmed ? 'oklch(0.5 0.18 28)' : 'transparent',
+                  color: '#fff',
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: bulkPending ? 'not-allowed' : 'pointer',
+                  opacity: bulkPending ? 0.5 : 1,
+                }}
+              >
+                {a === '복제' ? '템플릿으로 복제' : a === '삭제' ? (deleteArmed ? '정말 삭제?' : '삭제') : `${a}으로 변경`}
+              </button>
+            );
+          })}
           <button
             className="hv-white"
-            onClick={() => patch({ sel: [] })}
+            onClick={() => {
+              // 삭제 확인 대기 중이었다면 선택을 비우는 시점에 함께 풀어 둔다 — 안 그러면
+              // 선택 모드를 다시 켜고 몇 초 안에 새로 고른 항목이 이전 armed 상태로
+              // 바로 삭제될 수 있다.
+              if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+              setConfirmDeleteArmed(false);
+              patch({ sel: [] });
+            }}
             style={{
               width: 44,
               height: 44,

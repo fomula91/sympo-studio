@@ -232,6 +232,16 @@ export async function patchStudioEventStatus(id: number, status: string): Promis
 }
 
 /**
+ * DELETE /api/events/[id] — 이벤트를 영구히 지운다. 서버가 세션·자료·질문·설문응답·
+ * 로그를 FK의 ON DELETE CASCADE로 함께 지운다(백엔드는 이미 구현돼 있었는데
+ * 호출하는 클라이언트 함수·화면이 없었다 — 사용자가 테스트 이벤트를 지우려다 발견).
+ */
+export async function deleteStudioEvent(id: number): Promise<void> {
+  const res = await fetchWithTimeout(`/api/events/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
  * GET /api/auth/me — 현재 로그인 사용자(FE-15). 비로그인은 200 + `user: null`이라
  * 예외를 던지지 않는다(ADR 0007) — 게스트가 정상 상태다.
  */
