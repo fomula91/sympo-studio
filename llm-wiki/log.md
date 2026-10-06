@@ -13,6 +13,10 @@
 > **과거 기록은 아카이브에 있다** — 이 파일은 최근 3개 날짜만 둔다(훅은 최신 섹션만 읽는다).
 > [[Archive/log-2026-09]] · [[Archive/log-2026-08]] · 사람이 읽을 연표는 [[Summaries/History]]
 
+## 2026-10-06
+
+- **[FE] PR #64(FE-25) — #63 머지 후 main 병합 충돌 해소 + 다중 업로드 연쇄 실패 수정**: #63과 #64가 `detailLoadedRef`·`detailLoadedIds`·목록/상세 병합을 각자 만들어 `StudioProvider.tsx`에서 12곳 충돌했다. 상세 조회 실패 처리와 `loadStatus` 판정은 #64 쪽(`isKnownLocally && !serverIds.has(id)`, notfound·error를 serverIds-'loading'보다 먼저)으로 맞춰 #63이 남긴 "로그인 이벤트 상세 조회 실패 시 무한 로딩"을 해소했고, 목록 병합은 sessions·documents를 모두 보존한다. 별도로 `eventsRef`가 `useEffect`로만 갱신돼, 다중 업로드에서 한 파일이 실패해 메타를 되돌린 직후 다음 파일이 되돌리기 전 목록(이미 지운 id 포함)으로 PUT → 서버 400으로 연쇄 실패하던 것을 `setEventDocuments`(ref와 state를 함께 즉시 갱신)로 고쳤다. lint·build·test(100건) 통과.
+
 ## 2026-09-28
 
 - **[PROJ] BE-35·BE-36 등록 — R2 고아 객체, 목록 응답의 키 비주얼·자료 개수**: PR #64(FE-25) 리뷰 중 자료·이벤트 삭제 경로 어디에도 R2 `delete`가 없음을 확인했다 — 스튜디오에서 실제 업로드·삭제가 붙는 순간 지운 파일이 R2에 영구히 남는다(PR 본문의 "서버가 best-effort로 정리"는 사실이 아니라 정정을 요청). 이벤트 삭제도 `ON DELETE CASCADE`로 D1 행만 사라진다. 같은 리뷰 흐름에서 목록 API가 base64 키 비주얼(PR #65)을 원문으로 싣고 자료 개수는 안 실어 콘솔 "자료 N"이 로그인 사용자에게 0인 문제를 BE-36으로 묶었다.

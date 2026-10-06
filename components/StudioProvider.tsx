@@ -730,6 +730,28 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     eventsRef.current = s.events;
   }, [s.events]);
+  // 자료 목록을 바꿀 때는 `setS`와 함께 `eventsRef`도 **즉시** 고친다 — 위 effect는
+  // 다음 렌더가 커밋된 뒤에야 돌아서, 네트워크 대기 없이 바로 이어지는 호출(다중
+  // 업로드에서 한 파일이 실패해 되돌린 직후 다음 파일)은 되돌리기 전 목록을 읽는다.
+  // 그러면 이미 지운 자료 id가 PUT에 실려 서버가 400("이 이벤트의 자료가 아닙니다")으로
+  // 거절해, 실패 하나가 다음 파일까지 연쇄로 실패시켰다(PR #64 리뷰 발견).
+  const setEventDocuments = useCallback(
+    (id: number, update: (docs: StudioDocument[]) => StudioDocument[]) => {
+      const apply = (events: EventItem[]): EventItem[] => {
+        const idx = events.findIndex((e) => e.id === id);
+        if (idx < 0) return events;
+        const next = events.slice();
+        next[idx] = { ...next[idx], documents: update(next[idx].documents) };
+        return next;
+      };
+      eventsRef.current = apply(eventsRef.current);
+      setS((prev) => {
+        const events = apply(prev.events);
+        return events === prev.events ? prev : { ...prev, events };
+      });
+    },
+    [],
+  );
   const addDocument = useCallback(
     async (file: File): Promise<void> => {
       if (effectiveId == null || !serverIds.has(effectiveId)) return;
@@ -747,28 +769,17 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const saved = await putStudioEventDocuments(id, metaBody);
         const existingIds = new Set(current.map((d) => d.id));
         const created = saved.find((d) => !existingIds.has(d.id));
-        setS((prev) => {
-          const idx = prev.events.findIndex((e) => e.id === id);
-          if (idx < 0) return prev;
-          const events = prev.events.slice();
-          events[idx] = { ...events[idx], documents: saved };
-          return { ...prev, events };
-        });
+        setEventDocuments(id, () => saved);
         if (!created) return;
         try {
           const result = await uploadStudioDocument(id, created.id, file);
-          setS((prev) => {
-            const idx = prev.events.findIndex((e) => e.id === id);
-            if (idx < 0) return prev;
-            const events = prev.events.slice();
-            const documents = events[idx].documents.map((d) =>
+          setEventDocuments(id, (docs) =>
+            docs.map((d) =>
               d.id === created.id
                 ? { ...d, status: result.status, hasFile: true, sizeBytes: result.sizeBytes, contentType: file.type || null }
                 : d,
-            );
-            events[idx] = { ...events[idx], documents };
-            return { ...prev, events };
-          });
+            ),
+          );
         } catch (e) {
           // 업로드 실패 — 방금 만든 메타 행을 되돌린다. 안 그러면 빈 'pending' 자료가
           // 목록에 영영 남고, 이번 범위엔 "기존 pending 행에 다시 올리기" UI가 없어
@@ -779,13 +790,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
               id,
               saved.filter((d) => d.id !== created.id).map(toDocumentMetaBody),
             );
-            setS((prev) => {
-              const idx = prev.events.findIndex((e) => e.id === id);
-              if (idx < 0) return prev;
-              const events = prev.events.slice();
-              events[idx] = { ...events[idx], documents: rolledBack };
-              return { ...prev, events };
-            });
+            setEventDocuments(id, () => rolledBack);
           } catch (rollbackError) {
             console.warn('업로드 실패 후 메타 되돌리기도 실패:', rollbackError);
           }
@@ -795,7 +800,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         docsBusyRef.current.delete(id);
       }
     },
-    [effectiveId, serverIds],
+    [effectiveId, serverIds, setEventDocuments],
   );
 
   const removeDocument = useCallback(
@@ -808,18 +813,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         const current = eventsRef.current.find((e) => e.id === id)?.documents ?? [];
         const metaBody = current.filter((d) => d.id !== docId).map(toDocumentMetaBody);
         const saved = await putStudioEventDocuments(id, metaBody);
-        setS((prev) => {
-          const idx = prev.events.findIndex((e) => e.id === id);
-          if (idx < 0) return prev;
-          const events = prev.events.slice();
-          events[idx] = { ...events[idx], documents: saved };
-          return { ...prev, events };
-        });
+        setEventDocuments(id, () => saved);
       } finally {
         docsBusyRef.current.delete(id);
       }
     },
-    [effectiveId, serverIds],
+    [effectiveId, serverIds, setEventDocuments],
   );
 
   const presets = useMemo(() => [...PRESETS, ...s.customPresets], [s.customPresets]);
