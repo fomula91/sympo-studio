@@ -143,6 +143,49 @@ export function toEventDTO(row: EventRow): EventDTO {
   };
 }
 
+/**
+ * 목록 조회(`GET /api/events`)가 읽는 열 (BE-36).
+ *
+ * `SELECT *`를 쓰지 않는 이유 — `key_visual`은 FE-19 이후 base64 data URL(인코딩 후
+ * 최대 약 1.5MB)이라, 목록이 그 원문을 실으면 콘솔 진입 비용이 이미지 수에 비례해
+ * 커진다(목록은 `LIMIT 200`). 원문 대신 **유무만** 읽고, 콘솔 카드가 보여주는 세션·자료
+ * **개수**를 함께 센다 — 목록엔 하위 배열이 없어 카드가 상세를 열기 전까지 0을 보였다.
+ *
+ * `EventRow`에 열이 늘면 여기에도 더한다 — `lib/db.test.ts`가 빠진 열을 잡는다.
+ */
+export const EVENT_LIST_COLUMNS = [
+  'id', 'slug', 'brand', 'title', 'venue', 'event_date', 'host', 'capacity', 'status',
+  'preset_id', 'mode', 'icon_set', 'density', 'kv_pattern',
+  'engage_qa', 'engage_survey', 'engage_chat', 'engage_cert', 'created_at', 'updated_at',
+  "(key_visual IS NOT NULL AND key_visual <> '') AS has_key_visual",
+  '(SELECT COUNT(*) FROM sessions s WHERE s.event_id = events.id) AS session_count',
+  '(SELECT COUNT(*) FROM documents d WHERE d.event_id = events.id) AS document_count',
+].join(', ');
+
+export interface EventListRow extends Omit<EventRow, 'key_visual'> {
+  has_key_visual: number;
+  session_count: number;
+  document_count: number;
+}
+
+/** 목록 응답 한 건 — 단건 DTO에서 키 비주얼 원문을 빼고 유무·개수를 더한 모양. */
+export interface EventListDTO extends Omit<EventDTO, 'theme'> {
+  theme: Omit<EventDTO['theme'], 'keyVisual'> & { hasKeyVisual: boolean };
+  sessionCount: number;
+  documentCount: number;
+}
+
+export function toEventListDTO(row: EventListRow): EventListDTO {
+  const dto = toEventDTO({ ...row, key_visual: null });
+  const { presetId, mode, iconSet, density, kvPattern } = dto.theme;
+  return {
+    ...dto,
+    theme: { presetId, mode, iconSet, density, kvPattern, hasKeyVisual: !!row.has_key_visual },
+    sessionCount: row.session_count,
+    documentCount: row.document_count,
+  };
+}
+
 export function toSessionDTO(row: SessionRow) {
   return {
     id: row.id,

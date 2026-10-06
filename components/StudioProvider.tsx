@@ -266,20 +266,26 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         try {
           const events = await eventsPromise;
           if (!cancelled) {
-            // 목록 응답엔 sessions·documents가 없다 — 이미 상세를 불러온 이벤트가
-            // 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그 값을 목록의 빈 배열로
-            // 덮어쓰지 않는다(위 detailLoadedRef 주석 참조).
+            // 목록 응답엔 sessions·documents·키 비주얼 원문이 없다(BE-36) — 이미 상세를
+            // 불러온 이벤트가 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그 값을 목록의
+            // 빈 값으로 덮어쓰지 않는다(위 detailLoadedRef 주석 참조). 키 비주얼을 덮어쓰면
+            // 서버엔 멀쩡히 있는데 에디터·프리뷰에서 이미지가 사라진다. 개수는 배열이
+            // 있으니 지운다 — 남기면 그 뒤 편집과 어긋난다.
             setS((prev) => {
               const priorById = new Map(prev.events.map((e) => [e.id, e]));
-              const merged = events.map((e) =>
-                detailLoadedRef.current.has(e.id)
+              const merged = events.map((e) => {
+                const prior = priorById.get(e.id);
+                return detailLoadedRef.current.has(e.id) && prior
                   ? {
                       ...e,
-                      sessions: priorById.get(e.id)?.sessions ?? e.sessions,
-                      documents: priorById.get(e.id)?.documents ?? e.documents,
+                      keyVisual: prior.keyVisual,
+                      sessions: prior.sessions,
+                      documents: prior.documents,
+                      sessionCount: undefined,
+                      documentCount: undefined,
                     }
-                  : e,
-              );
+                  : e;
+              });
               return { ...prev, events: merged };
             });
             setServerIds(new Set(events.map((e) => e.id)));
