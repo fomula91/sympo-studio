@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
 import SurveyPanel from '@/components/SurveyPanel';
 import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
@@ -55,6 +55,11 @@ export default function Microsite({
   wide = false,
 }: MicrositeProps) {
   const online = useOnlineStatus();
+  // ViewerScreen이 모바일·태블릿 미리보기로 이 컴포넌트를 두 개 동시에 그린다 — 고정
+  // id(tab-agenda 등)를 쓰면 한 페이지에 같은 id가 두 번 생겨 aria-controls/
+  // aria-labelledby 짝짓기가 첫 번째 것으로만 묶인다(팀원 코드리뷰, PR #66). 인스턴스별
+  // 접두사로 분리한다 — 참가자 페이지(/[slug])는 하나만 그리므로 원래도 문제없었다.
+  const uid = useId();
   // 탭바가 실제로 전환되게 한다(FE-17) — 예전엔 onClick이 아예 없어 첫 탭만 항상
   // "활성" 스타일이고 아래엔 네 섹션이 한 페이지에 죽 이어져 있었다. 꺼진 engage
   // 토글의 탭은 목록 자체에서 뺀다 — 눌러도 아무 것도 없는 탭을 보여주지 않는다.
@@ -318,7 +323,9 @@ export default function Microsite({
           changeTab(next.key);
           // 포커스도 같이 옮겨야 화살표를 계속 눌러 다음 탭으로 이어갈 수 있다 —
           // activeTab만 바꾸면 포커스는 이전 탭 버튼에 그대로 남는다.
-          (e.currentTarget.querySelector(`#tab-${next.key}`) as HTMLElement | null)?.focus();
+          // id가 아니라 data 속성으로 찾는다 — useId()가 만드는 id는 콜론(:)을
+          // 포함해 CSS id 선택자에 그대로 못 쓴다.
+          (e.currentTarget.querySelector(`[data-tab-key="${next.key}"]`) as HTMLElement | null)?.focus();
         }}
         style={{
           display: 'grid',
@@ -335,11 +342,12 @@ export default function Microsite({
           return (
             <button
               key={tab.key}
-              id={`tab-${tab.key}`}
+              id={`${uid}-tab-${tab.key}`}
+              data-tab-key={tab.key}
               type="button"
               role="tab"
               aria-selected={on}
-              aria-controls={`panel-${tab.key}`}
+              aria-controls={`${uid}-panel-${tab.key}`}
               tabIndex={on ? 0 : -1}
               onClick={() => changeTab(tab.key)}
               style={{
@@ -382,8 +390,8 @@ export default function Microsite({
       >
         <div
           role="tabpanel"
-          id="panel-agenda"
-          aria-labelledby="tab-agenda"
+          id={`${uid}-panel-agenda`}
+          aria-labelledby={`${uid}-tab-agenda`}
           style={{ display: activeTab === 'agenda' ? undefined : 'none' }}
         >
         <div style={sectionLabel}>아젠다</div>
@@ -462,8 +470,8 @@ export default function Microsite({
 
         <div
           role="tabpanel"
-          id="panel-docs"
-          aria-labelledby="tab-docs"
+          id={`${uid}-panel-docs`}
+          aria-labelledby={`${uid}-tab-docs`}
           style={{ display: activeTab === 'docs' ? undefined : 'none' }}
         >
         <div style={sectionLabel}>자료</div>
@@ -545,8 +553,8 @@ export default function Microsite({
         {ev.engage.qa !== false ? (
         <div
           role="tabpanel"
-          id="panel-qa"
-          aria-labelledby="tab-qa"
+          id={`${uid}-panel-qa`}
+          aria-labelledby={`${uid}-tab-qa`}
           style={{ display: activeTab === 'qa' ? undefined : 'none' }}
         >
         {offlineBanner}
@@ -601,8 +609,8 @@ export default function Microsite({
         {ev.engage.survey !== false ? (
         <div
           role="tabpanel"
-          id="panel-survey"
-          aria-labelledby="tab-survey"
+          id={`${uid}-panel-survey`}
+          aria-labelledby={`${uid}-tab-survey`}
           style={{ display: activeTab === 'survey' ? undefined : 'none' }}
         >
         {offlineBanner}
