@@ -1,5 +1,8 @@
 import { validateSessionsBody, MAX_SESSIONS, type SessionInput } from './agenda';
 import { BadRequest } from './db';
+import {
+  EVENT_TEXT_MAX, capacityBadRequestMessage, isValidCapacity, textTooLongMessage,
+} from './event-limits';
 import { isEventStatus, statusBadRequestMessage } from './status';
 
 /**
@@ -71,7 +74,7 @@ function str(v: unknown, field: string, max: number, required = false): string |
   }
   if (typeof v !== 'string') throw new BadRequest(`${field}는 문자열이어야 합니다.`);
   const t = v.trim();
-  if (t.length > max) throw new BadRequest(`${field}는 ${max}자 이하여야 합니다.`);
+  if (t.length > max) throw new BadRequest(textTooLongMessage(field, max));
   return t;
 }
 
@@ -114,8 +117,8 @@ export function validateImportBody(raw: unknown): ImportEvent[] {
 
     let capacity: number | null = null;
     if (o.capacity !== undefined && o.capacity !== null) {
-      if (typeof o.capacity !== 'number' || o.capacity < 0) {
-        throw new BadRequest(`events[${i}].capacity는 0 이상의 숫자여야 합니다.`);
+      if (!isValidCapacity(o.capacity)) {
+        throw new BadRequest(capacityBadRequestMessage(`events[${i}].capacity`));
       }
       capacity = o.capacity;
     }
@@ -148,11 +151,11 @@ export function validateImportBody(raw: unknown): ImportEvent[] {
 
     return {
       clientRef,
-      brand: str(o.brand, `events[${i}].brand`, 80, true)!,
-      title: str(o.title, `events[${i}].title`, 120, true)!,
-      venue: str(o.venue, `events[${i}].venue`, 120),
+      brand: str(o.brand, `events[${i}].brand`, EVENT_TEXT_MAX.brand, true)!,
+      title: str(o.title, `events[${i}].title`, EVENT_TEXT_MAX.title, true)!,
+      venue: str(o.venue, `events[${i}].venue`, EVENT_TEXT_MAX.venue),
       date,
-      host: str(o.host, `events[${i}].host`, 80),
+      host: str(o.host, `events[${i}].host`, EVENT_TEXT_MAX.host),
       capacity,
       status,
       slug: slugOrNull(str(o.slug, `events[${i}].slug`, 80), i),
