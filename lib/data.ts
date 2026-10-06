@@ -92,7 +92,7 @@ function todayLocalDate(): string {
 export const SECTIONS: { id: Section; label: string; meta: string }[] = [
   { id: 'basic', label: '기본 정보', meta: '5' },
   { id: 'agenda', label: '아젠다', meta: '' },
-  { id: 'docs', label: '자료', meta: '4' },
+  { id: 'docs', label: '자료', meta: '' },
   { id: 'engage', label: '참여', meta: '2' },
   { id: 'theme', label: '테마', meta: '' },
 ];
@@ -129,7 +129,6 @@ export function seedEvents(): EventItem[] {
       status: st,
       dateCode: code,
       slug: `${brand.toLowerCase()}-${venueSlug(venue)}-${code}`,
-      docs: 2 + (i % 5),
       title: `${brand} 심포지엄`,
       date: `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`,
       host: '좌장 서정우',
@@ -142,12 +141,15 @@ export function seedEvents(): EventItem[] {
       keyVisual: '',
       kvPattern: 'stripe',
       sessions: SESSIONS0.slice(),
+      // 순수 로컬 목업이라 실제 업로드된 파일이 없다 — 콘솔 카드의 "자료" 개수도
+      // 이제 이 배열 길이에서 그대로 파생된다(FE-25, docs 필드 자체를 없앴다).
+      documents: [],
     });
   }
   return events;
 }
 
-export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' | 'dateCode' | 'slug' | 'docs'> {
+export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' | 'dateCode' | 'slug'> {
   return {
     title: '새 이벤트',
     venue: '',
@@ -162,15 +164,9 @@ export function defaultEventDetail(): Omit<EventItem, 'id' | 'brand' | 'status' 
     keyVisual: '',
     kvPattern: 'stripe',
     sessions: [],
+    documents: [],
   };
 }
-
-export const DOCS = [
-  { name: 'Early Intervention Strategies with ATELOVAN', meta: 'lecture · 24p · 4.1MB', tag: '강의자료' },
-  { name: 'Long-Term Adherence: Real-World Evidence Review', meta: 'lecture · 18p · 3.2MB', tag: '강의자료' },
-  { name: '아텔로반 제품 정보', meta: 'product · 6p · 1.1MB', tag: '제품소개' },
-  { name: '케이로스타 제품 정보', meta: 'product · 5p · 0.9MB', tag: '제품소개' },
-];
 
 export const ENGAGE_DEFS = [
   { k: 'qa' as const, label: '실시간 Q&A', desc: '외부 링크·QR 대신 페이지 내 수집' },

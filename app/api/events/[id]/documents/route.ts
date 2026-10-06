@@ -79,9 +79,9 @@ export const PUT = withRoute(async (request: NextRequest, ctx: IdCtx) => {
 
   if (removed.length > 0) {
     const ph = removed.map(() => '?').join(', ');
-    // R2 객체는 여기서 지우지 않는다 — 삭제 경로는 BE-6이 소유한다. 지금은
-    // r2_key가 항상 NULL이라 고아 객체가 생기지 않지만, BE-6이 업로드를 붙이는
-    // 순간 이 자리가 정리 대상이 된다.
+    // R2 객체는 여기서 지우지 않는다 — D1 행만 지운다. BE-6이 업로드를 붙인
+    // 뒤로는 r2_key가 채워진 행도 이 경로로 지워져 R2에 고아 객체가 남는다
+    // (BE-35로 등록, 서버 수정 필요 — best-effort 정리는 아직 없다).
     statements.push(
       db.prepare(`DELETE FROM documents WHERE event_id = ? AND id IN (${ph})`).bind(id, ...removed),
     );

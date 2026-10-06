@@ -7,7 +7,7 @@ import { UI } from '@/lib/ui';
 
 export default function EditEventPage() {
   const { id } = useParams<{ id: string }>();
-  const { s, ev, presets, patch, patchEvent, isServerEvent, loadStatus } = useStudio();
+  const { s, ev, presets, patch, patchEvent, loadStatus, isServerEvent, addDocument, removeDocument } = useStudio();
 
   if (loadStatus === 'notfound') notFound();
   // FE-30 — 목업 시드(0~14) 밖의 실제 D1 전용 id는 조회 결과가 오기 전까지
@@ -29,6 +29,15 @@ export default function EditEventPage() {
   if (ev.id !== Number(id)) notFound();
 
   return (
-    <EditorScreen s={s} ev={ev} presets={presets} patch={patch} patchEvent={patchEvent} isServerEvent={isServerEvent} />
+    <EditorScreen
+      s={s}
+      ev={ev}
+      presets={presets}
+      patch={patch}
+      patchEvent={patchEvent}
+      isServerEvent={isServerEvent}
+      addDocument={addDocument}
+      removeDocument={removeDocument}
+    />
   );
 }
