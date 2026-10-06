@@ -48,6 +48,7 @@ export default function StudioShell({ children }: { children: React.ReactNode })
   // 30ms 간격은 막혔지만 0ms 연속 클릭은 뚫림). 동기적으로 즉시 갱신되는 ref로 먼저
   // 막는다.
   const creatingRef = useRef(false);
+  const bulkResultTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 뷰어를 연 채로 브라우저 뒤로가기를 누르면 URL만 바뀌고 오버레이 상태는 남아있었다 — 경로가 바뀌면 닫는다.
   useEffect(() => {
@@ -143,10 +144,23 @@ export default function StudioShell({ children }: { children: React.ReactNode })
       return;
     }
     const targetIds = s.sel;
+    // 에디터의 공개 버튼은 대비비 게이트(canPublish, 위)를 거치는데 콘솔 일괄 변경은 그
+    // 체크 없이 바로 PATCH했다(팀원 코드리뷰, PR #63) — 공개로 바꿀 때만 대상별로 같은
+    // 게이트를 적용해 걸러낸다.
+    const gateBlockedIds =
+      a === '공개'
+        ? targetIds.filter((id) => {
+            const e = s.events.find((x) => x.id === id);
+            if (!e) return false;
+            const p = presets.find((pr) => pr.id === e.presetId) || presets[0];
+            return !contrastAllPass(p, e.mode);
+          })
+        : [];
+    const effectiveIds = targetIds.filter((id) => !gateBlockedIds.includes(id));
     setBulkPending(true);
     setBulkResult(null);
     patch({ saved: '일괄 반영 중…' });
-    const serverTargets = targetIds.filter((id) => serverIds.has(id));
+    const serverTargets = effectiveIds.filter((id) => serverIds.has(id));
     const results = await Promise.allSettled(serverTargets.map((id) => patchStudioEventStatus(id, a)));
     const failedIds = new Set<number>();
     results.forEach((r, i) => {
@@ -155,25 +169,33 @@ export default function StudioShell({ children }: { children: React.ReactNode })
         console.warn(`이벤트 ${serverTargets[i]} 상태 변경 실패:`, r.reason);
       }
     });
-    const successCount = targetIds.length - failedIds.size;
+    const successCount = effectiveIds.length - failedIds.size;
     patch((st) => ({
-      events: st.events.map((e) => (targetIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
-      // 처리한 항목 중 성공한 것만 선택에서 뺀다. 실패한 건은 선택을 그대로 둬서
-      // 바로 다시 시도할 수 있게 한다 — 요청이 진행되는 동안 사용자가 선택을
-      // 바꿨다면(체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면 그 새 선택도
-      // 조용히 사라진다(팀원 코드리뷰가 PR #63에서 발견).
-      sel: st.sel.filter((id) => !targetIds.includes(id) || failedIds.has(id)),
+      events: st.events.map((e) => (effectiveIds.includes(e.id) && !failedIds.has(e.id) ? { ...e, status: a } : e)),
+      // 처리한 항목 중 성공한 것만 선택에서 뺀다. 실패한 건·게이트에 걸린 건은 선택을
+      // 그대로 둬서 바로 다시 시도하거나 확인할 수 있게 한다 — 요청이 진행되는 동안
+      // 사용자가 선택을 바꿨다면(체크박스가 막혀 있지 않다) `sel: []`로 통째로 비우면
+      // 그 새 선택도 조용히 사라진다(팀원 코드리뷰가 PR #63에서 발견).
+      sel: st.sel.filter((id) => !effectiveIds.includes(id) || failedIds.has(id)),
       // s.saved는 에디터 헤더에만 보인다 — 일괄 변경은 콘솔에서 일어나는데 그
       // 결과가 콘솔 화면 어디에도 안 보였다(같은 리뷰가 발견). 콘솔에서도 보이는
-      // 별도 배너(bulkResult, 아래)로 성공·실패 건수를 알린다.
-      saved: failedIds.size > 0 ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요` : '일괄 반영됨',
+      // 별도 배너(bulkResult, 아래)로 성공·실패·제외 건수를 알린다.
+      saved:
+        failedIds.size > 0
+          ? `${failedIds.size}건 반영 실패 — 다시 시도해주세요`
+          : gateBlockedIds.length > 0
+            ? `${gateBlockedIds.length}건은 대비비 미달로 제외됨`
+            : '일괄 반영됨',
     }));
     setBulkResult(
       failedIds.size > 0
         ? `${successCount}건 반영됨 · ${failedIds.size}건 실패 — 실패한 항목은 선택된 채로 남아 있어요`
-        : `${successCount}건 반영됨`,
+        : gateBlockedIds.length > 0
+          ? `${successCount}건 반영됨 · ${gateBlockedIds.length}건은 대비비 미달로 제외됨 — 에디터에서 먼저 고쳐주세요`
+          : `${successCount}건 반영됨`,
     );
-    setTimeout(() => setBulkResult(null), 4000);
+    if (bulkResultTimerRef.current) clearTimeout(bulkResultTimerRef.current);
+    bulkResultTimerRef.current = setTimeout(() => setBulkResult(null), 4000);
     setBulkPending(false);
   };
 
