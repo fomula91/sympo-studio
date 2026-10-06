@@ -15,6 +15,7 @@
 
 ## 2026-10-06
 
+- **[FE] PR #66(FE-17) — #63~#65 머지 후 main 병합 충돌 해소**: `lib/data.ts`에서 #64가 지운 `DOCS` 목업 상수는 지우고 이 PR의 `ENGAGE_DEFS`(chat 제거) 주석만 남겼다. 위키는 묶음 표 5행(FE-17 완료)과 Closed-Tasks 종료 항목을 양쪽 모두 살렸다. lint·build·test(100건) 통과.
 - **[FE] PR #65(FE-19·18·40) — #63·#64 머지 후 main 병합 충돌 해소**: 세 PR이 `StudioProvider.tsx`의 Context 타입·로그아웃·`patchEvent` 의존성·컨텍스트 값에 각자 기능을 추가해 7곳 충돌했다(그 밖에 `EditorScreen.tsx`·edit `page.tsx`·`studio-api.ts`). 전부 양쪽을 살렸다 — 로그아웃은 `detailLoadedRef`/`detailLoadedIds` 초기화(#64)와 `loggedOutRef`·개인 프리셋 초기화(#65)를 둘 다 하고, `patchEvent` 의존성엔 `flushSessionSave`(#63)와 `isKnownPreset`(#65)을 함께 둔다. lint·build·test(100건) 통과.
 - **[FE] PR #64(FE-25) — #63 머지 후 main 병합 충돌 해소 + 다중 업로드 연쇄 실패 수정**: #63과 #64가 `detailLoadedRef`·`detailLoadedIds`·목록/상세 병합을 각자 만들어 `StudioProvider.tsx`에서 12곳 충돌했다. 상세 조회 실패 처리와 `loadStatus` 판정은 #64 쪽(`isKnownLocally && !serverIds.has(id)`, notfound·error를 serverIds-'loading'보다 먼저)으로 맞춰 #63이 남긴 "로그인 이벤트 상세 조회 실패 시 무한 로딩"을 해소했고, 목록 병합은 sessions·documents를 모두 보존한다. 별도로 `eventsRef`가 `useEffect`로만 갱신돼, 다중 업로드에서 한 파일이 실패해 메타를 되돌린 직후 다음 파일이 되돌리기 전 목록(이미 지운 id 포함)으로 PUT → 서버 400으로 연쇄 실패하던 것을 `setEventDocuments`(ref와 state를 함께 즉시 갱신)로 고쳤다. lint·build·test(100건) 통과.
 
@@ -58,6 +59,22 @@
 - **[FE] 기본 정보 필드에 `maxLength` 정밀화 — `lib/import.ts`가 이미 쓰던 상한에 맞췄다**: 사용자가 "다른 컬럼들도 글자수 제한 같은 validation이 필요할 것 같다"고 지적 — 행사명·브랜드명·장소·좌장이 전부 200자 한 값만 공유하고 있었는데, 이 상한은 임의로 정한 것이라 근거가 없었다. `lib/import.ts`의 대량 가져오기 검증(`str()` 호출부)이 같은 필드에 이미 브랜드명·좌장 80자, 행사명·장소 120자를 쓰고 있는 것을 확인하고 그대로 맞췄다 — 새 숫자를 만들지 않고 기존 근거를 재사용했고, 두 경로(에디터 편집 vs 대량 가져오기)가 서로 다른 상한을 허용하면 가져온 값은 통과하는데 에디터에서 늘린 값은 다음 가져오기 검증에서 거절되는 비대칭이 생길 것도 피했다. `FIELD_DEFS`의 `maxLength`를 항목마다 명시(일시는 `undefined` — 네이티브 date 입력엔 의미 없음)하고 `BasicSection`은 `f.maxLength`를 그대로 쓰도록 단순화(`f.k === 'cap' ? 6 : 200'` 삼항식 제거). **실측**: 브라우저로 에디터를 열어 `document.querySelectorAll('input.inp')`로 각 입력의 `maxLength`가 120·80·(date, 속성 없음)·120·80·6으로 정확히 반영된 것을 DOM에서 직접 확인. `npm run lint`·`build`·`test`(168건) 통과.
 
 - **[FE] 글자 수 한도를 미리 보여주는 카운터 추가**: 사용자가 "한도를 place holder 같은 데 적어두거나, 넘기려 하면 메시지를 띄워야 할 것 같다"고 지적 — `maxLength`만 걸어두면 한도에 닿는 순간 입력이 조용히 막혀서 왜 더 안 써지는지 알 방법이 없었다. `TextInput`의 라벨 줄에 `{value.length}/{maxLength}` 카운터를 오른쪽 정렬로 추가해(`maxLength`가 없는 필드는 안 뜬다 — 일시는 그대로 숨김) 항상 한도를 보여주고, 한도에 닿으면 `UI.toneWarningFg`로 색이 바뀌어 눈에 띄게 했다(사용자가 제시한 "적어두기"와 "메시지 띄우기" 둘 다 하나의 카운터로 충족). **실측**: 브라우저로 에디터를 열어 각 필드에 "10/120"·"5/80" 같은 카운터가 뜨는 것, 브랜드명에 80자를 꽉 채우면 카운터 색이 경고색으로 바뀌는 것을 확인(네이티브 입력 값 세팅 + `input` 이벤트로 재현). `npm run lint`·`build`·`test`(168건) 통과.
+
+## 2026-09-23
+
+- **[FE] FE-17 완료 — 묶음 5(참가자 동선 완성하기)를 브랜치 `fe-bundle5-participant-flow`(`origin/main` 기준)로 닫았다**: 착수 전 두 갈림길을 확인받았다 — 탭 전환을 실제로 만들지 최소 숨김만 할지(실제 전환 + 꺼진 토글 탭 숨김 채택), `engage.chat`을 토글에서 뺄지 "준비 중"으로 남길지(제거 채택). `Microsite.tsx`의 탭바(아젠다·자료·Q&A·설문)가 `onClick` 없는 순수 장식이라 첫 탭만 항상 활성 스타일이고 아래엔 네 섹션이 한 페이지에 죽 이어져 있던 것을, `activeTab` state로 실제 전환되게 했다.
+
+  **핵심 결정**: 탭 콘텐츠를 언마운트하지 않고 `display:none`으로만 숨겼다 — 아젠다의 `session_view` `IntersectionObserver`가 `agendaRef`를 참조하는데, 그 관찰자를 만드는 `useEffect`가 `activeTab`을 deps에 안 넣어(원래도 안 넣었다) 탭을 벗어났다 돌아올 때 언마운트→재마운트로 DOM 노드가 바뀌면 관찰자가 재부착되지 않을 뻔했다 — `display:none`은 같은 노드를 계속 살려두므로 이 문제 자체가 안 생긴다. `engage.qa`·`engage.survey`가 꺼진 이벤트는 해당 탭을 목록 자체에서 뺀다.
+
+  **조사 중 FE-17의 절반은 이미 다른 과제가 메워 놓았다는 걸 발견했다** — `engage.cert`("수료증 자동 발급")는 과제 등록 당시(2026-09-02) 서술과 달리 FE-4(2026-09-09)에서 이미 `SurveyPanel`의 `certEnabled`로 실제 연결돼 있었다(설문 완료 화면 → 수료증 다운로드 → 실제 `generateCertificate()` 호출). 코드로 재확인만 하고 손대지 않았다. 반대로 `engage.chat`("현장 채팅")은 지금도 실제 화면이 코드 어디에도 없어(실제 채팅 구현은 별도의 큰 작업), `lib/data.ts`의 `ENGAGE_DEFS`에서 그 항목을 빼 스튜디오 "참여" 섹션에서 토글 자체를 없앴다 — `engage.chat` 필드(타입·D1 컬럼)는 그대로 둔다.
+
+  **실측**: 스튜디오 라이브 프리뷰·실제 참가자 페이지(`meridian-arte-seoul-260815`) 양쪽에서 탭 클릭 시 해당 섹션만 보이고 나머지는 사라지는 것을 아젠다→Q&A→설문→자료→아젠다 순회로 확인. 이벤트의 Q&A 토글을 껐다 켜자 라이브 프리뷰 탭 목록에서 해당 탭이 즉시 빠지고 돌아오는 것 확인. 스튜디오 "참여" 섹션에서 현장 채팅 토글이 완전히 사라지고 실시간 Q&A·설문조사·수료증 자동 발급 3개만 남은 것 확인. `npm run lint`(변경 파일 대상)·`build`·`test`(168건) 통과. 「전체 조망」 묶음 5를 완료로 갱신, `Next-Tasks.md`에서 FE-17을 빼 [[Archive/Closed-Tasks]]로 옮겼다.
+
+- **[FE] FE-17 — push 전 사용자 요청으로 `/code-review`를 먼저 돌려 두 가지를 찾아 고쳤다**: 스튜디오 라이브 프리뷰는 `Microsite`를 다시 마운트하지 않고 engage 토글이 바뀔 때마다 새 props로만 리렌더한다(`EditorScreen.tsx`가 `Microsite`에 `key`를 안 준다). Q&A 탭을 보는 중 그 토글을 끄면 `TABS`에서 `'qa'`가 빠지는데 `activeTab` state는 그대로 `'qa'`로 남아, 탭바 활성 표시도 콘텐츠도 전부 사라져 화면이 통째로 비었다(바로 위 항목의 실측이 "탭을 보는 중에 그 토글을 끄는" 경로는 안 거쳤던 이유로 놓쳤다). state를 직접 쓰지 않고 **매 렌더 `TABS`에 있는지 확인해 파생시키도록** 고쳐, 없으면 첫 번째 탭으로 자동 대체되게 했다(이펙트+setState로 되돌리면 `react-hooks/set-state-in-effect`가 걸린다). 오프라인 안내 배너가 Q&A·설문 두 자리에 그대로 복붙돼 있던 것도 `offlineBanner` 변수로 한 번만 계산해 재사용하도록 정리했다. **재실측**: Q&A 탭을 보는 중 그 토글을 끄면(전에는 화면이 비었을 상황) 아젠다 탭으로 자동 전환되는 것을 직접 확인. `npm run lint`·`build`·`test`(168건) 통과.
+
+- **[FE] FE-17 — 같은 push-전 리뷰의 2라운드에서 세 가지를 더 찾아 고쳤다**: ① **자료 요청 경합** — 자료를 누르고 서명 URL 응답을 기다리는 사이 다른 탭으로 넘어가도 요청은 계속 유효해, 뒤늦게 도착한 응답이 지금 보고 있는(자료가 아닌) 탭 위에 PDF 뷰어를 불쑥 띄울 수 있었다. 자료 탭을 벗어나는 순간 `requestIdRef`를 올려 무효화한다 — FE-32가 이미 만들어 둔 "낡은 응답" 판정에 그대로 걸려 무시된다. ② **백그라운드 폴링** — Q&A를 한 번 열면 다른 탭을 보는 동안에도 `QaPanel`의 4초 폴링이 계속 돌았다(`display:none`은 렌더만 숨기지 컴포넌트 생명주기·타이머는 안 막고, `document.hidden`은 브라우저 탭 자체의 숨김만 본다). `QaPanel`에 `active` prop을 추가해 Q&A 탭이 실제로 보이는 동안에만 폴링하게 했다 — 입력 중인 draft는 언마운트하지 않으므로 그대로 유지된다. ③ **접근성** — 탭바가 색·밑줄로만 선택 상태를 표시해 접근성 트리엔 평범한 버튼 4개로만 보였다. `tablist`·`tab`·`tabpanel` 역할과 `aria-selected`·`aria-controls`·`aria-labelledby`를 붙이고, 좌우 화살표로 탭 사이를 이동하며 바로 전환되는 자동 활성화 패턴을 넣었다.
+
+  **재실측**: 화살표 키로 포커스를 옮기면 `aria-selected`도 함께 바뀌는 것을 `document.activeElement`·속성 직접 조회로 확인. 이 자동화 환경 자체가 브라우저에 `document.hidden=true`(백그라운드 탭)로 잡혀 있어 폴링 실측이 원천적으로 막혀 있던 것을 발견 — 테스트 목적으로만 `document.hidden`을 임시 오버라이드해, Q&A 탭에서는 폴링 요청이 계속되고 다른 탭으로 옮기면 9초(2회분 주기) 동안 요청이 완전히 멈추다가 돌아오면 즉시 재개되는 것을 네트워크 탭으로 직접 확인. 탭을 오가도 작성 중이던 질문 초안이 그대로 남는 것도 확인. `npm run lint`·`build`·`test`(168건) 통과. `fork`에 push하고 PR을 열 준비를 마쳤다.
 
 ## 2026-09-22
 
