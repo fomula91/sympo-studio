@@ -646,10 +646,13 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                     confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
                     return;
                   }
-                  if (a === '삭제') {
-                    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-                    setConfirmDeleteArmed(false);
-                  }
+                  if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+                  // 선택이 그대로인 채(위 effect가 안 풀어준다) '삭제' 아닌 다른 버튼을
+                  // 눌러도 여기서 armed를 꺼야 한다 — 안 그러면 A를 선택해 '삭제'로
+                  // 확인 대기를 만든 뒤 같은 선택으로 '공개로 변경' 등을 먼저 눌러도
+                  // armed가 true로 남아, 그 뒤 다시 '삭제'를 누르면 확인 없이 바로
+                  // 지워진다(`/code-review` 발견과 같은 뿌리, 선택 불변 버전).
+                  if (confirmDeleteArmed) setConfirmDeleteArmed(false);
                   void handleBulkAction(a);
                 }}
                 disabled={bulkPending}
