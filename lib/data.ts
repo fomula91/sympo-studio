@@ -116,7 +116,7 @@ export function seedEvents(): EventItem[] {
     const venue = VENUES[(i * 3) % VENUES.length];
     // 발행 상태만 배정한다 — '진행중'·'완료' 같은 시점은 event_date에서 파생되므로
     // 여기서 고를 값이 아니다(BE-23).
-    const st = i === 1 ? '검수대기' : i === 3 ? '초안' : i > 11 ? '보관' : '공개';
+    const st = i === 1 || i === 3 ? '초안' : i > 11 ? '보관' : '공개';
     const dd = new Date(today.getTime() + (12 - i * 6) * 86400000);
     const code =
       String(dd.getFullYear()).slice(2) +
