@@ -3,6 +3,7 @@ import { BadRequest } from './db';
 import {
   EVENT_TEXT_MAX, capacityBadRequestMessage, isValidCapacity, textTooLongMessage,
 } from './event-limits';
+import { slugFormatError } from './slug';
 import { isEventStatus, statusBadRequestMessage } from './status';
 
 /**
@@ -18,16 +19,15 @@ export const MAX_IMPORT_EVENTS = 20;
 
 const CLIENT_REF_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
-/**
- * slug 형식 (`autoSlug`가 만드는 모양과 같다).
+/*
+ * slug 형식·예약어는 `lib/slug.ts`가 정본이다(BE-39에서 POST·PATCH와 함께 쓰도록 옮김).
  *
  * **길이만 보면 안 된다** (`/code-review` 발견). 이 값은 두 곳으로 흘러간다 —
  * ① 충돌 후보를 훑는 `slug LIKE '<slug>%'` 패턴, ② `events.slug`, 즉 **공개 URL의
  * 경로 조각**이다. `%`나 `_`를 넣으면 ①이 와일드카드가 되어 사실상 전수 조회가 되고,
- * 공백·슬래시가 들어가면 ②가 **열 수 없는 주소**가 된다 — `PATCH`는 slug를 일부러
- * 바꿔 주지 않으므로(공유된 링크가 깨진다) 운영자에게 고칠 방법이 없다.
+ * 공백·슬래시가 들어가면 ②가 **열 수 없는 주소**가 된다. 예약어(`console` 등)는 정적
+ * 라우트에 가려 참가자 페이지가 열리지 않는다.
  */
-const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,79}$/;
 
 export interface ImportTheme {
   presetId: string | null;
@@ -54,9 +54,8 @@ export interface ImportEvent {
 
 function slugOrNull(v: string | null, i: number): string | null {
   if (v === null) return null;
-  if (!SLUG_PATTERN.test(v)) {
-    throw new BadRequest(`events[${i}].slug는 소문자·숫자·하이픈 80자 이내여야 합니다.`);
-  }
+  const error = slugFormatError(v);
+  if (error) throw new BadRequest(`events[${i}].${error}`);
   return v;
 }
 
