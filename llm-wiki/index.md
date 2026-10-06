@@ -42,7 +42,7 @@
 ## 아카이브 (원문 보존, 평소엔 안 연다)
 
 - [[Archive/Closed-Tasks]] — 종료한 과제 36건
-- [[Archive/log-2026-09]] · [[Archive/log-2026-08]] — 과거 작업 로그 16일치
+- [[Archive/log-2026-09]] · [[Archive/log-2026-08]] — 과거 작업 로그 25일치
 
 ## Decisions (ADR)
 
