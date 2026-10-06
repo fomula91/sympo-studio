@@ -99,6 +99,15 @@ export default function Microsite({
   // "낡음"으로 버려질 수 있었다(`/code-review` 발견). 호출마다 증가하는 카운터면 이 문제가
   // 없다 — 항상 가장 마지막 호출의 토큰만 유효하다.
   const requestIdRef = useRef(0);
+  // FE-33 — 낡은 요청을 "무시"만 하지 않고 실제로 끊는다. requestIdRef의 "이미 낡은
+  // 응답" 판정은 화면이 잘못 갱신되는 것만 막을 뿐, 응답 자체는 내부 타임아웃(8초)이
+  // 찰 때까지 그대로 네트워크를 붙잡고 있었다(`/code-review` 발견, FE-32 리뷰 과정).
+  const docAbortRef = useRef<AbortController | null>(null);
+  // 재클릭·탭 이동 말고 화면을 완전히 떠나는 경우(참가자가 탭을 닫거나 다른 경로로
+  // 이동)도 같은 문제다 — 언마운트 시에도 끊는다(`/code-review` 발견).
+  useEffect(() => {
+    return () => docAbortRef.current?.abort();
+  }, []);
 
   async function openDocument(doc: DocumentInfo) {
     if (doc.status === 'pending' || !doc.url) return;
@@ -108,11 +117,16 @@ export default function Microsite({
       setOpenDoc(doc);
       return;
     }
+    // 같은 문서 재클릭이든 다른 문서든, 새 요청을 시작하는 순간 이전 요청은 더 이상
+    // 필요 없다 — 끊는다.
+    docAbortRef.current?.abort();
+    const controller = new AbortController();
+    docAbortRef.current = controller;
     const requestId = ++requestIdRef.current;
     setDocError(null);
     setLoadingDocId(doc.id);
     try {
-      const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store' });
+      const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store', signal: controller.signal });
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { documents: { id: number; url: string | null }[] };
       const fresh = data.documents.find((d) => d.id === doc.id)?.url;
@@ -122,7 +136,10 @@ export default function Microsite({
       if (requestIdRef.current !== requestId) return;
       setOpenDoc({ ...doc, url: fresh });
       if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
-    } catch {
+    } catch (e) {
+      // 새 요청·탭 이동으로 의도적으로 끊은 것 — 에러가 아니다(위에서 이미 새 요청이
+      // 이 자리를 넘겨받았거나 화면을 벗어났다).
+      if (e instanceof DOMException && e.name === 'AbortError') return;
       if (requestIdRef.current === requestId) setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
     } finally {
       if (requestIdRef.current === requestId) setLoadingDocId(null);
@@ -133,11 +150,13 @@ export default function Microsite({
   // 무효화한다(코드 리뷰 발견). 안 그러면 자료를 누르고 응답을 기다리는 사이 다른
   // 탭으로 넘어가도 요청은 계속 유효해서, 뒤늦게 도착한 응답이 지금 보고 있는(자료가
   // 아닌) 탭 위에 PDF 뷰어를 불쑥 띄운다 — requestIdRef를 올리면 위 openDocument의
-  // "이미 낡은 응답" 판정(FE-32)에 그대로 걸려 무시된다.
+  // "이미 낡은 응답" 판정(FE-32)에 그대로 걸려 무시된다. docAbortRef.abort()는 그
+  // 요청을 실제로 끊어 낡은 응답이 도착하는 것 자체를 막는다(FE-33).
   function changeTab(key: (typeof TABS)[number]['key']) {
     setActiveTab(key);
     if (key !== 'docs') {
       requestIdRef.current++;
+      docAbortRef.current?.abort();
       setLoadingDocId(null);
     }
     // "자료 탭 바로가기" 같은 링크를 보낼 수 있게 URL 해시에도 반영한다(팀원
