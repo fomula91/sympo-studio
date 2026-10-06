@@ -33,18 +33,20 @@ import type {
 // 모양이 바뀌면 새 키로 옮기고 예전 값은 그냥 버려진다(마이그레이션 없음, 로컬
 // 목업 데이터라 감수할 수 있는 손실이다).
 //
-// **v2로 올렸다(FE-25)** — `EventItem`에 `documents` 필드가 새로 생겨, v1으로 저장된
-// 옛 이벤트는 그 필드가 아예 없다. 콘솔이 `e.documents.length`를 그대로 읽는 곳들이
-// 있어(사이드바 카드 등) undefined에서 즉시 TypeError로 터진다 — 이 파일 자체가
-// 예고한 대로 새 키로 옮겨 옛 값을 버린다.
-const GUEST_STORAGE_KEY = 'sympo-guest-events-v2';
+// **FE-25에서 `EventItem`에 `documents` 필드가 새로 생겼지만 키는 올리지 않았다** —
+// 게스트가 직접 만든 이벤트는 시드 목업이 아니라 사용자 데이터라 손실을 감수할
+// 이유가 약하다(팀원 코드리뷰). 대신 읽을 때 `documents`가 없으면 `[]`로 채워서
+// 콘솔이 `e.documents.length`를 읽는 곳(사이드바 카드 등)에서 TypeError 없이
+// 옛 이벤트를 그대로 보존한다.
+const GUEST_STORAGE_KEY = 'sympo-guest-events-v1';
 
 function readGuestWorkspace(): EventItem[] | null {
   try {
     const raw = window.localStorage.getItem(GUEST_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as EventItem[]) : null;
+    if (!Array.isArray(parsed)) return null;
+    return (parsed as EventItem[]).map((e) => ({ ...e, documents: e.documents ?? [] }));
   } catch {
     // 손상된 값·프라이빗 모드에서의 접근 거부 등 — 게스트 워크스페이스는 잃어도
     // 시드로 복구되는 로컬 전용 데이터라 조용히 무시하고 시드로 폴백한다.
@@ -113,7 +115,8 @@ interface StudioContextValue {
   // 서버 이벤트가 아니면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
   // 업로드 실패 시 방금 만든 메타 행도 되돌려 목록에 빈 'pending' 자료가 남지 않는다.
   addDocument: (file: File) => Promise<void>;
-  // 자료 한 건을 지운다(메타 목록에서 빼고 PUT — R2 객체 정리는 서버가 best-effort로 한다).
+  // 자료 한 건을 지운다(메타 목록에서 빼고 PUT). 서버는 D1 행만 지우고 R2 객체는
+  // 정리하지 않는다 — 지울 때마다 고아 객체가 남는다(BE-35로 등록, 서버 수정 필요).
   removeDocument: (docId: number) => Promise<void>;
 }
 
