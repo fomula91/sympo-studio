@@ -1,6 +1,8 @@
 import type { NextRequest } from 'next/server';
 import {
+  ApiError,
   isMissingEventFk,
+  isSlugTaken,
   BadRequest,
   eventId,
   getDb,
@@ -17,6 +19,8 @@ import {
 } from '@/lib/db';
 import { assertCanDelete, assertCanEdit, sessionTokenHash, sessionUserIdSql } from '@/lib/auth';
 import { deleteDocumentObjects } from '@/lib/retention';
+import { DEMO_SLUG } from '@/lib/seed';
+import { slugFormatError, slugLockedMessage } from '@/lib/slug';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 import {
   capacityBadRequestMessage, eventTextPatchError, isEventTextField, isValidCapacity,
@@ -100,8 +104,10 @@ const ENGAGE: Record<string, string> = {
 /**
  * PATCH /api/events/[id] — 부분 수정
  *
- * slug는 여기서 바꾸지 않는다. 공개된 뒤 주소가 바뀌면 이미 공유된 링크가
- * 깨지고, 회차별 고유 주소라는 전제도 흔들린다.
+ * slug(공개 주소)는 **초안일 때만** 바꿀 수 있다(BE-39, ADR 0014). 예전엔 아예 안
+ * 바꿨다 — 공개된 뒤 주소가 바뀌면 이미 공유된 링크가 깨진다. 지금도 그 위험은
+ * 남는다: 공개 → "비공개로 전환"(초안) → 주소 변경이 가능하고, 서버는 그 주소가
+ * 공유됐었는지 모른다. 그 판단은 운영자에게 맡기고 에디터가 경고한다(FE-47).
  */
 export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   const db = await getDb();
@@ -160,6 +166,40 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     }
   }
 
+  // 공개 주소(slug) — 형식·예약어는 400, 데모·초안 아님은 403, 중복은 409(아래 catch).
+  // 생성과 달리 중복에 접미사를 붙이지 않는다 — 운영자가 고른 주소를 서버가 몰래
+  // 바꾸면 운영자가 공유하는 주소와 실제 주소가 어긋난다.
+  let slugGuard = '';
+  if ('slug' in body) {
+    const value = body.slug;
+    if (typeof value !== 'string') throw new BadRequest('slug는 문자열이어야 합니다.');
+    const error = slugFormatError(value);
+    if (error) throw new BadRequest(error);
+    // 데모의 공개 주소는 예약어다 — 가져가면 자정 리셋이 데모를 못 찾고 새로 만든다.
+    if (value === DEMO_SLUG) throw new BadRequest(`'${value}'는 예약된 주소라 쓸 수 없습니다.`);
+    const current = await db
+      .prepare('SELECT slug, status, owner_id FROM events WHERE id = ?')
+      .bind(id)
+      .first<{ slug: string; status: string; owner_id: number | null }>();
+    if (!current) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
+    // 같은 값이면 상태와 무관하게 통과시킨다(무변경) — 화면이 현재 값을 그대로 다시
+    // 보내도 403이 뜨지 않게.
+    if (value !== current.slug) {
+      // 데모는 편집이 열려 있지만(체험용) 주소는 못 바꾼다 — 바뀌면 자정 리셋이 slug로
+      // 데모를 못 찾아 새로 만들고, 옛 행은 주인 없이 남는다.
+      if (current.owner_id === null) {
+        throw new ApiError('공용 데모 이벤트의 주소는 바꿀 수 없습니다.', 403);
+      }
+      if (current.status !== '초안') {
+        throw new ApiError(slugLockedMessage(current.status), 403);
+      }
+      // 읽은 뒤 쓰기 전에 누가 공개로 바꿔도 뚫리지 않게 UPDATE 자체에 조건을 건다.
+      slugGuard = " AND status = '초안'";
+    }
+    sets.push('slug = ?');
+    binds.push(value);
+  }
+
   if (!sets.length) throw new BadRequest('수정할 필드가 없습니다.');
 
   // 공용(내장) 프리셋이거나 내 것이어야 한다. 없는 id는 아래 FK가 400으로 접는다.
@@ -182,7 +222,7 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
   let row: EventRow | null;
   try {
     row = await db
-      .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ? RETURNING *`)
+      .prepare(`UPDATE events SET ${sets.join(', ')} WHERE id = ?${slugGuard} RETURNING *`)
       .bind(...binds)
       .first<EventRow>();
   } catch (e) {
@@ -192,9 +232,16 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (isMissingEventFk(e) && 'presetId' in body) {
       throw new BadRequest('없는 프리셋입니다. POST /api/presets로 먼저 저장하세요.');
     }
+    // slug UNIQUE — 미리 조회하지 않고 제약에 맡긴다(조회와 쓰기 사이의 경합이 없다).
+    if (isSlugTaken(e)) throw new ApiError('이미 다른 이벤트가 쓰고 있는 주소입니다.', 409);
     throw e;
   }
 
+  if (!row && slugGuard) {
+    // 읽을 땐 초안이었는데 그 사이 상태가 바뀌었다 — 없는 이벤트가 아니다.
+    const still = await db.prepare('SELECT status FROM events WHERE id = ?').bind(id).first<{ status: string }>();
+    if (still) throw new ApiError(slugLockedMessage(still.status), 403);
+  }
   if (!row) return json({ error: '이벤트를 찾을 수 없습니다.' }, 404);
   return json(toEventDTO(row));
 });
