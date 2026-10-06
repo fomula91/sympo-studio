@@ -19,7 +19,7 @@ import { assertCanDelete, assertCanEdit, sessionTokenHash, sessionUserIdSql } fr
 import { deleteDocumentObjects } from '@/lib/retention';
 import { isEventStatus, statusBadRequestMessage } from '@/lib/status';
 import {
-  EVENT_TEXT_MAX, capacityBadRequestMessage, isEventTextField, isValidCapacity, textTooLongMessage,
+  capacityBadRequestMessage, eventTextPatchError, isEventTextField, isValidCapacity,
 } from '@/lib/event-limits';
 
 /**
@@ -135,18 +135,11 @@ export const PATCH = withRoute(async (request: NextRequest, ctx: IdCtx) => {
     if (key === 'capacity' && value !== null && !isValidCapacity(value)) {
       throw new BadRequest(capacityBadRequestMessage());
     }
-    // 글자 수 상한 — POST·가져오기·에디터와 같은 상수다(BE-34). 예전엔 이 경로가 길이를
-    // 보지 않아 API를 직접 부르면 한도를 넘는 값이 저장됐고, 에디터에서 `150/120`처럼
-    // 초과 상태로 열렸다. 타입도 여기서 본다 — brand·title은 NOT NULL이라 null이나
-    // 숫자를 통과시키면 UPDATE가 사유 없는 500으로 터진다.
+    // 텍스트 필드 — 타입·필수·글자 수 상한(BE-34·BE-37). 규칙과 근거는 `lib/event-limits.ts`의
+    // `eventTextPatchError` 주석에 있다.
     if (isEventTextField(key)) {
-      const nullable = key === 'venue' || key === 'host';
-      if (value === null ? !nullable : typeof value !== 'string') {
-        throw new BadRequest(`${key}는 문자열이어야 합니다.`);
-      }
-      if (typeof value === 'string' && value.length > EVENT_TEXT_MAX[key]) {
-        throw new BadRequest(textTooLongMessage(key, EVENT_TEXT_MAX[key]));
-      }
+      const error = eventTextPatchError(key, value);
+      if (error) throw new BadRequest(error);
     }
     // **남의 프리셋은 붙일 수 없다** (BE-25 경계의 구멍, `/code-review` 발견).
     // 목록과 쓰기는 소유권으로 갈랐는데 이 경로만 FK에만 기대고 있었다 — 프리셋 id는
