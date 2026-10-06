@@ -244,7 +244,7 @@ export default function Microsite({
                 marginBottom: 7,
               }}
             >
-              {(ev.date || '2026-08-15').replace(/-/g, '. ')}
+              {ev.date ? ev.date.replace(/-/g, '. ') : ''}
             </div>
             <div
               style={{
@@ -259,8 +259,12 @@ export default function Microsite({
             >
               {ev.title || 'MERIDIAN 심포지엄'}
             </div>
+            {/* venue·host는 생성 시 필수가 아니다(POST /api/events) — 비워 둔 채 공개하면
+                이 자리가 데모 목업 값("아르떼 호텔 서울"·"좌장 서정우")을 실제 값인 것처럼
+                보여줬다. 실제로 아무도 안 적었는데 적은 것처럼 보이는 문제라, 빈 값은
+                자리 자체를 안 보여준다(둘 다 비었으면 이 줄 자체가 빈 채로 렌더된다). */}
             <div style={{ fontSize: 12.5, color: heroFg, opacity: 0.88 }}>
-              {ev.venue || '아르떼 호텔 서울'} · {ev.host || '좌장 서정우'}
+              {[ev.venue, ev.host].filter(Boolean).join(' · ')}
             </div>
           </div>
         </div>
