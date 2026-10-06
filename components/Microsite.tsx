@@ -311,10 +311,11 @@ export default function Microsite({
                 {ev.date.replace(/-/g, '. ')}
               </div>
             ) : null}
-            {/* title은 brand와 함께 생성 시 필수지만(app/api/events/route.ts), PATCH는
-                빈 문자열을 그대로 저장하고(BE-37) 게스트 로컬 이벤트는 서버 검증 자체를
-                안 거친다 — 에디터에서 지우면 비울 수 있다. venue·host와 같은 이유로
-                데모 값("MERIDIAN 심포지엄") 폴백을 걷어냈다(PR #67 리뷰에서 발견). */}
+            {/* title은 brand와 함께 생성 시 필수이고 서버는 PATCH로 비우는 것도 거절하지만
+                (BE-37), 게스트 로컬 이벤트는 서버 검증 자체를 안 거치고 서버 이벤트도 에디터
+                프리뷰엔 저장 실패 전의 빈 값이 그대로 보인다 — 화면에서 빈 값을 만날 수 있다.
+                venue·host와 같은 이유로 데모 값("MERIDIAN 심포지엄") 폴백을 걷어냈다(PR #67
+                리뷰에서 발견). */}
             {ev.title.trim() ? (
               <div
                 style={{
