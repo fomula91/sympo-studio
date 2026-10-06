@@ -294,19 +294,38 @@ function BasicSection({
         description="한 문자열에 인코딩되어 있던 제목을 필드로 분해했습니다. 슬러그는 자동 생성되고 중복을 검사합니다."
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {FIELD_DEFS.map((f) => (
-          <TextInput
-            key={f.k}
-            label={f.label}
-            hint={f.hint}
-            value={ev[f.k]}
-            maxLength={200}
-            onChange={(v) => {
-              patchEvent({ [f.k]: v });
-              patch({ saved: savingMessage(isServerEvent) });
-            }}
-          />
-        ))}
+        {FIELD_DEFS.map((f) => {
+          // FE-45: 브랜드명이 비어있거나 생성 시 임시로 채워진 기본값("새 이벤트") 그대로면
+          // 참가자 화면에 그 값이 그대로 노출된다(FE-37) — 에디터에서 눈에 띄게 알려준다.
+          const brandNeedsInput = f.k === 'brand' && (ev.brand === '' || ev.brand === '새 이벤트');
+          // 일시를 네이티브 date 입력으로 바꾼 뒤(팀원 리뷰 지적) 생긴 갭 — YYYY-MM-DD가
+          // 아닌 값(이 입력이 생기기 전 텍스트 입력으로 저장된 게스트 로컬 데이터 등)은
+          // 브라우저가 조용히 빈 칸으로만 보여준다. 헤더·미리보기는 여전히 그 원본 값을
+          // 그대로 보여주고 있어(별도 검증 없음) 화면끼리 어긋나 보인다 — 빈 칸이 "미입력"이
+          // 아니라 "저장된 값이 깨졌다"는 것을 드러내야 사용자가 다시 골라 스스로 고칠 수 있다.
+          const dateInvalid = f.k === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(ev.date);
+          const needsInput = brandNeedsInput || dateInvalid;
+          return (
+            <TextInput
+              key={f.k}
+              label={f.label}
+              hint={brandNeedsInput ? '참가자에게 표시될 브랜드명을 입력해 주세요' : dateInvalid ? '저장된 날짜 형식이 올바르지 않습니다 — 다시 선택해 주세요' : f.hint}
+              warn={needsInput}
+              value={ev[f.k]}
+              maxLength={f.maxLength}
+              type={f.type}
+              inputMode={f.inputMode}
+              onChange={(v) => {
+                // 예상 참여 인원은 숫자만 받는다(팀원 리뷰 지적) — 여기서 걸러야
+                // detailPatchToBody가 파싱 실패로 capacity를 조용히 null로 보내
+                // "저장됨"인데 실제로는 값이 지워지는 상황 자체가 안 생긴다.
+                const next = f.k === 'cap' ? v.replace(/[^0-9]/g, '') : v;
+                patchEvent({ [f.k]: next });
+                patch({ saved: savingMessage(isServerEvent) });
+              }}
+            />
+          );
+        })}
         <Card padding={16} radius={12}>
           <div style={{ fontSize: 12, fontWeight: 650, color: UI.muted2, marginBottom: 8 }}>
             생성될 URL
@@ -1028,7 +1047,7 @@ export default function EditorScreen({
     host: ev.host,
     cap: ev.cap,
     engage: ev.engage,
-    brandLabel: preset.label,
+    brandLabel: ev.brand,
   };
 
   const roRef = useRef<ResizeObserver | null>(null);
