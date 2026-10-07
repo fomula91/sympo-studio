@@ -99,11 +99,6 @@ FE-25) / "공개하기"를 눌러도 공개 URL 발급이 아니라 미리보기
 **완료 기준** — 레이어 매핑 ADR(`Decisions/`)이 있고 실제 구조가 그와 일치. import 방향이 FSD 규칙(상위→하위만)을 지키는지 eslint 규칙(예: `import/no-restricted-paths` 또는 steiger)으로 강제되고 위반 0건. 기존 화면 동작·시각 회귀 없음(스크린샷 대조). lint·build 통과.
 
 
-### FE-33. `fetchWithTimeout`이 외부에서 취소할 방법이 없다 — 버려진 요청이 최대 8초 백그라운드에서 계속 돎 [묶음 3]
-**무엇** — `lib/api.ts`의 `fetchWithTimeout`은 자기 내부 `AbortController`(타임아웃 전용)를 만들어 `{ ...init, signal: controller.signal }`로 **항상 그 signal로 덮어쓴다** — 호출자가 `init.signal`을 넘겨도 무시된다. 그래서 `Microsite.openDocument`(FE-32가 재진입 가드는 달았지만 실제 네트워크 요청은 못 끊음)처럼 "이 요청은 더 이상 필요 없다"는 게 확실해진 시점에도 외부에서 끊을 방법이 없어, 자체 타임아웃(`FETCH_TIMEOUT_MS`, 8초)이 찰 때까지 그냥 계속 돈다. `fetchWithTimeout`이 선택적 `signal`(또는 `AbortSignal`)을 받아 자기 타임아웃 signal과 **합쳐서**(`AbortSignal.any([external, timeoutSignal])`, 지원 안 하는 런타임이면 수동 combinator) 둘 중 하나라도 트리거되면 abort되도록 확장한다.
-**왜** — FE-32 PR #50→리뷰 과정에서 `/code-review`가 발견. 결과 자체는 이미 안전하다(FE-32의 토큰 가드가 낡은 응답을 버림) — 이건 **자원 낭비** 문제다. 느린 네트워크에서 문서를 연달아 여러 번 열면, 버려진 시도마다 대역폭·연결을 최대 8초씩 붙잡고 있다가 사라진다. `fetchWithTimeout`은 Q&A 폴링·설문·이벤트 로그 등 이 파일 밖 여러 기능이 공유하는 유틸이라, FE-32와 같은 커밋에 넣지 않고 분리했다 — 그 유틸을 건드리는 변경은 모든 소비자에 걸쳐 별도로 검토·실측할 가치가 있다.
-**완료 기준** — `fetchWithTimeout`에 외부 `signal`을 넘기면 그게 트리거될 때 실제로 요청이 중단되는 것을 실측(예: `Microsite.openDocument`에 적용해 문서를 연달아 열 때 이전 요청이 network 탭에서 "canceled"로 뜨는지 확인). 기존 호출자(외부 signal을 안 넘기는 곳)는 회귀 없이 기존 타임아웃 동작 그대로. `npm run test` 통과(있다면 `lib/api.ts` 관련 테스트 추가).
-
 ### FE-48. 계정 삭제 화면 (FE-39에서 분리)
 **무엇** — 계정 설정에 **계정 삭제**를 추가한다(삭제 범위 명시: 내 이벤트·아젠다·자료·질문·설문 응답 전부). FE-39 작업 중 BE에 삭제 엔드포인트 자체가 없다는 게 드러나 분리했다 — **BE-41 완료(2026-10-07) — 착수 가능.** 계약은 `API-Guide-FE.md`의 `DELETE /api/account`(응답 `{deleted, events}` + 세션 쿠키 만료). 성공하면 로그아웃과 같은 정리(로컬 상태를 게스트로)를 하고, 확인 단계에 "삭제되는 것"(이벤트 N개·아젠다·자료·질문·설문 응답·브랜드 프리셋)을 보여준다.
 **왜** — FE-39 완료 기준에 "계정 삭제 후 재로그인 시 빈 상태"가 있었지만, 그 전제("BE-12·13 완료 — 새 BE 작업 없음")가 틀렸다 — `DELETE /api/account` 같은 라우트가 어디에도 없다(BE-12·13은 로그인·세션·소유권 컬럼까지만 다뤘다). 가짜 전제로 완료를 선언하지 않기 위해 쪼갰다.
