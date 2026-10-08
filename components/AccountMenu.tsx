@@ -8,7 +8,7 @@ import { ApiClientError } from '@/lib/api';
 import { MONO, UI } from '@/lib/ui';
 
 export default function AccountMenu() {
-  const { user, authStatus, logout, deleteAccount } = useStudio();
+  const { user, authStatus, logout, deleteAccount, serverIds, eventsListLoaded } = useStudio();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -200,11 +200,11 @@ export default function AccountMenu() {
           <div style={{ height: 1, background: UI.line, margin: '6px 2px' }} />
           {confirmDeleteArmed ? (
             <div style={{ padding: '2px 10px 8px', fontSize: 11, lineHeight: 1.5, color: UI.toneDangerFg }}>
-              {/* 이벤트 개수를 숫자로 보여주려면 serverIds가 실제로 다 찼는지 알아야 하는데,
-                  로그인 직후(목록 조회가 끝나기 전) 열면 0으로 비어 삭제 범위를 실제보다
-                  작게 보여줄 수 있다(`/code-review` 발견) — 숫자 없이 범주만 말한다. */}
-              이 계정의 이벤트 전체와 그 안의 아젠다·자료·질문·설문 응답, 브랜드 프리셋이
-              모두 영구히 삭제됩니다. 되돌릴 수 없습니다.
+              {/* eventsListLoaded 전에는 serverIds가 아직 비어 있을 수 있어 숫자를 내지
+                  않는다 — 로그인 직후 바로 열면 "이벤트 0개"로 범위를 실제보다 작게
+                  보여줄 뻔했다(`/code-review` 발견). 목록이 실제로 도착한 뒤에만 센다. */}
+              {eventsListLoaded ? `이벤트 ${serverIds.size}개` : '이 계정의 이벤트 전체'}와 그 안의
+              아젠다·자료·질문·설문 응답, 브랜드 프리셋이 모두 영구히 삭제됩니다. 되돌릴 수 없습니다.
             </div>
           ) : null}
           {deleteError ? (
