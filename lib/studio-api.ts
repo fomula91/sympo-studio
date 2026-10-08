@@ -271,6 +271,17 @@ export async function logoutStudioUser(): Promise<void> {
 }
 
 /**
+ * DELETE /api/account — 계정과 그 소유 데이터(이벤트·아젠다·자료·질문·설문·로그·R2 파일)·
+ * 프리셋·Google 연결·세션을 영구히 지운다(FE-48, BE-41). 성공하면 세션 쿠키도 서버가
+ * 만료시키므로 별도로 로그아웃 API를 부를 필요가 없다.
+ */
+export async function deleteStudioAccount(): Promise<{ deleted: boolean; events: number }> {
+  const res = await fetchWithTimeout('/api/account', { method: 'DELETE' });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+  return (await res.json()) as { deleted: boolean; events: number };
+}
+
+/**
  * GET /api/events — 로그인한 사용자의 이벤트 목록(FE-15). 세션·자료 배열과 키 비주얼
  * 원문은 없다(BE-36) — 콘솔 카드는 개수(`sessionCount`·`documentCount`)만 보여주고,
  * 배열·원문은 열 때(FE-30의 단건 조회) 채워진다. 그래서 여기서 온 `keyVisual`은 빈 값이다.

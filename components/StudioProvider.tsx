@@ -7,6 +7,7 @@ import { autoSlug, defaultEventDetail, seedEvents, uniqueSlug } from '@/lib/data
 import {
   createStudioEvent,
   createStudioPreset,
+  deleteStudioAccount,
   detailPatchToBody,
   fetchCurrentUser,
   fetchStudioEvent,
@@ -138,6 +139,10 @@ interface StudioContextValue {
   user: AuthUser | null;
   authStatus: 'checking' | 'ready';
   logout: () => Promise<void>;
+  // FE-48 — 계정과 소유 데이터를 서버에서 영구히 지운 뒤 게스트로 되돌린다(로그아웃과
+  // 같은 로컬 정리). 지운 이벤트 개수를 돌려준다(확인 화면이 결과를 보여줄 때 쓴다).
+  // 실패(401 등)는 그대로 던진다 — 호출자가 사유를 보여준다.
+  deleteAccount: () => Promise<number>;
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
@@ -726,10 +731,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     patchEvent({ sessions: baseline.slice() });
   }, [effectiveId, patchEvent]);
 
-  // FE-15 — 로그아웃하면 게스트로 돌아간다. 서버 목록을 지우고 localStorage
-  // 워크스페이스를(있으면) 다시 읽어온다 — 로그인 전과 같은 경로다.
-  const logout = useCallback(async () => {
-    await logoutStudioUser();
+  // FE-15 — 로그아웃·FE-48 계정 삭제가 공유하는 로컬 정리. 둘 다 "서버에 더는 이
+  // 사용자로 남을 것이 없다"는 같은 결과라 게스트로 되돌리는 방식이 같다 — 서버
+  // 목록을 지우고 localStorage 워크스페이스를(있으면) 다시 읽어온다(로그인 전과
+  // 같은 경로다).
+  const resetToGuest = useCallback(() => {
     setUser(null);
     setServerIds(new Set());
     // serverIds와 같이 비운다 — 안 그러면 로그아웃 후에도 detailLoadedIds에 남은 id가
@@ -752,6 +758,20 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setImportPrompt(null);
     setImportMessage(null);
   }, []);
+
+  const logout = useCallback(async () => {
+    await logoutStudioUser();
+    resetToGuest();
+  }, [resetToGuest]);
+
+  // FE-48 — 계정 삭제. 서버가 이벤트·아젠다·자료·질문·설문·로그·R2 파일·프리셋·Google
+  // 연결·세션을 전부 지우고 세션 쿠키도 만료시키므로(BE-41), 별도로 로그아웃 API를
+  // 부를 필요 없이 logout과 같은 로컬 정리만 하면 된다.
+  const deleteAccount = useCallback(async (): Promise<number> => {
+    const result = await deleteStudioAccount();
+    resetToGuest();
+    return result.events;
+  }, [resetToGuest]);
 
   // FE-39 — 게스트 워크스페이스를 계정으로 가져온다. `IMPORT_BATCH_SIZE`씩 나눠
   // 보낸다(서버 상한). 성공(created·exists)한 항목만 로컬에서 지운다 — 실패분은
@@ -1080,6 +1100,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       user,
       authStatus,
       logout,
+      deleteAccount,
       createEvent,
       setEventStatus,
       serverIds,
@@ -1105,6 +1126,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       user,
       authStatus,
       logout,
+      deleteAccount,
       createEvent,
       setEventStatus,
       serverIds,
