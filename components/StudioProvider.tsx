@@ -140,9 +140,8 @@ interface StudioContextValue {
   authStatus: 'checking' | 'ready';
   logout: () => Promise<void>;
   // FE-48 — 계정과 소유 데이터를 서버에서 영구히 지운 뒤 게스트로 되돌린다(로그아웃과
-  // 같은 로컬 정리). 지운 이벤트 개수를 돌려준다(확인 화면이 결과를 보여줄 때 쓴다).
-  // 실패(401 등)는 그대로 던진다 — 호출자가 사유를 보여준다.
-  deleteAccount: () => Promise<number>;
+  // 같은 로컬 정리). 실패(401 등)는 그대로 던진다 — 호출자가 사유를 보여준다.
+  deleteAccount: () => Promise<void>;
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
@@ -767,10 +766,9 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // FE-48 — 계정 삭제. 서버가 이벤트·아젠다·자료·질문·설문·로그·R2 파일·프리셋·Google
   // 연결·세션을 전부 지우고 세션 쿠키도 만료시키므로(BE-41), 별도로 로그아웃 API를
   // 부를 필요 없이 logout과 같은 로컬 정리만 하면 된다.
-  const deleteAccount = useCallback(async (): Promise<number> => {
-    const result = await deleteStudioAccount();
+  const deleteAccount = useCallback(async (): Promise<void> => {
+    await deleteStudioAccount();
     resetToGuest();
-    return result.events;
   }, [resetToGuest]);
 
   // FE-39 — 게스트 워크스페이스를 계정으로 가져온다. `IMPORT_BATCH_SIZE`씩 나눠

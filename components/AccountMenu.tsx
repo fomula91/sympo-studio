@@ -8,7 +8,7 @@ import { ApiClientError } from '@/lib/api';
 import { MONO, UI } from '@/lib/ui';
 
 export default function AccountMenu() {
-  const { user, authStatus, logout, deleteAccount, serverIds } = useStudio();
+  const { user, authStatus, logout, deleteAccount } = useStudio();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -20,6 +20,12 @@ export default function AccountMenu() {
   const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // `deleteBusy`(state) 하나만으로는 못 막는 틈이 있다 — 확인 버튼을 빠르게 두 번
+  // 누르면 둘 다 state가 아직 커밋되기 전에 handleDeleteAccount를 부를 수 있다
+  // (`docsBusyRef`·`importBusyRef`와 같은 이유로 ref를 따로 둔다, `/code-review` 발견 —
+  // 두 번째 요청은 계정이 이미 지워진 뒤라 404로 실패해, 실제로는 성공한 삭제를
+  // 화면이 실패로 보여준다).
+  const deleteBusyRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -53,6 +59,8 @@ export default function AccountMenu() {
       confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
       return;
     }
+    if (deleteBusyRef.current) return;
+    deleteBusyRef.current = true;
     if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
     setDeleteBusy(true);
     setDeleteError(null);
@@ -63,6 +71,7 @@ export default function AccountMenu() {
       console.warn('계정 삭제 실패:', e);
       setDeleteError(e instanceof ApiClientError ? e.message : '삭제하지 못했습니다 — 다시 시도해주세요.');
     } finally {
+      deleteBusyRef.current = false;
       setDeleteBusy(false);
     }
   }
@@ -191,7 +200,10 @@ export default function AccountMenu() {
           <div style={{ height: 1, background: UI.line, margin: '6px 2px' }} />
           {confirmDeleteArmed ? (
             <div style={{ padding: '2px 10px 8px', fontSize: 11, lineHeight: 1.5, color: UI.toneDangerFg }}>
-              이벤트 {serverIds.size}개와 그 안의 아젠다·자료·질문·설문 응답, 브랜드 프리셋이
+              {/* 이벤트 개수를 숫자로 보여주려면 serverIds가 실제로 다 찼는지 알아야 하는데,
+                  로그인 직후(목록 조회가 끝나기 전) 열면 0으로 비어 삭제 범위를 실제보다
+                  작게 보여줄 수 있다(`/code-review` 발견) — 숫자 없이 범주만 말한다. */}
+              이 계정의 이벤트 전체와 그 안의 아젠다·자료·질문·설문 응답, 브랜드 프리셋이
               모두 영구히 삭제됩니다. 되돌릴 수 없습니다.
             </div>
           ) : null}
