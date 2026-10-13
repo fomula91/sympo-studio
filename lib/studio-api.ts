@@ -244,6 +244,22 @@ export async function patchStudioEventStatus(id: number, status: string): Promis
 }
 
 /**
+ * PATCH /api/events/[id] — 공개 주소(slug)만 즉시 바꾼다(FE-47, BE-39).
+ * `slug`도 `status`와 같은 이유로 `patchStudioEvent`의 델타 경로를 안 탄다 — 디바운스
+ * 자동 저장 대신 "변경" 버튼 클릭 한 번 = 요청 한 번이어야 타이핑 중간 값이 저장되지
+ * 않는다. 400(형식·예약어)·403(초안 아님·데모)·409(중복)는 그대로 던져 호출자가
+ * `e.message`를 입력칸 아래에 보여준다.
+ */
+export async function patchStudioEventSlug(id: number, slug: string): Promise<void> {
+  const res = await fetchWithTimeout(`/api/events/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug }),
+  });
+  if (!res.ok) throw new ApiClientError(res.status, await readError(res));
+}
+
+/**
  * DELETE /api/events/[id] — 이벤트를 영구히 지운다. 서버가 세션·자료·질문·설문응답·
  * 로그를 FK의 ON DELETE CASCADE로 함께 지운다(백엔드는 이미 구현돼 있었는데
  * 호출하는 클라이언트 함수·화면이 없었다 — 사용자가 테스트 이벤트를 지우려다 발견).

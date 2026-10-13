@@ -10,6 +10,8 @@ import { ApiClientError } from '@/lib/api';
 import { generateCertificate } from '@/lib/certificate';
 import { extractPresetColor } from '@/lib/colorExtract';
 import { ENGAGE_DEFS, FIELD_DEFS, SECTIONS, SESSION_LIB } from '@/lib/data';
+import { slugFormatError, slugLockedMessage } from '@/lib/slug';
+import { patchStudioEventSlug } from '@/lib/studio-api';
 import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
 import type {
   AuthUser,
@@ -318,6 +320,52 @@ function BasicSection({
   patchEvent: PatchEventFn;
   isServerEvent: boolean;
 }) {
+  // FE-47 — 공개 주소(slug) 편집. 디바운스 자동 저장이 아니라 명시적 "변경" 버튼으로만
+  // 서버에 반영한다(타이핑 중간 값이 저장돼 충돌·예약어에 걸리는 것을 막기 위해, BE-39).
+  // 이 섹션은 이벤트가 바뀌어도 리마운트되지 않으므로(호출부가 key를 안 쓴다), 다른
+  // 이벤트로 전환됐는데 이전 이벤트의 입력값·에러가 남는 것을 막아야 한다 — 렌더 중
+  // id를 비교해 바로 리셋한다(StudioProvider의 urlEventId/syncedUrlEventId와 같은 패턴).
+  const [slugEventId, setSlugEventId] = useState(ev.id);
+  const [slugInput, setSlugInput] = useState(ev.slug);
+  const [slugBusy, setSlugBusy] = useState(false);
+  const [slugError, setSlugError] = useState<string | null>(null);
+  if (ev.id !== slugEventId) {
+    setSlugEventId(ev.id);
+    setSlugInput(ev.slug);
+    setSlugBusy(false);
+    setSlugError(null);
+  }
+  const slugEditable = isServerEvent && ev.status === '초안';
+  const slugUnchanged = slugInput === ev.slug;
+
+  async function handleChangeSlug() {
+    if (slugBusy || slugUnchanged) return;
+    const formatError = slugFormatError(slugInput);
+    if (formatError) {
+      setSlugError(formatError);
+      return;
+    }
+    setSlugBusy(true);
+    setSlugError(null);
+    // 상단 저장 상태 표시(savingMessage)와 같은 문구를 쓴다 — 필드마다 다른 말로
+    // "저장 중/됨/실패"를 알리면 화면이 말하는 상태를 신뢰하기 어려워진다(FE-38).
+    patch({ saved: savingMessage(isServerEvent) });
+    try {
+      await patchStudioEventSlug(ev.id, slugInput);
+      // slug는 `EventDetail`(=> `PatchEvent`)에 없는 필드라 `patchEvent`로는 못 쓴다
+      // (타입이 그대로 막는다 — 서버 전송용 델타가 아니라 로컬 state만 갱신하면 된다).
+      patch((prev) => ({
+        events: prev.events.map((e) => (e.id === ev.id ? { ...e, slug: slugInput } : e)),
+        saved: '방금 저장됨',
+      }));
+    } catch (e) {
+      setSlugError(e instanceof ApiClientError ? e.message : '주소를 바꾸지 못했습니다 — 다시 시도해주세요.');
+      patch({ saved: '저장 실패 — 다시 시도해주세요' });
+    } finally {
+      setSlugBusy(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 600 }}>
       <SectionTitle
@@ -393,6 +441,63 @@ function BasicSection({
           >
             sympo.superjacob.com/{ev.slug} ↗
           </a>
+          {/* FE-47 — 서버 이벤트만 주소를 바꿀 수 있다. 게스트·로컬 이벤트는 자동 계산을
+              그대로 쓴다(이 과제 범위 밖). */}
+          {isServerEvent ? (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="inp"
+                  value={slugInput}
+                  disabled={!slugEditable || slugBusy}
+                  onChange={(e) => {
+                    // 형식에 안 맞는 문자는 즉시 걸러낸다 — 대문자·공백 등을 치는 순간
+                    // 바로 보여야 "되돌릴 수 없는 PATCH를 날린 뒤에야 안다"가 안 생긴다.
+                    const next = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+                    setSlugInput(next);
+                    setSlugError(null);
+                  }}
+                  maxLength={80}
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    borderRadius: 10,
+                    border: `1px solid ${UI.line}`,
+                    background: slugEditable ? UI.surface : UI.soft,
+                    padding: '0 12px',
+                    fontFamily: MONO,
+                    fontSize: 13,
+                    color: UI.ink,
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  type="button"
+                  className={!slugEditable || slugBusy || slugUnchanged ? undefined : 'hv-x'}
+                  onClick={() => void handleChangeSlug()}
+                  disabled={!slugEditable || slugBusy || slugUnchanged}
+                  style={{
+                    ...ghostBtn,
+                    height: 40,
+                    padding: '0 14px',
+                    fontSize: 12.5,
+                    opacity: !slugEditable || slugBusy || slugUnchanged ? 0.5 : 1,
+                    cursor: !slugEditable || slugBusy || slugUnchanged ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {slugBusy ? '변경 중…' : '변경'}
+                </button>
+              </div>
+              <div style={{ fontSize: 11.5, color: UI.toneWarningFg, marginTop: 6 }}>
+                {slugEditable
+                  ? '이 주소를 이미 공유했다면 바꾼 뒤 기존 링크는 열리지 않습니다.'
+                  : slugLockedMessage(ev.status)}
+              </div>
+              {slugError ? (
+                <div style={{ fontSize: 11.5, color: UI.toneDangerFg, marginTop: 4 }}>{slugError}</div>
+              ) : null}
+            </div>
+          ) : null}
           <div
             style={{
               display: 'flex',
