@@ -7,6 +7,7 @@ import { autoSlug, defaultEventDetail, seedEvents, uniqueSlug } from '@/lib/data
 import {
   createStudioEvent,
   createStudioPreset,
+  deleteStudioAccount,
   detailPatchToBody,
   fetchCurrentUser,
   fetchStudioEvent,
@@ -138,6 +139,9 @@ interface StudioContextValue {
   user: AuthUser | null;
   authStatus: 'checking' | 'ready';
   logout: () => Promise<void>;
+  // FE-48 — 계정과 소유 데이터를 서버에서 영구히 지운 뒤 게스트로 되돌린다(로그아웃과
+  // 같은 로컬 정리). 실패(401 등)는 그대로 던진다 — 호출자가 사유를 보여준다.
+  deleteAccount: () => Promise<void>;
   // 로그인 상태면 실제 POST /api/events로 만들고, 게스트면 로컬에만 만든다.
   // 새로 생긴 이벤트의 id를 돌려준다(호출자가 그 id로 라우팅한다).
   createEvent: () => Promise<number>;
@@ -153,6 +157,10 @@ interface StudioContextValue {
   // 선택 항목이 서버로 나가야 하는지 가릴 때 쓴다. 로그인 사용자는 목록 조회 성공 시
   // 전부 여기 들어온다(개별 열람 없이도).
   serverIds: ReadonlySet<number>;
+  // FE-48 — serverIds가 실제로 서버 목록 조회를 반영했는가(아직 비어 있을 뿐인 초기값과
+  // 구분). 계정 삭제 확인 화면이 "이벤트 N개"를 보여줄지, 로딩 전이라 숫자를 아예
+  // 빼야 할지 이걸로 가른다.
+  eventsListLoaded: boolean;
   // 자료 한 건을 등록+업로드한다(메타 PUT → 파일 PUT, 두 단계를 한 동작으로 묶는다).
   // 서버 이벤트가 아니면 아무 일도 하지 않는다(호출자가 isServerEvent로 미리 가른다).
   // 업로드 실패 시 방금 만든 메타 행도 되돌려 목록에 빈 'pending' 자료가 남지 않는다.
@@ -186,6 +194,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 렌더 중에 읽으면 하이드레이션 불일치가 난다).
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState<'checking' | 'ready'>('checking');
+  // FE-48 — 로그인 사용자의 이벤트 목록(GET /api/events) 조회가 실제로 끝났는가.
+  // `authStatus === 'ready'`는 로그인 여부만 확인됐다는 뜻이라, 그 직후엔 `serverIds`가
+  // 아직 비어 있을 수 있다 — 계정 삭제 확인 화면이 "이벤트 0개"로 범위를 실제보다
+  // 작게 보여주지 않도록, 목록이 정말 도착했는지를 별도로 노출한다(`/code-review` 발견).
+  const [eventsListLoaded, setEventsListLoaded] = useState(false);
   // 게스트 워크스페이스를 localStorage에서 읽어온 뒤에야 그 변경을 다시 저장한다 —
   // 안 그러면 마운트 시의 시드값이 실제 저장된 값을 먼저 덮어쓸 수 있다.
   const guestHydratedRef = useRef(false);
@@ -323,10 +336,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
               events: mergeDetailLoadedEvents(prev.events, events, detailLoadedRef.current),
             }));
             setServerIds(new Set(events.map((e) => e.id)));
+            setEventsListLoaded(true);
           }
         } catch (e) {
           // 목록을 못 받아도 화면이 완전히 막히지는 않는다 — 시드가 그대로 보인다.
           // 재시도 UI는 이번 범위 밖(FE-15 완료 기준은 생성·재조회 왕복까지다).
+          // eventsListLoaded는 여기서 true로 올리지 않는다 — serverIds가 실패 전
+          // 값(보통 빈 Set) 그대로라, true로 올리면 계정 삭제 확인 화면이 "이벤트
+          // 0개"를 실제로 다 센 값처럼 보여준다.
           console.warn('이벤트 목록 조회 실패:', e);
         }
         try {
@@ -726,12 +743,14 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     patchEvent({ sessions: baseline.slice() });
   }, [effectiveId, patchEvent]);
 
-  // FE-15 — 로그아웃하면 게스트로 돌아간다. 서버 목록을 지우고 localStorage
-  // 워크스페이스를(있으면) 다시 읽어온다 — 로그인 전과 같은 경로다.
-  const logout = useCallback(async () => {
-    await logoutStudioUser();
+  // FE-15 — 로그아웃·FE-48 계정 삭제가 공유하는 로컬 정리. 둘 다 "서버에 더는 이
+  // 사용자로 남을 것이 없다"는 같은 결과라 게스트로 되돌리는 방식이 같다 — 서버
+  // 목록을 지우고 localStorage 워크스페이스를(있으면) 다시 읽어온다(로그인 전과
+  // 같은 경로다).
+  const resetToGuest = useCallback(() => {
     setUser(null);
     setServerIds(new Set());
+    setEventsListLoaded(false);
     // serverIds와 같이 비운다 — 안 그러면 로그아웃 후에도 detailLoadedIds에 남은 id가
     // loadStatus를 'idle'로 잘못 판정해(아래 loadStatus 계산부 주석 참조), 방금
     // 초기화된 s.events(게스트/시드)에는 그 id가 없어 편집 화면이 로딩·에러 표시
@@ -752,6 +771,19 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setImportPrompt(null);
     setImportMessage(null);
   }, []);
+
+  const logout = useCallback(async () => {
+    await logoutStudioUser();
+    resetToGuest();
+  }, [resetToGuest]);
+
+  // FE-48 — 계정 삭제. 서버가 이벤트·아젠다·자료·질문·설문·로그·R2 파일·프리셋·Google
+  // 연결·세션을 전부 지우고 세션 쿠키도 만료시키므로(BE-41), 별도로 로그아웃 API를
+  // 부를 필요 없이 logout과 같은 로컬 정리만 하면 된다.
+  const deleteAccount = useCallback(async (): Promise<void> => {
+    await deleteStudioAccount();
+    resetToGuest();
+  }, [resetToGuest]);
 
   // FE-39 — 게스트 워크스페이스를 계정으로 가져온다. `IMPORT_BATCH_SIZE`씩 나눠
   // 보낸다(서버 상한). 성공(created·exists)한 항목만 로컬에서 지운다 — 실패분은
@@ -1080,9 +1112,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       user,
       authStatus,
       logout,
+      deleteAccount,
       createEvent,
       setEventStatus,
       serverIds,
+      eventsListLoaded,
       addDocument,
       removeDocument,
       createPreset,
@@ -1105,9 +1139,11 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       user,
       authStatus,
       logout,
+      deleteAccount,
       createEvent,
       setEventStatus,
       serverIds,
+      eventsListLoaded,
       addDocument,
       removeDocument,
       createPreset,
