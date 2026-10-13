@@ -69,7 +69,7 @@ export default function AccountMenu() {
       closeMenu();
     } catch (e) {
       console.warn('계정 삭제 실패:', e);
-      setDeleteError(e instanceof ApiClientError ? e.message : '삭제하지 못했습니다 — 다시 시도해주세요.');
+      setDeleteError(e instanceof ApiClientError ? e.message : '탈퇴를 완료하지 못했어요. 다시 시도해주세요.');
     } finally {
       deleteBusyRef.current = false;
       setDeleteBusy(false);
@@ -203,8 +203,8 @@ export default function AccountMenu() {
               {/* eventsListLoaded 전에는 serverIds가 아직 비어 있을 수 있어 숫자를 내지
                   않는다 — 로그인 직후 바로 열면 "이벤트 0개"로 범위를 실제보다 작게
                   보여줄 뻔했다(`/code-review` 발견). 목록이 실제로 도착한 뒤에만 센다. */}
-              {eventsListLoaded ? `이벤트 ${serverIds.size}개` : '이 계정의 이벤트 전체'}와 그 안의
-              아젠다·자료·질문·설문 응답, 브랜드 프리셋이 모두 영구히 삭제됩니다. 되돌릴 수 없습니다.
+              {eventsListLoaded ? `이벤트 ${serverIds.size}개` : '이 계정의 이벤트 전체'}와 아젠다·자료·질문·설문
+              응답, 브랜드 프리셋까지 모두 영구히 사라져요. 한 번 지우면 되돌릴 수 없어요.
             </div>
           ) : null}
           {deleteError ? (
@@ -215,7 +215,7 @@ export default function AccountMenu() {
             className={confirmDeleteArmed ? undefined : 'hv-x'}
             onClick={() => void handleDeleteAccount()}
             disabled={deleteBusy}
-            aria-label={confirmDeleteArmed ? '계정 삭제 확인 — 다시 누르면 영구 삭제됩니다' : '계정 삭제'}
+            aria-label={confirmDeleteArmed ? '탈퇴 확인 — 다시 누르면 계정이 영구히 삭제돼요' : '탈퇴하기'}
             style={{
               width: '100%',
               textAlign: 'left',
@@ -230,7 +230,7 @@ export default function AccountMenu() {
               opacity: deleteBusy ? 0.6 : 1,
             }}
           >
-            {deleteBusy ? '삭제 중…' : confirmDeleteArmed ? '정말 삭제?' : '계정 삭제'}
+            {deleteBusy ? '탈퇴 처리 중…' : confirmDeleteArmed ? '정말 탈퇴할까요?' : '탈퇴하기'}
           </button>
         </div>
       ) : null}
