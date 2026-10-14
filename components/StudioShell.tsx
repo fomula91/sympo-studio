@@ -11,7 +11,7 @@ import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
 import { deleteStudioEvent, patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
-import { ghostBtn, MONO, primaryBtn, UI } from '@/lib/ui';
+import { ghostBtn, MONO, primaryBtn, savedColor, UI } from '@/lib/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
 // '삭제'는 상태 전환이 아니라 영구 삭제(DELETE, FK CASCADE로 세션·자료·질문·설문·로그까지
@@ -447,8 +447,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
           <div style={{ flex: 1 }} />
           {screenKind === 'editor' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: UI.muted }}>
-                <div style={{ width: 6, height: 6, borderRadius: 99, background: UI.green }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: savedColor(s.saved) }}>
+                <div style={{ width: 6, height: 6, borderRadius: 99, background: savedColor(s.saved) }} />
                 {s.saved}
               </div>
               {s.section === 'agenda' ? (

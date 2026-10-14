@@ -75,6 +75,20 @@ export const monoLabel: CSSProperties = {
 };
 
 /**
+ * `StudioState.saved` 상태 표시줄의 색 — 지금까지는 점·텍스트가 항상 초록이라
+ * "저장됨"과 "저장 실패"가 색으로 구분이 안 됐다(사용자 피드백). 메시지 문구가
+ * 유일한 정본이라(별도 상태값을 안 둔다) 내용으로 톤을 가른다 — 새 문구를
+ * 추가할 때도 이 세 패턴만 지키면 자동으로 올바른 색이 된다.
+ */
+export function savedColor(message: string): string {
+  if (message.includes('실패') || message.includes('못했습니다') || message.includes('않았습니다')) {
+    return UI.toneDangerFg;
+  }
+  if (message.includes('중…') || message.includes('중...')) return UI.muted;
+  return UI.green;
+}
+
+/**
  * 행사 시점 배지 (BE-23). 발행 상태 배지 옆에 나란히 그린다 — 두 축이 다른 것을
  * 말하므로 한 칸에 합치지 않는다. `null`(날짜 미정)이면 아무것도 그리지 않는다.
  *
