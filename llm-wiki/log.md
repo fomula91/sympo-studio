@@ -13,6 +13,10 @@
 > **과거 기록은 아카이브에 있다** — 이 파일은 최근 3개 날짜만 둔다(훅은 최신 섹션만 읽는다).
 > [[Archive/log-2026-09]] · [[Archive/log-2026-08]] · 사람이 읽을 연표는 [[Summaries/History]]
 
+## 2026-10-19
+
+- **[PROJ] PR #74 리뷰 반영 보완 — 전체 조망 표와 단계별 완료 기준 정합성 수정**: 묶음 6에 FE-14의 단계별 계획과 ADR 착수 전 상태를 명시하고, 묶음 4의 PR #65 병합 대기 문구를 실제 병합일(2026-10-06)로 정정했다. 요약 표도 종료 기록과 맞췄다. 0단계는 목표 구조·이동 계획·예외의 ADR 확정, 4단계는 실제 구조와 ADR의 일치 검증으로 구분했다. 문서만 변경했으며 병합 후 e2e를 새로 실측한 것은 아니다.
+
 ## 2026-10-13
 
 - **[FE] FE-47 완료 — 에디터에서 공개 URL(slug) 직접 수정, 브랜치 `fe-47-slug-edit`**: `EditorScreen.tsx`의 `BasicSection` "생성될 URL" 카드에 서버 이벤트(`isServerEvent`)일 때만 입력칸 + "변경" 버튼을 추가했다. `ev.status === '초안'`일 때만 입력 가능, 아니면 `lib/slug.ts`의 `slugLockedMessage(ev.status)`로 잠그고 사유를 보여준다. 입력은 소문자·숫자·하이픈만 즉시 필터링하고, 저장은 디바운스가 아니라 명시적 "변경" 클릭 1회 = PATCH 1회다 — `lib/studio-api.ts`에 `patchStudioEventStatus`와 같은 패턴으로 `patchStudioEventSlug(id, slug)`를 새로 추가했다(`slug`가 `EventDetail`에 없는 필드라 `patchEvent`의 디바운스 델타 경로를 원래부터 못 탄다 — 처음엔 `patchEvent({ slug })`로 썼다가 빌드의 타입 에러로 잡혀, 성공 후 `patch`로 `s.events`를 직접 갱신하도록 고쳤다). 400(형식·예약어)·403(초안 아님·데모)·409(중복) 서버 사유를 입력칸 아래에 그대로 보여주고 값은 롤백하지 않는다. `npm run lint`·`build`·`test` 통과, 사용자가 실제 소유 이벤트를 만들어 슬러그 변경·잠금 상태를 브라우저에서 직접 확인했다.
