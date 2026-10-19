@@ -2,8 +2,8 @@
 
 import { Badge } from '@fe/shared/ui/Badge';
 import { Card } from '@fe/shared/ui/Card';
-import { METRICS, OPS } from '@/lib/data';
-import type { EventItem } from '@/lib/types';
+import { METRICS, OPS } from '@/components/screens/report-data';
+import type { EventItem } from '@fe/entities/event/model/types';
 import { MONO, UI } from '@fe/shared/config/ui';
 
 export default function ReportScreen({ ev }: { ev: EventItem }) {

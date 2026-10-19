@@ -4,9 +4,11 @@ import dynamic from 'next/dynamic';
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import QaPanel from '@/components/QaPanel';
 import SurveyPanel from '@/components/SurveyPanel';
-import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
-import { KV_PATTERNS, type Theme } from '@/lib/theme';
-import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
+import { fetchWithTimeout } from '@fe/shared/api/http';
+import { sendEventLogs } from '@fe/entities/event/api/participant';
+import { KV_PATTERNS, type Theme } from '@fe/shared/lib/theme/palette';
+import type { Density, KvPattern } from '@fe/shared/lib/theme/options';
+import type { DocumentInfo, EventInfo, Session } from '@fe/entities/event/model/types';
 import { useOnlineStatus } from '@fe/shared/lib/network/useOnlineStatus';
 
 const MONO = 'ui-monospace, monospace';

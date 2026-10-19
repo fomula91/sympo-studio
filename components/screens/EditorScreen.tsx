@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import Microsite from '@/components/Microsite';
-import { SECTIONS } from '@/lib/data';
-import { derive, ICONSETS } from '@/lib/theme';
-import type { AuthUser, Device, DocumentInfo, EventItem, PatchEventFn, PatchFn, Preset, StudioState } from '@/lib/types';
+import { SECTIONS } from '@/components/screens/editor/config';
+import { derive, ICONSETS } from '@fe/shared/lib/theme/palette';
+import type { AuthUser } from '@fe/entities/account/model/types';
+import type { Device, PatchFn, StudioState } from '@fe/app/providers/studio/types';
+import type { DocumentInfo, EventItem, PatchEventFn } from '@fe/entities/event/model/types';
+import type { Preset } from '@fe/entities/theme/model/types';
 import { MONO, monoLabel, UI } from '@fe/shared/config/ui';
 import AgendaSection from './editor/AgendaSection';
 import BasicSection from './editor/BasicSection';

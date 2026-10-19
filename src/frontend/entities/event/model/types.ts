@@ -1,17 +1,4 @@
-export interface Preset {
-  id: string;
-  label: string;
-  h: number;
-  c: number;
-}
-
-export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
-export type Mode = 'light' | 'dark';
-export type IconSetId = 'geo' | 'solid' | 'number';
-export type Density = '컴팩트' | '기본' | '여유';
-export type KvPattern = 'stripe' | 'grid' | 'flat' | 'none';
-export type SortKey = '최신' | '행사일' | '이름';
-export type Device = 'mobile' | 'tablet';
+import type { Mode, IconSetId, Density, KvPattern } from '@fe/shared/lib/theme/options';
 
 export interface EventDetail {
   title: string;
@@ -44,14 +31,6 @@ export interface EventItem extends EventDetail {
   // (남겨 두면 그 뒤 편집으로 바뀐 배열과 어긋난다). 화면은 `?? 배열.length`로 읽는다.
   sessionCount?: number;
   documentCount?: number;
-}
-
-/** GET /api/auth/me가 돌려주는 로그인 사용자. 비로그인이면 null(에러 아님). */
-export interface AuthUser {
-  id: number;
-  email: string;
-  name: string | null;
-  avatarUrl: string | null;
 }
 
 export interface Session {
@@ -108,25 +87,6 @@ export interface StudioDocument {
   uploadedAt: string | null;
 }
 
-export interface StudioState {
-  viewerOpen: boolean;
-  section: Section;
-  query: string;
-  status: string;
-  sort: SortKey;
-  bulk: boolean;
-  sel: number[];
-  events: EventItem[];
-  customPresets: Preset[];
-  dragOver: boolean;
-  dragIdx: number;
-  device: Device;
-  saved: string;
-  paneW: number;
-}
-
-export type Patch = Partial<StudioState> | null;
-export type PatchFn = (p: Patch | ((s: StudioState) => Patch)) => void;
-
 export type PatchEvent = Partial<EventDetail> | null;
+
 export type PatchEventFn = (p: PatchEvent | ((ev: EventItem) => PatchEvent)) => void;

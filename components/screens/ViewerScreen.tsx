@@ -1,8 +1,9 @@
 'use client';
 
 import Microsite from '@/components/Microsite';
-import { derive, ICONSETS } from '@/lib/theme';
-import type { DocumentInfo, EventItem, Preset } from '@/lib/types';
+import { derive, ICONSETS } from '@fe/shared/lib/theme/palette';
+import type { DocumentInfo, EventItem } from '@fe/entities/event/model/types';
+import type { Preset } from '@fe/entities/theme/model/types';
 import { monoLabel, UI } from '@fe/shared/config/ui';
 
 export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: Preset[] }) {

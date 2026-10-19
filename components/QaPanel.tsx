@@ -2,8 +2,9 @@
 
 // Q&A 목록 폴링 + 질문 등록 폼 — Microsite의 "질문 남기기" 패널
 import { useEffect, useRef, useState } from 'react';
-import { ApiClientError, fetchQuestions, postQuestion, type Question } from '@/lib/api';
-import type { Theme } from '@/lib/theme';
+import { ApiClientError } from '@fe/shared/api/http';
+import { fetchQuestions, postQuestion, type Question } from '@fe/features/ask-question/api';
+import type { Theme } from '@fe/shared/lib/theme/palette';
 
 interface QaPanelProps {
   theme: Theme;

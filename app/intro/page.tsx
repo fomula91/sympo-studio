@@ -5,7 +5,7 @@ import IntroNav from '@/components/IntroNav';
 import { LogoLockup, LogoMark } from '@fe/shared/ui/Logo';
 import Reveal from '@fe/shared/ui/Reveal';
 import ThemeToggle from '@fe/shared/ui/ThemeToggle';
-import { METRICS } from '@/lib/data';
+import { METRICS } from '@/components/screens/report-data';
 import { MONO } from '@fe/shared/config/ui';
 
 export const metadata: Metadata = {

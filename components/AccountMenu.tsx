@@ -4,7 +4,7 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useStudio } from '@/components/StudioProvider';
-import { ApiClientError } from '@/lib/api';
+import { ApiClientError } from '@fe/shared/api/http';
 import { MONO, UI } from '@fe/shared/config/ui';
 
 export default function AccountMenu() {

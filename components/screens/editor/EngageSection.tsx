@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Card } from '@fe/shared/ui/Card';
 import { SectionTitle } from '@fe/shared/ui/SectionTitle';
 import { generateCertificate } from '@/lib/certificate';
-import { ENGAGE_DEFS } from '@/lib/data';
-import type { EventItem, PatchEventFn, PatchFn } from '@/lib/types';
+import { ENGAGE_DEFS } from '@/components/screens/editor/config';
+import type { EventItem, PatchEventFn } from '@fe/entities/event/model/types';
+import type { PatchFn } from '@fe/app/providers/studio/types';
 import { ghostBtn, UI } from '@fe/shared/config/ui';
 import { savingMessage } from './saving-message';
 

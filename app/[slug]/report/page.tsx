@@ -9,7 +9,8 @@
 // 공개된 행사의 집계 수치뿐이고, 개별 방문자·질문 본문·설문 응답은 실리지 않는다.
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { type EventOps, fetchPublicReport, fetchWithTimeout } from '@/lib/api';
+import { type EventOps, fetchPublicReport } from '@fe/entities/event/api/participant';
+import { fetchWithTimeout } from '@fe/shared/api/http';
 import { MONO, UI } from '@fe/shared/config/ui';
 
 interface ReportEvent {

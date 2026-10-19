@@ -3,10 +3,11 @@
 // 설문 참여 패널 — 2단(행사 전체 만족도 → 세션별 평가) 후 수료증 다운로드로 이어지는 흐름.
 // 고령 참가자가 주 대상이라(field-experience.md) 문항 수를 최소화하고 버튼을 크게 잡았다.
 import { useEffect, useRef, useState } from 'react';
-import { ApiClientError, submitSurvey, type SurveyAnswer } from '@/lib/api';
+import { ApiClientError } from '@fe/shared/api/http';
+import { submitSurvey, type SurveyAnswer } from '@fe/features/answer-survey/api';
 import { generateCertificate } from '@/lib/certificate';
-import type { Session } from '@/lib/types';
-import type { Theme } from '@/lib/theme';
+import type { Session } from '@fe/entities/event/model/types';
+import type { Theme } from '@fe/shared/lib/theme/palette';
 
 interface SurveyPanelProps {
   theme: Theme;

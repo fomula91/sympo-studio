@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { SectionTitle } from '@fe/shared/ui/SectionTitle';
-import { ApiClientError } from '@/lib/api';
-import type { EventItem } from '@/lib/types';
+import { ApiClientError } from '@fe/shared/api/http';
+import type { EventItem } from '@fe/entities/event/model/types';
 import { ghostBtn, MONO, UI } from '@fe/shared/config/ui';
 
 function formatBytes(bytes: number | null): string {

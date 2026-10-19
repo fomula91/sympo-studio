@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FIELD_DEFS } from './data';
+import { FIELD_DEFS } from '@/components/screens/editor/config';
 import {
   CAPACITY_MAX_DIGITS, EVENT_TEXT_MAX, MAX_CAPACITY, eventTextPatchError, isEventTextField,
   isValidCapacity,

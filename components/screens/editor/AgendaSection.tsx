@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { SectionTitle } from '@fe/shared/ui/SectionTitle';
-import { SESSION_LIB } from '@/lib/data';
-import type { EventItem, PatchEventFn, PatchFn, StudioState } from '@/lib/types';
+import { SESSION_LIB } from '@fe/entities/event/model/defaults';
+import type { EventItem, PatchEventFn } from '@fe/entities/event/model/types';
+import type { PatchFn, StudioState } from '@fe/app/providers/studio/types';
 import { ghostBtn, MONO, UI } from '@fe/shared/config/ui';
 import { savingMessage } from './saving-message';
 

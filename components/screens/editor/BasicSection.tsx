@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { Card } from '@fe/shared/ui/Card';
 import { SectionTitle } from '@fe/shared/ui/SectionTitle';
 import { TextInput } from '@fe/shared/ui/TextInput';
-import { ApiClientError } from '@/lib/api';
-import { FIELD_DEFS } from '@/lib/data';
+import { ApiClientError } from '@fe/shared/api/http';
+import { FIELD_DEFS } from '@/components/screens/editor/config';
 import { slugFormatError, slugLockedMessage } from '@/lib/slug';
-import { patchStudioEventSlug } from '@/lib/studio-api';
-import type { EventItem, PatchEventFn, PatchFn } from '@/lib/types';
+import { patchStudioEventSlug } from '@fe/entities/event/api/studio';
+import type { EventItem, PatchEventFn } from '@fe/entities/event/model/types';
+import type { PatchFn } from '@fe/app/providers/studio/types';
 import { ghostBtn, MONO, UI } from '@fe/shared/config/ui';
 import { savingMessage } from './saving-message';
 

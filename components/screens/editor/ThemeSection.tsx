@@ -4,10 +4,14 @@ import { useState } from 'react';
 import { Badge } from '@fe/shared/ui/Badge';
 import { Card } from '@fe/shared/ui/Card';
 import { SectionTitle } from '@fe/shared/ui/SectionTitle';
-import { ApiClientError } from '@/lib/api';
+import { ApiClientError } from '@fe/shared/api/http';
 import { extractPresetColor } from '@/lib/colorExtract';
-import { contrastAllPass, contrastRows, derive, ICONSETS } from '@/lib/theme';
-import type { AuthUser, Density, EventItem, IconSetId, KvPattern, Mode, PatchEventFn, PatchFn, Preset, StudioState } from '@/lib/types';
+import { contrastAllPass, contrastRows, derive, ICONSETS } from '@fe/shared/lib/theme/palette';
+import type { AuthUser } from '@fe/entities/account/model/types';
+import type { Density, IconSetId, KvPattern, Mode } from '@fe/shared/lib/theme/options';
+import type { EventItem, PatchEventFn } from '@fe/entities/event/model/types';
+import type { PatchFn, StudioState } from '@fe/app/providers/studio/types';
+import type { Preset } from '@fe/entities/theme/model/types';
 import { ghostBtn, MONO, monoLabel, primaryBtn, seg, UI } from '@fe/shared/config/ui';
 import { savingMessage } from './saving-message';
 

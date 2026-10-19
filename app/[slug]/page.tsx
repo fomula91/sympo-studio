@@ -4,9 +4,12 @@
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import Microsite from '@/components/Microsite';
-import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
-import { derive, ICONSETS, PRESETS } from '@/lib/theme';
-import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
+import { fetchWithTimeout } from '@fe/shared/api/http';
+import { sendEventLogs } from '@fe/entities/event/api/participant';
+import { derive, ICONSETS } from '@fe/shared/lib/theme/palette';
+import { PRESETS } from '@fe/entities/theme/model/presets';
+import type { Density, IconSetId, KvPattern, Mode } from '@fe/shared/lib/theme/options';
+import type { DocumentInfo, Session } from '@fe/entities/event/model/types';
 import { UI } from '@fe/shared/config/ui';
 
 interface PublicEvent {

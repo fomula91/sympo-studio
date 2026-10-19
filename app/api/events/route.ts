@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { autoSlug } from '@/lib/data';
+import { autoSlug } from '@/lib/event-slug';
 import {
   BadRequest,
   EVENT_LIST_COLUMNS,

@@ -4,8 +4,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from '@fe/shared/ui/Badge';
 import { EmptyState } from '@fe/shared/ui/EmptyState';
-import { STATUS } from '@/lib/data';
-import type { AuthUser, EventItem, PatchFn, SortKey, StudioState } from '@/lib/types';
+import { EVENT_STATUSES as STATUS } from '@/lib/status';
+import type { AuthUser } from '@fe/entities/account/model/types';
+import type { EventItem } from '@fe/entities/event/model/types';
+import type { PatchFn, SortKey, StudioState } from '@fe/app/providers/studio/types';
 import { eventPhase } from '@/lib/status';
 import { MONO, phasePillStyle, seg, UI } from '@fe/shared/config/ui';
 

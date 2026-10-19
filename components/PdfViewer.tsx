@@ -3,7 +3,7 @@
 // PDF.js 클라이언트 렌더 뷰어 — 페이지 이동·확대(iframe은 iOS Safari에서 깨져 기각, FE-6).
 import { useEffect, useRef, useState } from 'react';
 import type * as PdfjsLib from 'pdfjs-dist';
-import type { Theme } from '@/lib/theme';
+import type { Theme } from '@fe/shared/lib/theme/palette';
 
 interface PdfViewerProps {
   theme: Theme;

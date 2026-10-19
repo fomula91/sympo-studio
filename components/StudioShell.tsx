@@ -7,10 +7,10 @@ import { LogoMark } from '@fe/shared/ui/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
 import ThemeToggle from '@fe/shared/ui/ThemeToggle';
-import { ApiClientError } from '@/lib/api';
-import { NAV } from '@/lib/data';
-import { deleteStudioEvent, patchStudioEventStatus } from '@/lib/studio-api';
-import { contrastAllPass } from '@/lib/theme';
+import { ApiClientError } from '@fe/shared/api/http';
+import { NAV } from '@/components/studio-navigation';
+import { deleteStudioEvent, patchStudioEventStatus } from '@fe/entities/event/api/studio';
+import { contrastAllPass } from '@fe/shared/lib/theme/palette';
 import { ghostBtn, MONO, primaryBtn, savedColor, UI } from '@fe/shared/config/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).

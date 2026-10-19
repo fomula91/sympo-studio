@@ -2,42 +2,19 @@
 
 import { useParams } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ApiClientError } from '@/lib/api';
-import { autoSlug, defaultEventDetail, seedEvents, uniqueSlug } from '@/lib/data';
-import {
-  createStudioEvent,
-  createStudioPreset,
-  deleteStudioAccount,
-  detailPatchToBody,
-  fetchCurrentUser,
-  fetchStudioEvent,
-  fetchStudioEvents,
-  fetchStudioPresets,
-  importGuestEvents,
-  IMPORT_BATCH_SIZE,
-  logoutStudioUser,
-  patchStudioEvent,
-  putStudioEventDocuments,
-  uploadStudioDocument,
-  patchStudioEventStatus,
-  putStudioEventSessions,
-  toImportBody,
-  type ImportResultDTO,
-} from '@/lib/studio-api';
+import { ApiClientError } from '@fe/shared/api/http';
+import { autoSlug } from '@/lib/event-slug';
+import { defaultEventDetail, seedEvents, uniqueSlug } from '@fe/entities/event/model/defaults';
+import { createStudioEvent, detailPatchToBody, fetchStudioEvent, fetchStudioEvents, patchStudioEvent, putStudioEventDocuments, uploadStudioDocument, patchStudioEventStatus, putStudioEventSessions } from '@fe/entities/event/api/studio';
+import { createStudioPreset, fetchStudioPresets } from '@fe/entities/theme/api/client';
+import { deleteStudioAccount, fetchCurrentUser, logoutStudioUser } from '@fe/entities/account/api/client';
+import { importGuestEvents, IMPORT_BATCH_SIZE, toImportBody, type ImportResultDTO } from '@fe/app/providers/studio/import-api';
 import type { EventStatus } from '@/lib/status';
-import { PRESETS } from '@/lib/theme';
-import type {
-  AuthUser,
-  EventItem,
-  Patch,
-  PatchEvent,
-  PatchEventFn,
-  PatchFn,
-  Preset,
-  Session,
-  StudioDocument,
-  StudioState,
-} from '@/lib/types';
+import { PRESETS } from '@fe/entities/theme/model/presets';
+import type { AuthUser } from '@fe/entities/account/model/types';
+import type { EventItem, PatchEvent, PatchEventFn, Session, StudioDocument } from '@fe/entities/event/model/types';
+import type { Patch, PatchFn, StudioState } from '@fe/app/providers/studio/types';
+import type { Preset } from '@fe/entities/theme/model/types';
 
 // 게스트 로컬 워크스페이스 영속(FE-15). 버전을 접두사에 박아 둔다 — 나중에 저장
 // 모양이 바뀌면 새 키로 옮기고 예전 값은 그냥 버려진다(마이그레이션 없음, 로컬

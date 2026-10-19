@@ -1,15 +1,7 @@
 import { toGamut, wcagContrast } from 'culori';
-import type { IconSetId, KvPattern, Mode, Preset } from './types';
+import type { IconSetId, KvPattern, Mode } from '@fe/shared/lib/theme/options';
 
 const toSrgb = toGamut('rgb', 'oklch');
-
-export const PRESETS: Preset[] = [
-  { id: 'slate', label: '슬레이트 뉴트럴', h: 255, c: 0.028 },
-  { id: 'aurora', label: 'AURORA 그린', h: 158, c: 0.105 },
-  { id: 'prime', label: 'PRIME 블루', h: 252, c: 0.125 },
-  { id: 'vertex', label: 'VERTEX 퍼플', h: 305, c: 0.115 },
-  { id: 'amber', label: 'HERO 앰버', h: 72, c: 0.115 },
-];
 
 export const ICONSETS: Record<IconSetId, { label: string; glyphs: string[] }> = {
   geo: { label: '기하', glyphs: ['○', '□', '△', '◇'] },
@@ -32,7 +24,7 @@ export interface Theme {
   L: { bg: number; surface: number; ink: number; muted: number; brand: number; onBrand: number };
 }
 
-export function derive(preset: Preset, mode: Mode): Theme {
+export function derive<T extends { h: number; c: number }>(preset: T, mode: Mode): Theme {
   const { h, c } = preset;
   if (mode === 'dark') {
     return {
@@ -100,6 +92,6 @@ export function contrastRows(theme: Theme, mode: Mode): ContrastRow[] {
   });
 }
 
-export function contrastAllPass(preset: Preset, mode: Mode): boolean {
+export function contrastAllPass<T extends { h: number; c: number }>(preset: T, mode: Mode): boolean {
   return contrastRows(derive(preset, mode), mode).every((r) => r.pass);
 }

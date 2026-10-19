@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { contrastAllPass, contrastRows, derive, PRESETS } from './theme';
-import type { Mode } from './types';
+import { contrastAllPass, contrastRows, derive } from '@fe/shared/lib/theme/palette';
+import { PRESETS } from '@fe/entities/theme/model/presets';
+import type { Mode } from '@fe/shared/lib/theme/options';
 
 const MODES: Mode[] = ['light', 'dark'];
 
