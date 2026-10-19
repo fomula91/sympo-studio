@@ -1,5 +1,5 @@
 // 라벨+입력+힌트로 구성된 폼 필드 패턴을 통일한다(FE-13).
-import { UI } from '@fe/shared/config/ui';
+import { UI } from "../config/ui";
 
 export function TextInput({
   label,

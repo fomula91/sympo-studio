@@ -1,5 +1,5 @@
 import { toGamut, wcagContrast } from 'culori';
-import type { IconSetId, KvPattern, Mode } from '@fe/shared/lib/theme/options';
+import type { IconSetId, KvPattern, Mode } from "./options";
 
 const toSrgb = toGamut('rgb', 'oklch');
 

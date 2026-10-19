@@ -1,6 +1,5 @@
-import type { Session } from '@fe/entities/event/model/types';
 
-export const SESSIONS0: Session[] = [
+export const SESSIONS0 = [
   { id: 1, time: '17:00', title: '개회사', speaker: '좌장 서정우 · 도원대학교병원', kind: 'OPENING' },
   {
     id: 2,

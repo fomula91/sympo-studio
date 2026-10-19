@@ -1,7 +1,7 @@
 'use client';
 
-import ConsoleScreen from '@/components/screens/ConsoleScreen';
-import { useStudio } from '@/components/StudioProvider';
+import { ConsoleScreen } from '@fe/pages/console';
+import { useStudio } from "@fe/app/providers/studio/StudioProvider";
 
 export default function ConsolePage() {
   const { s, patch, user, authStatus, importPrompt, importBusy, importMessage, confirmImport, dismissImport } =

@@ -1,4 +1,4 @@
-import type { Preset } from '@fe/entities/theme/model/types';
+import type { Preset } from "./types";
 
 export const PRESETS: Preset[] = [
   { id: 'slate', label: '슬레이트 뉴트럴', h: 255, c: 0.028 },

@@ -1,6 +1,6 @@
-import { SESSIONS0 } from '@/lib/demo-sessions';
-import { venueSlug } from '@/lib/event-slug';
-import type { EventItem, Session } from '@fe/entities/event/model/types';
+import { SESSIONS0 } from "../lib/rules";
+import { venueSlug } from "../lib/rules";
+import type { EventItem, Session } from "./types";
 
 const THEME_PRESET_CYCLE = ['aurora', 'prime', 'vertex', 'amber', 'slate'];
 

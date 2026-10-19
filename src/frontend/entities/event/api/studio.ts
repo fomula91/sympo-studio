@@ -1,6 +1,6 @@
 import { readError } from '@fe/shared/api/studio-error';
 import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
-import type { EventDetail, EventItem, Session, StudioDocument } from '@fe/entities/event/model/types';
+import type { EventDetail, EventItem, Session, StudioDocument } from "../model/types";
 
 interface EventDTO {
   id: number;

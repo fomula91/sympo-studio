@@ -1,5 +1,5 @@
-import type { Preset } from '@fe/entities/theme/model/types';
-import type { EventItem } from '@fe/entities/event/model/types';
+import type { Preset } from "@fe/entities/theme";
+import type { EventItem } from "@fe/entities/event";
 
 export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
 

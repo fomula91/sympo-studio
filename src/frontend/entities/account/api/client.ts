@@ -1,6 +1,6 @@
 import { readError } from '@fe/shared/api/studio-error';
 import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
-import type { AuthUser } from '@fe/entities/account/model/types';
+import type { AuthUser } from "../model/types";
 
 /**
  * GET /api/auth/me — 현재 로그인 사용자(FE-15). 비로그인은 200 + `user: null`이라

@@ -1,6 +1,6 @@
 import { readError } from '@fe/shared/api/studio-error';
 import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
-import type { Preset } from '@fe/entities/theme/model/types';
+import type { Preset } from "../model/types";
 
 interface PresetDTO {
   id: string;

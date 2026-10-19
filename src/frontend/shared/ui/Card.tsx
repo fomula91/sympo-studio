@@ -1,6 +1,6 @@
 // 화면마다 인라인으로 반복되던 카드(표면+테두리+둥근 모서리) 패턴을 통일한다(FE-13).
 import type { CSSProperties, ReactNode } from 'react';
-import { UI } from '@fe/shared/config/ui';
+import { UI } from "../config/ui";
 
 export function Card({
   children,

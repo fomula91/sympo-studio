@@ -1,6 +1,6 @@
 // 에디터 섹션마다 반복되던 제목+설명 헤더 패턴을 통일한다(FE-13).
 import type { ReactNode } from 'react';
-import { UI } from '@fe/shared/config/ui';
+import { UI } from "../config/ui";
 
 export function SectionTitle({
   title,

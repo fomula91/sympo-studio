@@ -1,6 +1,6 @@
 // 목록이 비었을 때 보여주는 안내 문구 패턴을 통일한다(FE-13).
 import type { ReactNode } from 'react';
-import { UI } from '@fe/shared/config/ui';
+import { UI } from "../config/ui";
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
