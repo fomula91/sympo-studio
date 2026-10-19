@@ -204,7 +204,7 @@ main 대비 diff에 포함됨을 표시한다. #74 병합 후 diff를 다시 확
 - event/theme/account 및 각 화면·feature/widget은 명시적 index 공개 API를 사용한다. PDF는 `features/view-document/client.ts`를 통한 동적 로딩을 유지한다.
 - 소개와 리포트가 함께 사용하는 가상 지표 METRICS는 `entities/event/model/sample-metrics.ts`가 소유한다. OPS는 리포트 내부에 둔다. 루트 `/`는 기존 redirect만 유지하고, 소개 페이지 metadata를 라우트에서 다시 export한다.
 - CSS는 shared 토큰 → app/styles/globals.css 순서로 로딩한다. shared의 savedColor/phasePillStyle은 문구 톤·표현 스타일만 다루며 행사 시점 계산은 event 규칙에 둔다.
-- build 및 앱 소스 lint 통과, 테스트 163건 통과(기존 135 + 경계 검사 28). 정적 import/export 그래프 92개 FE 파일의 순환 0건.
+- build 및 앱 소스 lint 통과, 테스트 171건 통과(기존 135 + 경계 검사 36). 정적 import/export 그래프 92개 FE 파일의 순환 0건.
 - 브라우저: 게스트 콘솔→에디터, 기본정보 수정→새로고침 복원→원복, 자료 업로드의 게스트 비활성, 모바일 390/태블릿 834 미리보기, 다크/라이트 전환, Q&A·설문 미리보기 전송 제한, 소개 페이지 title 확인.
 - 한계: 승인된 로그인 테스트 세션이 없어 서버 저장·발행·업로드·가져오기·탈퇴 및 전송 실패 알림 E2E는 미검증. PDF 실파일 열기/닫기와 전후 동일 데이터 스크린샷 대조도 남았다. 위 확인을 전체 사용자 흐름 완료로 간주하지 않는다. PR #79는 draft로 유지한다.
 

@@ -22,7 +22,9 @@ export function boundaryViolation(filename, specifier, root) {
     if (serverBuiltins.has(specifier) || /^(node:|server-only$|@opennextjs\/|cloudflare:|next\/(headers|server)(\/|$))/.test(specifier)) return 'Server modules cannot enter the frontend.';
     return null;
   }
-  target = normalize(target);
+  // Alias expansion must resolve dot segments too; otherwise shared/../app
+  // is classified as shared and can bypass both layer and server boundaries.
+  target = normalize(path.resolve(target));
   if (!target.startsWith(prefix)) {
     const contract = target.slice(`${base}/lib/`.length);
     if (file === `${prefix}entities/event/lib/rules` && target.startsWith(`${base}/lib/`) && contracts.has(contract)) return null;

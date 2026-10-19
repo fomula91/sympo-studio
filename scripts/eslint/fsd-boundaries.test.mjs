@@ -13,9 +13,15 @@ describe('FSD boundaries', () => {
     ['entities/event/lib/rules.ts', '@/lib/status'],
     ['widgets/participant-site/ui/Microsite.tsx', '@fe/features/view-document/client'],
     ['app/providers/studio/Provider.tsx', '@fe/app/providers/studio/types'],
+    ['pages/editor/ui/Screen.tsx', '@fe/shared/../entities/event'],
+    ['entities/event/lib/rules.ts', '@/lib/../lib/status'],
   ])('allows %s → %s', (file, target) => expect(boundaryViolation(from(file), target, root)).toBeNull());
   it.each([
     ['features/account-menu/ui/Menu.tsx', '@fe/app/providers/studio'],
+    ['features/account-menu/ui/Menu.tsx', '@fe/shared/../app/providers/studio/StudioProvider'],
+    ['features/account-menu/ui/Menu.tsx', '@fe/shared/../../../lib/db'],
+    ['features/account-menu/ui/Menu.tsx', '@/src/frontend/shared/../app/providers/studio/StudioProvider'],
+    ['features/account-menu/ui/Menu.tsx', '@/src/frontend/shared/../../../lib/db'],
     ['widgets/studio-shell/ui/Shell.tsx', '@fe/widgets/participant-site'],
     ['pages/editor/ui/Screen.tsx', '@fe/entities/event/model/types'],
     ['pages/editor/ui/Screen.tsx', '../../../entities/event/model/types'],
@@ -30,6 +36,8 @@ describe('FSD boundaries', () => {
   ])('rejects %s → %s', (file, target) => expect(boundaryViolation(from(file), target, root)).toBeTruthy());
   it.each([
     "import x from '@fe/app/providers/studio';",
+    "import x from '@fe/shared/../app/providers/studio/StudioProvider';",
+    "import('@fe/shared/../../../lib/db');",
     "export { x } from '@fe/app/providers/studio';",
     "export * from '@fe/app/providers/studio';",
     "import('@fe/app/providers/studio');",

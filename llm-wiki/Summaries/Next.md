@@ -81,7 +81,7 @@ shared·대형 파일 분리 → entities → features → widgets/pages 순서�
 
 [[0015-frontend-fsd-boundaries]]에 따라 1~4단계 코드를 같은 `fe-14-architecture-adr` 브랜치와 PR #79에 반영했다.
 Provider·Shell을 분리하고 화면/기능/도메인별 공개 API와 ESLint 경계 검사를 적용했다.
-빌드·앱 소스 lint·테스트 163건이 통과했고 게스트 편집/복원과 미리보기 화면을 확인했다.
+빌드·앱 소스 lint·테스트 171건이 통과했고 게스트 편집/복원과 미리보기 화면을 확인했다.
 로그인 저장·업로드·실패 알림 E2E 및 동일 데이터 전후 화면 대조가 남아 과제는 열어두고 PR은 draft로 유지한다. 머지는 담당자가 진행한다.
 
 ## 착수하기 전에
