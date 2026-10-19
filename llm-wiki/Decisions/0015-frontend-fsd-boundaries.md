@@ -7,7 +7,8 @@ verified: 2026-10-19
 
 ## 상태
 
-제안 — FE-14 0단계 ADR 작성 완료, 리뷰 대기. 1~4단계 구현은 아직 하지 않았다.
+구현 반영·리뷰 대기 — 동일 브랜치에서 1~4단계 코드 이전과 경계 규칙을 적용했다.
+로그인/업로드/실패 알림 E2E 및 동일 데이터의 전후 스크린샷 대조가 남아 있어 FE-14는 열린 상태다.
 PR #74의 범위 재정의 위에 쌓는 후속 결정이며, FE-14 전체를 종료하지 않는다.
 
 ## 맥락
@@ -36,12 +37,12 @@ PR #74의 범위 재정의 위에 쌓는 후속 결정이며, FE-14 전체를 �
 ### 1. Next 라우트와 FSD 디렉터리를 물리적으로 구분한다
 
 루트 `app/`은 Next App Router 전용으로 유지한다. FSD 구현은 `src/frontend/` 아래 둔다.
-향후 `@fe/*` → `./src/frontend/*` alias를 추가하고 기존 `@/*`는 그대로 유지한다.
+`@fe/*` → `./src/frontend/*` alias를 추가했고 기존 `@/*`는 그대로 유지한다.
 `src/frontend/app`은 FSD 조립 계층이며 Next의 `src/app`이 아니다.
 `src/frontend/pages`도 Next의 루트 `pages`·`src/pages`가 아니므로 Pages Router로 쓰이지 않는다.
 이 중첩 경로는 Next 이름 충돌과 서버 코드를 함께 가진 현재 저장소를 위한 프로젝트 선택이다.
 
-목표 구조(0단계에서 아래 폴더를 빈 껍데기로 생성하지 않는다):
+적용 구조:
 
 ```text
 app/                         Next 라우트·layout·metadata·API 경로 유지
@@ -106,14 +107,14 @@ Provider는 entities의 저수준 API를 사용한다. UI feature를 호출하�
 | Preset, 기본 프리셋, 프리셋 API | `entities/theme` | event는 presetId만 보유하며 theme slice를 import하지 않음 |
 | `lib/theme.ts`의 색 계산·Theme·표현 옵션·아이콘 패턴 | `shared/lib/theme`, `shared/config` | Preset 목록과 분리. 범용 계산은 h/c 등 값 입력으로 받음 |
 | `lib/data.ts` | 소유자별 분리 | event 기본값/데모 → event, 편집 섹션 정의 → editor page, NAV → studio-shell, 리포트 샘플 → report page. autoSlug 예외는 아래 참조 |
-| EditorScreen 및 5개 Section | `pages/editor/ui`, `pages/editor/lib` | 재사용하지 않는 섹션은 page 내부에 둠. 1단계에서는 현 위치 근처에서 먼저 파일 분리 |
+| EditorScreen 및 5개 Section | `pages/editor/ui` 및 편집 features | Agenda·Docs·Engage는 page 내부, Basic·Theme는 해당 편집 feature가 소유 |
 | ConsoleScreen·ReportScreen | `pages/console`, `pages/report` | 업무 화면과 샘플 리포트라는 기존 의미 유지 |
 | `app/[slug]/page.tsx`, `app/[slug]/report/page.tsx`의 본문 | `pages/participant`, `pages/participant-report` | 루트 파일은 라우팅 진입점 유지 |
-| `app/page.tsx`, `app/intro/page.tsx`, IntroNav·FeatureShowcase | `pages/intro` | 페이지별 export 제공. 다른 page에서 import하지 않음 |
+| `app/intro/page.tsx`, IntroNav·FeatureShowcase | `pages/intro` | 페이지별 export 제공. 다른 page에서 import하지 않음 |
 | QaPanel·Q&A API | `features/ask-question` | 질문 조회·전송·폴링·draft 수명 유지 |
 | SurveyPanel·설문 API·certificate | `features/answer-survey` | 설문 완료→수료증 유지. 에디터 인증서 미리보기는 이 feature의 공개 API 사용 |
 | PdfViewer | `features/view-document` | UI와 pdf.js lifecycle. 서명 URL 재조회는 event API 사용, preview 데이터 주입 유지 |
-| slug 편집·테마 추출 | `features/edit-slug`, `features/extract-theme` | 서버 변경 함수는 entity API, 화면 상태·색 추출은 feature. 성공 적용은 callback |
+| slug 편집·테마 추출 | `features/edit-event-details`, `features/edit-theme` | 서버 변경 함수는 entity API, 화면 상태·색 추출은 feature. 성공 적용은 callback |
 | AccountMenu | `features/account-menu` | app으로부터 user/인증 상태/로그아웃·탈퇴 callback 전달 |
 
 event의 sessions/documents를 독립 entity slice로 나누지 않는 것은 현재의 소유·저장 계약에
@@ -133,6 +134,7 @@ FE에서 이 서버 모듈을 import하는 것은 금지한다.
 - `lib/slug.ts`, `lib/status.ts`, `lib/event-limits.ts`: 현 위치와 정본 유지.
 - `lib/data.ts`의 `venueSlug`·`autoSlug`는 2단계에서 `lib/event-slug.ts`로 추출한다.
   서버 두 라우트와 FE 호출부를 함께 바꾸고 로직은 유지한다. `uniqueSlug`는 FE event에 둔다.
+- `lib/demo-sessions.ts`: 서버 seed와 FE 기본값이 공유하는 순수 데모 데이터. FE 타입을 역참조하지 않는다.
 
 프론트엔드는 이 예외를 `entities/event/lib` adapter를 통해서만 참조한다. entity 공개 API로
 내보내므로 features/pages가 루트 lib를 직접 가져오지 않는다. 단순 파일 재배치 때문에
@@ -161,8 +163,8 @@ App·Shared 내부 segment 간 참조는 허용하되 순환 의존은 허용하
 새 플러그인 의존성 없이 파일의 정규화된 실제 경로를 비교해 alias·상대경로 우회를 함께 잡는다.
 정적 import/export, `import type`, 문자열 `import()`를 검사하고 FSD 내부의 해석 불가 동적
 경로 import/require는 허용하지 않는다. root app 진입점과 서버 lib 예외를 별도로 분류한다.
-4단계에서 허용/금지 fixture(상향·동급·deep import·상대 우회·server 유입·동적 import)를
-테스트하고 `npm run lint`에 포함한다. 현 단계에서 규칙이 이미 동작한다고 주장하지 않는다.
+`scripts/eslint/fsd-boundaries.mjs`와 테스트에서 허용/금지 fixture(상향·동급·deep import·상대 우회·server 유입·동적 import)를
+테스트하며 `npm run lint`에 포함했다. 타입 전용 import/export, TS import type도 검사한다.
 
 ## 단계별 커밋과 검증
 
@@ -193,6 +195,18 @@ ADR은 현재 구현 계획으로 사용하고 리뷰 의견이 오면 후속 �
 변경된 브랜치로 대체 draft PR을 열고, #74가 미병합인 동안에는 선행 문서 변경도
 main 대비 diff에 포함됨을 표시한다. #74 병합 후 diff를 다시 확인한다.
 최종 머지는 담당자가 수행한다.
+
+## 구현 상세와 검증 (2026-10-19)
+
+- BasicSection 전체를 `edit-event-details`, ThemeSection 전체를 `edit-theme`에 배치했다. slug/색 추출만 떼어 상위 page의 상태를 다시 참조하는 대신 좁은 props와 callback으로 연결한다.
+- Provider는 `useEventSaveQueue`, `useSessionSync`, `useAccountActions`, `useDocumentUpload`와 guest-storage/event-merge/document-meta/initial-state로 나눴다. ref와 잠금은 Provider당 한 인스턴스이며 기존 저장 계약을 유지한다.
+- Shell의 상태·공개·일괄 작업은 `model/useStudioShell.ts`, 렌더링은 UI에 두었다. `StudioFrame`이 계정 메뉴와 미리보기를 slot으로 조립한다.
+- event/theme/account 및 각 화면·feature/widget은 명시적 index 공개 API를 사용한다. PDF는 `features/view-document/client.ts`를 통한 동적 로딩을 유지한다.
+- 소개와 리포트가 함께 사용하는 가상 지표 METRICS는 `entities/event/model/sample-metrics.ts`가 소유한다. OPS는 리포트 내부에 둔다. 루트 `/`는 기존 redirect만 유지하고, 소개 페이지 metadata를 라우트에서 다시 export한다.
+- CSS는 shared 토큰 → app/styles/globals.css 순서로 로딩한다. shared의 savedColor/phasePillStyle은 문구 톤·표현 스타일만 다루며 행사 시점 계산은 event 규칙에 둔다.
+- build 및 앱 소스 lint 통과, 테스트 163건 통과(기존 135 + 경계 검사 28). 정적 import/export 그래프 92개 FE 파일의 순환 0건.
+- 브라우저: 게스트 콘솔→에디터, 기본정보 수정→새로고침 복원→원복, 자료 업로드의 게스트 비활성, 모바일 390/태블릿 834 미리보기, 다크/라이트 전환, Q&A·설문 미리보기 전송 제한, 소개 페이지 title 확인.
+- 한계: 승인된 로그인 테스트 세션이 없어 서버 저장·발행·업로드·가져오기·탈퇴 및 전송 실패 알림 E2E는 미검증. PDF 실파일 열기/닫기와 전후 동일 데이터 스크린샷 대조도 남았다. 위 확인을 전체 사용자 흐름 완료로 간주하지 않는다. PR #79는 draft로 유지한다.
 
 ## 대안과 트레이드오프
 
