@@ -13,6 +13,10 @@
 > **과거 기록은 아카이브에 있다** — 이 파일은 최근 3개 날짜만 둔다(훅은 최신 섹션만 읽는다).
 > [[Archive/log-2026-09]] · [[Archive/log-2026-08]] · 사람이 읽을 연표는 [[Summaries/History]]
 
+## 2026-10-19
+
+- **[PROJ] PR #74 리뷰 반영 보완 — 전체 조망 표와 단계별 완료 기준 정합성 수정**: 묶음 6에 FE-14의 단계별 계획과 ADR 착수 전 상태를 명시하고, 묶음 4의 PR #65 병합 대기 문구를 실제 병합일(2026-10-06)로 정정했다. 요약 표도 종료 기록과 맞췄다. 0단계는 목표 구조·이동 계획·예외의 ADR 확정, 4단계는 실제 구조와 ADR의 일치 검증으로 구분했다. 문서만 변경했으며 병합 후 e2e를 새로 실측한 것은 아니다.
+
 ## 2026-10-13
 
 - **[FE] FE-47 완료 — 에디터에서 공개 URL(slug) 직접 수정, 브랜치 `fe-47-slug-edit`**: `EditorScreen.tsx`의 `BasicSection` "생성될 URL" 카드에 서버 이벤트(`isServerEvent`)일 때만 입력칸 + "변경" 버튼을 추가했다. `ev.status === '초안'`일 때만 입력 가능, 아니면 `lib/slug.ts`의 `slugLockedMessage(ev.status)`로 잠그고 사유를 보여준다. 입력은 소문자·숫자·하이픈만 즉시 필터링하고, 저장은 디바운스가 아니라 명시적 "변경" 클릭 1회 = PATCH 1회다 — `lib/studio-api.ts`에 `patchStudioEventStatus`와 같은 패턴으로 `patchStudioEventSlug(id, slug)`를 새로 추가했다(`slug`가 `EventDetail`에 없는 필드라 `patchEvent`의 디바운스 델타 경로를 원래부터 못 탄다 — 처음엔 `patchEvent({ slug })`로 썼다가 빌드의 타입 에러로 잡혀, 성공 후 `patch`로 `s.events`를 직접 갱신하도록 고쳤다). 400(형식·예약어)·403(초안 아님·데모)·409(중복) 서버 사유를 입력칸 아래에 그대로 보여주고 값은 롤백하지 않는다. `npm run lint`·`build`·`test` 통과, 사용자가 실제 소유 이벤트를 만들어 슬러그 변경·잠금 상태를 브라우저에서 직접 확인했다.
@@ -22,6 +26,7 @@
 - **[FE] FE-48 — 사용자 피드백으로 삭제 UI 문구를 "계정 삭제"에서 "탈퇴"로 다듬음**: 한국어 서비스 관례상 "계정 삭제"보다 "탈퇴"가 더 자연스럽다는 지적을 반영해 `AccountMenu.tsx`의 사용자 노출 문구만 바꿨다(버튼 라벨 "계정 삭제"→"탈퇴하기", 확인 상태 "정말 삭제?"→"정말 탈퇴할까요?", 처리 중 "삭제 중…"→"탈퇴 처리 중…", 경고 문구와 `aria-label`도 같은 어조로 통일, 에러 문구를 해요체로). 내부 함수명(`deleteAccount`·`deleteStudioAccount`)과 과제 번호(FE-48)는 과제 히스토리 참조가 깨지지 않도록 그대로 뒀다. 드롭다운 대신 별도 "계정 설정" 페이지로 분리하는 안도 논의했으나 지금 범위에서는 보류하고 기존 드롭다운 위치를 유지했다. `npx eslint components/AccountMenu.tsx` 통과.
 - **[FE] 수료증(`lib/certificate.ts`) 한글이 전혀 안 보이던 버그 발견·수정 (이슈 #75)**: 디자인을 다듬으려고 열어보니 제목·이름을 포함한 한글 전체가 안 보였다(영문·숫자·테두리는 정상) — 실제 브라우저(`events/27/edit`에서 설문 참여 후 다운로드)에서도 재현·확인됐다. 원인은 `PretendardVariable.woff2`(가변 폰트)를 pdf-lib+fontkit로 임베드할 때 한글 복합 글리프가 빈 윤곽선이 되는 것 — 고정 폭 `Pretendard-Regular.otf`로 바꿔도 CID-keyed CFF 파싱에서 `cff.topDict` undefined 예외로 아예 생성이 깨졌다. 구조가 단순한 TrueType 정적 폰트(Gothic A1 Regular/Bold, OFL 라이선스, `public/fonts/GothicA1-*.ttf`)로 바꾸니 바로 해결됐다 — 앱 UI는 여전히 Pretendard고 수료증 PDF에서만 다른 폰트를 쓴다. Node로 직접 PDF를 생성해(`pdf-lib`를 Node에서 그대로 호출) 렌더링 결과를 글자 단위로 확인하는 방식으로 검증했다(브라우저 자동화 도구 연결이 안 돼 있어 사용자가 실제 브라우저로 재확인).
 - **[FE] 수료증 디자인을 상장처럼 개선 (이슈 #75, 사용자 요청)**: `lib/certificate.ts`에 아이보리 배경 + 금색 이중 테두리(굵은 선·가는 선, 바깥 회색 테두리와 삼중) + 네 모서리 코너 장식 + 제목 양옆 다이아몬드 장식 + "CERTIFICATE OF COMPLETION" 영문 부제를 추가했다. 발급 직인은 이중 원 + "SYMPO/STUDIO" 2줄 글자로 다듬고, 하단에 발급일(왼쪽)·직인+서명란(오른쪽)을 대칭 배치했다. 제목·참가자 이름·행사명 인용구는 볼드 폰트(`GothicA1-Bold.ttf`)로 위계를 줬다(이전엔 전부 한 굵기). 이름엔 밑줄로 "채워 넣은 칸" 느낌을 냈다. `npm run lint`·`build`·`test` 통과, Node 직접 렌더링으로 레이아웃·겹침 없음을 확인 후 사용자가 실제 브라우저에서 최종 확인했다.
+- **[PROJ] FE-14(FSD 아키텍처 적용) 범위 재정의 — 기각 대신 5단계 적용으로 (PR #74 리뷰 반영)**: 백로그에 FE-14 하나만 남아 착수 여부를 논의하며 처음엔 기각으로 PR #74를 올렸다. 리뷰에서 "등록 당시 근거였던 열린 과제들이 전부 닫혔다"는 전제가 PR #77 리뷰로 나온 새 FE 작업(아젠다 세션 편집 UI·Q&A 모더레이션 화면·프리셋 삭제·템플릿 복제 구현·not-found 페이지)과 `EditorScreen.tsx`(1,700줄)·`StudioProvider.tsx`(1,166줄)·`StudioShell.tsx`(704줄)에 이미 쌓인 책임으로 대체됐다는 지적을 받아, 기각 대신 범위를 ADR→shared+대형파일 분리→entities→features→widgets/pages 5단계로 다시 정의했다. `Next-Tasks.md`의 FE-14 본문·"뒤로 미룬다" 문단, `Summaries/Next.md`의 같은 문장을 갱신했다(`Closed-Tasks.md`로는 옮기지 않는다). 코드 변경 없음(문서만).
 
 ## 2026-10-09
 
