@@ -2,8 +2,9 @@
 
 // 헤더 하단의 로그인/계정 위젯 — 게스트는 로그인 버튼, 로그인 사용자는 아바타+드롭다운(FE-15).
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiClientError } from "@fe/shared/api/http";
+import { useArmedAction } from "@fe/shared/lib/state/useArmedAction";
 import { MONO, UI } from "@fe/shared/config/ui";
 
 export default function AccountMenu({ user, authStatus, logout, deleteAccount, serverIds, eventsListLoaded }: { user: import("@fe/entities/account").AuthUser | null; authStatus: 'checking' | 'ready'; logout: () => Promise<void>; deleteAccount: () => Promise<void>; serverIds: ReadonlySet<number>; eventsListLoaded: boolean }) {
@@ -11,11 +12,10 @@ export default function AccountMenu({ user, authStatus, logout, deleteAccount, s
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // FE-48 — 영구 삭제라 한 번 클릭으로 바로 실행하지 않는다. 콘솔 일괄 삭제와 같은
-  // 2클릭 패턴(StudioShell의 confirmDeleteArmed 참조) — 첫 클릭은 "삭제되는 것"을
-  // 보여주는 확인 상태로만 바꾸고, 그 상태에서 같은 버튼을 다시 눌러야 실제로 지운다.
-  // 4초 안에 다시 안 누르면 자동으로 풀린다.
-  const [confirmDeleteArmed, setConfirmDeleteArmed] = useState(false);
-  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2클릭 패턴(StudioShell의 confirmDeleteArmed와 같은 useArmedAction) — 첫 클릭은
+  // "삭제되는 것"을 보여주는 확인 상태로만 바꾸고, 그 상태에서 같은 버튼을 다시
+  // 눌러야 실제로 지운다. 4초 안에 다시 안 누르면 자동으로 풀린다.
+  const [confirmDeleteArmed, armDeleteAccount, disarmDeleteAccount] = useArmedAction<true>();
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // `deleteBusy`(state) 하나만으로는 못 막는 틈이 있다 — 확인 버튼을 빠르게 두 번
@@ -25,20 +25,13 @@ export default function AccountMenu({ user, authStatus, logout, deleteAccount, s
   // 화면이 실패로 보여준다).
   const deleteBusyRef = useRef(false);
 
-  useEffect(() => {
-    return () => {
-      if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-    };
-  }, []);
-
   // 드롭다운을 닫을 때는 항상 이 함수를 거쳐 확인 대기 상태도 함께 풀어 둔다 — 안
   // 그러면 닫혔다 다시 열었을 때 아무 설명 없이 바로 "정말 삭제?" 버튼이 보일 수 있다.
-  const closeMenu = () => {
+  const closeMenu = useCallback(() => {
     setOpen(false);
-    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-    setConfirmDeleteArmed(false);
+    disarmDeleteAccount();
     setDeleteError(null);
-  };
+  }, [disarmDeleteAccount]);
 
   useEffect(() => {
     if (!open) return;
@@ -47,19 +40,17 @@ export default function AccountMenu({ user, authStatus, logout, deleteAccount, s
     };
     window.addEventListener('pointerdown', onDown);
     return () => window.removeEventListener('pointerdown', onDown);
-  }, [open]);
+  }, [open, closeMenu]);
 
   async function handleDeleteAccount() {
     if (!confirmDeleteArmed) {
-      if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-      setConfirmDeleteArmed(true);
+      armDeleteAccount(true);
       setDeleteError(null);
-      confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
       return;
     }
     if (deleteBusyRef.current) return;
     deleteBusyRef.current = true;
-    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
+    disarmDeleteAccount();
     setDeleteBusy(true);
     setDeleteError(null);
     try {

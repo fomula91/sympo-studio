@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { SectionTitle } from "@fe/shared/ui/SectionTitle";
 import { ApiClientError } from "@fe/shared/api/http";
+import { useArmedAction } from "@fe/shared/lib/state/useArmedAction";
 import type { EventItem } from "@fe/entities/event";
 import { ghostBtn, MONO, UI } from "@fe/shared/config/ui";
 
@@ -44,13 +45,7 @@ export default function DocsSection({
   // 현장 태블릿에서 ×가 오터치로 눌리기 쉽다(팀원 코드리뷰) — 한 번 누르면 바로
   // 지우지 않고 그 문서 id만 "확인 대기" 상태로 표시하고, 같은 버튼을 다시 누를
   // 때만 실제로 지운다. 4초 안에 다시 안 누르면 자동으로 풀린다.
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-    };
-  }, []);
+  const [confirmDeleteId, armDelete, disarmDelete] = useArmedAction<number>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // 드롭존 하나·삭제 버튼 하나뿐이라, 업로드·삭제 중 하나라도 진행 중이면 나머지를
   // 막아 둘이 겹치지 않게 한다 — 자료 PUT은 전체 교체 계약이라 겹치면 나중 응답이
@@ -89,8 +84,7 @@ export default function DocsSection({
 
   async function handleDelete(docId: number) {
     if (!isServerEvent || busy) return;
-    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-    setConfirmDeleteId(null);
+    disarmDelete();
     setDeletingId(docId);
     setDeleteError(null);
     try {
@@ -200,9 +194,7 @@ export default function DocsSection({
                   void handleDelete(d.id);
                   return;
                 }
-                if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-                setConfirmDeleteId(d.id);
-                confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteId(null), 4000);
+                armDelete(d.id);
               }}
               disabled={!isServerEvent || busy}
               aria-label={confirmDeleteId === d.id ? `${d.displayName} 삭제 확인 — 다시 누르면 삭제됩니다` : `${d.displayName} 삭제`}

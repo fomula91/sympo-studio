@@ -5,6 +5,7 @@ import plugin, { boundaryViolation } from './fsd-boundaries.mjs';
 
 const root = process.cwd();
 const from = (name) => path.join(root, 'src/frontend', name);
+const fromRoot = (name) => path.join(root, 'app', name);
 describe('FSD boundaries', () => {
   it.each([
     ['pages/editor/ui/Screen.tsx', '@fe/entities/event'],
@@ -16,6 +17,14 @@ describe('FSD boundaries', () => {
     ['pages/editor/ui/Screen.tsx', '@fe/shared/../entities/event'],
     ['entities/event/lib/rules.ts', '@/lib/../lib/status'],
   ])('allows %s → %s', (file, target) => expect(boundaryViolation(from(file), target, root)).toBeNull());
+  it.each([
+    ['(studio)/console/page.tsx', '@fe/pages/console'],
+    ['(studio)/layout.tsx', '@fe/app/providers'],
+    ['layout.tsx', '@fe/app/styles/font'],
+    ['layout.tsx', '@fe/app/styles/globals.css'],
+    ['api/events/route.ts', '@/lib/db'],
+    ['[slug]/page.tsx', 'next/navigation'],
+  ])('allows Next root entry %s → %s', (file, target) => expect(boundaryViolation(fromRoot(file), target, root)).toBeNull());
   it.each([
     ['features/account-menu/ui/Menu.tsx', '@fe/app/providers/studio'],
     ['features/account-menu/ui/Menu.tsx', '@fe/shared/../app/providers/studio/StudioProvider'],
@@ -34,6 +43,12 @@ describe('FSD boundaries', () => {
     ['shared/api/http.ts', 'fs/promises'],
     ['shared/api/http.ts', 'next/headers'],
   ])('rejects %s → %s', (file, target) => expect(boundaryViolation(from(file), target, root)).toBeTruthy());
+  it.each([
+    ['(studio)/console/page.tsx', '@fe/app/providers/studio/StudioProvider'],
+    ['(studio)/layout.tsx', '@fe/app/providers/studio/StudioFrame'],
+    ['(studio)/report/page.tsx', '@fe/entities/event/model/types'],
+    ['(studio)/console/page.tsx', '../../../src/frontend/app/providers/studio/StudioProvider'],
+  ])('rejects Next root entry %s → %s (deep import, not the public API)', (file, target) => expect(boundaryViolation(fromRoot(file), target, root)).toBeTruthy());
   it.each([
     "import x from '@fe/app/providers/studio';",
     "import x from '@fe/shared/../app/providers/studio/StudioProvider';",

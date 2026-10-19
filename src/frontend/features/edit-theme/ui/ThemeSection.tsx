@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Badge } from "@fe/shared/ui/Badge";
 import { Card } from "@fe/shared/ui/Card";
 import { SectionTitle } from "@fe/shared/ui/SectionTitle";
+import { SegmentedControl } from "@fe/shared/ui/SegmentedControl";
 import { ApiClientError } from "@fe/shared/api/http";
 import { extractPresetColor } from "../lib/colorExtract";
 import { contrastAllPass, contrastRows, derive, ICONSETS } from "@fe/shared/lib/theme/palette";
@@ -12,7 +13,7 @@ import type { Density, IconSetId, KvPattern, Mode } from "@fe/shared/lib/theme/o
 import type { EventItem, PatchEventFn } from "@fe/entities/event";
 import type { PatchFn, StudioState } from "../model/state";
 import type { Preset } from "@fe/entities/theme";
-import { ghostBtn, MONO, monoLabel, primaryBtn, seg, UI } from "@fe/shared/config/ui";
+import { ghostBtn, MONO, monoLabel, primaryBtn, UI } from "@fe/shared/config/ui";
 import { savingMessage } from "@fe/entities/event";
 
 function slugifyLabel(label: string): string {
@@ -77,6 +78,8 @@ const MODES: { k: Mode; label: string }[] = [
 ];
 
 const DENSITIES: Density[] = ['컴팩트', '기본', '여유'];
+const DENSITY_OPTIONS = DENSITIES.map((d) => ({ k: d, label: d }));
+const ICONSET_OPTIONS = (Object.keys(ICONSETS) as IconSetId[]).map((k) => ({ k, label: ICONSETS[k].label }));
 
 const KV_CHOICES: { k: KvPattern; label: string }[] = [
   { k: 'stripe', label: '사선 패턴' },
@@ -359,81 +362,36 @@ export default function ThemeSection({
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 28 }}>
         <div>
           <div style={{ ...monoLabel, marginBottom: 10 }}>02 · 표면</div>
-          <div
-            style={{
-              display: 'flex',
-              background: UI.surface,
-              border: `1px solid ${UI.line}`,
-              borderRadius: 12,
-              padding: 5,
-              gap: 4,
+          <SegmentedControl
+            options={MODES}
+            value={ev.mode}
+            onChange={(k) => {
+              patchEvent({ mode: k });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
-          >
-            {MODES.map((m) => (
-              <button
-                key={m.k}
-                onClick={() => {
-                  patchEvent({ mode: m.k });
-                  patch({ saved: savingMessage(isServerEvent) });
-                }}
-                style={seg(ev.mode === m.k)}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+          />
         </div>
         <div>
           <div style={{ ...monoLabel, marginBottom: 10 }}>03 · 아이콘 세트</div>
-          <div
-            style={{
-              display: 'flex',
-              background: UI.surface,
-              border: `1px solid ${UI.line}`,
-              borderRadius: 12,
-              padding: 5,
-              gap: 4,
+          <SegmentedControl
+            options={ICONSET_OPTIONS}
+            value={ev.iconSet}
+            onChange={(k) => {
+              patchEvent({ iconSet: k });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
-          >
-            {(Object.keys(ICONSETS) as IconSetId[]).map((k) => (
-              <button
-                key={k}
-                onClick={() => {
-                  patchEvent({ iconSet: k });
-                  patch({ saved: savingMessage(isServerEvent) });
-                }}
-                style={seg(ev.iconSet === k)}
-              >
-                {ICONSETS[k].label}
-              </button>
-            ))}
-          </div>
+          />
         </div>
         <div>
           <div style={{ ...monoLabel, marginBottom: 10 }}>04 · 밀도</div>
-          <div
-            style={{
-              display: 'flex',
-              background: UI.surface,
-              border: `1px solid ${UI.line}`,
-              borderRadius: 12,
-              padding: 5,
-              gap: 4,
+          <SegmentedControl
+            options={DENSITY_OPTIONS}
+            value={ev.density}
+            onChange={(d) => {
+              patchEvent({ density: d });
+              patch({ saved: savingMessage(isServerEvent) });
             }}
-          >
-            {DENSITIES.map((d) => (
-              <button
-                key={d}
-                onClick={() => {
-                  patchEvent({ density: d });
-                  patch({ saved: savingMessage(isServerEvent) });
-                }}
-                style={seg(ev.density === d)}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
+          />
         </div>
       </div>
 

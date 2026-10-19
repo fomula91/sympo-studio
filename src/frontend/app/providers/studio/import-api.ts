@@ -1,5 +1,4 @@
-import { readError } from '@fe/shared/api/studio-error';
-import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
+import { ApiClientError, fetchWithTimeout, readError } from '@fe/shared/api/http';
 import type { EventItem } from "@fe/entities/event";
 
 /** 한 번에 가져올 수 있는 이벤트 수(POST /api/events/import, `lib/import.ts`의 `MAX_IMPORT_EVENTS`와

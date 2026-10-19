@@ -1,8 +1,10 @@
 'use client';
+// StudioShell의 내비게이션·공개/비공개·일괄 작업·이벤트 생성 상태와 핸들러.
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { ApiClientError } from "@fe/shared/api/http";
+import { useArmedAction } from "@fe/shared/lib/state/useArmedAction";
 
 import { deleteStudioEvent, patchStudioEventStatus } from "@fe/entities/event";
 import { contrastAllPass } from "@fe/shared/lib/theme/palette";
@@ -29,10 +31,9 @@ export function useStudioShell({s, ev, presets, patch, setEventStatus, serverIds
   const [bulkResult, setBulkResult] = useState<string | null>(null);
   // 영구 삭제라 한 번 클릭으로 바로 실행하지 않는다 — 버튼을 누르면 "정말 삭제" 확인
   // 상태로 바뀌고, 그 상태에서 같은 버튼을 다시 누를 때만 실제로 지운다(자료 삭제와
-  // 같은 2클릭 패턴, EditorScreen.tsx의 confirmDeleteId 참조). 4초 안에 다시 안 누르면
-  // 자동으로 풀린다.
-  const [confirmDeleteArmed, setConfirmDeleteArmed] = useState(false);
-  const confirmDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 같은 2클릭 패턴, DocsSection.tsx의 confirmDeleteId와 같은 useArmedAction). 4초
+  // 안에 다시 안 누르면 자동으로 풀린다.
+  const [confirmDeleteArmed, armBulkDelete, disarmBulkDelete] = useArmedAction<true>();
   const [createError, setCreateError] = useState<string | null>(null);
   // POST /api/events가 401(세션 만료)로 실패하면, 계정 아이콘은 로그인 상태 그대로
   // 남아 있어 사용자가 같은 버튼을 다시 눌러도 또 실패한다 — 재로그인 링크로 다음
@@ -78,18 +79,14 @@ export function useStudioShell({s, ev, presets, patch, setEventStatus, serverIds
   // '삭제'를 눌러 확인 대기로 만든 뒤, 그 상태에서 ConsoleScreen의 카드 클릭으로
   // B를 추가 선택하고(그쪽은 confirmDeleteArmed를 전혀 모르고 s.sel을 자유롭게
   // 토글한다) 다시 '삭제'를 누르면 B가 한 번도 확인을 거치지 않은 채 함께 영구
-  // 삭제된다(`/code-review` 발견). ref(타이머) 클린업은 위 pathname 블록과 같은
-  // 이유로 여기서 안 하고 아래 effect에서 한다(렌더 중 ref 접근은 react-hooks/refs가 막는다).
+  // 삭제된다(`/code-review` 발견). `disarmBulkDelete()`는 state만 바꾸고 타이머
+  // 정리는 useArmedAction 내부 effect가 하므로, 렌더 중 ref 접근(react-hooks/refs)
+  // 없이 여기서 바로 호출해도 된다.
   const [prevSel, setPrevSel] = useState(s.sel);
   if (s.sel !== prevSel) {
     setPrevSel(s.sel);
-    if (confirmDeleteArmed) setConfirmDeleteArmed(false);
+    if (confirmDeleteArmed) disarmBulkDelete();
   }
-  useEffect(() => {
-    if (!confirmDeleteArmed && confirmDeleteTimerRef.current) {
-      clearTimeout(confirmDeleteTimerRef.current);
-    }
-  }, [confirmDeleteArmed]);
 
   const inEditor = pathname.startsWith('/events/');
   const screenKind: ScreenKind = s.viewerOpen
@@ -295,5 +292,5 @@ export function useStudioShell({s, ev, presets, patch, setEventStatus, serverIds
           ? '참가자 뷰 · 반응형 검증'
           : '운영 리포트';
 
-  return { router, pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, setConfirmDeleteArmed, confirmDeleteTimerRef, createError, setCreateError, createExpired, setCreateExpired, creating, setCreating, creatingRef, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, goTo, crumb, heading };
+  return { router, pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, setCreateError, createExpired, setCreateExpired, creating, setCreating, creatingRef, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, goTo, crumb, heading };
 }

@@ -2,7 +2,7 @@
 
 import { notFound, useParams } from 'next/navigation';
 import { EditorScreen } from '@fe/pages/editor';
-import { useStudio } from "@fe/app/providers/studio/StudioProvider";
+import { useStudio } from '@fe/app/providers';
 import { UI } from '@fe/shared/config/ui';
 
 export default function EditEventPage() {

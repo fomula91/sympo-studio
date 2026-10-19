@@ -1,5 +1,6 @@
 
 
+// 범용 HTTP transport — 클라이언트 토큰, 타임아웃·외부 signal 병합, 에러 응답 파싱.
 export class ApiClientError extends Error {
   status: number;
   constructor(status: number, message: string) {

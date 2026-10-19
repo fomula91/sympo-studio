@@ -7,7 +7,9 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
-    files: ['src/frontend/**/*.{ts,tsx}'],
+    // app/** is the Next.js composition root outside src/frontend, but it
+    // must still reach FSD slices only through their public API (0015).
+    files: ['src/frontend/**/*.{ts,tsx}', 'app/**/*.{ts,tsx}'],
     plugins: { fsd },
     rules: { 'fsd/boundaries': 'error' },
   },

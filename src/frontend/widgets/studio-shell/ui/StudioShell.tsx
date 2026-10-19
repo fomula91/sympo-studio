@@ -12,7 +12,7 @@ const BULK_ACTIONS = ['공개', '초안', '보관', '복제', '삭제'];
 const PUBLIC_HOST = 'sympo.superjacob.com';
 
 export default function StudioShell({ children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds }: StudioShellProps) {
- const { router, pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, setConfirmDeleteArmed, confirmDeleteTimerRef, createError, setCreateError, createExpired, setCreateExpired, creating, setCreating, creatingRef, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, goTo, crumb, heading } = useStudioShell({children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds});
+ const { router, pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, setCreateError, createExpired, setCreateExpired, creating, setCreating, creatingRef, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, goTo, crumb, heading } = useStudioShell({children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds});
 return (
     <div
       style={{
@@ -342,18 +342,15 @@ return (
                   // 삭제는 영구 손실이라 한 번 더 확인받는다 — 첫 클릭은 확인 상태로만
                   // 바꾸고, 그 상태에서 같은 버튼을 다시 눌러야 실제로 지운다.
                   if (a === '삭제' && !confirmDeleteArmed) {
-                    if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-                    setConfirmDeleteArmed(true);
-                    confirmDeleteTimerRef.current = setTimeout(() => setConfirmDeleteArmed(false), 4000);
+                    armBulkDelete(true);
                     return;
                   }
-                  if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
                   // 선택이 그대로인 채(위 effect가 안 풀어준다) '삭제' 아닌 다른 버튼을
                   // 눌러도 여기서 armed를 꺼야 한다 — 안 그러면 A를 선택해 '삭제'로
                   // 확인 대기를 만든 뒤 같은 선택으로 '공개로 변경' 등을 먼저 눌러도
                   // armed가 true로 남아, 그 뒤 다시 '삭제'를 누르면 확인 없이 바로
                   // 지워진다(`/code-review` 발견과 같은 뿌리, 선택 불변 버전).
-                  if (confirmDeleteArmed) setConfirmDeleteArmed(false);
+                  if (confirmDeleteArmed) disarmBulkDelete();
                   void handleBulkAction(a);
                 }}
                 disabled={bulkPending}
@@ -381,8 +378,7 @@ return (
               // 삭제 확인 대기 중이었다면 선택을 비우는 시점에 함께 풀어 둔다 — 안 그러면
               // 선택 모드를 다시 켜고 몇 초 안에 새로 고른 항목이 이전 armed 상태로
               // 바로 삭제될 수 있다.
-              if (confirmDeleteTimerRef.current) clearTimeout(confirmDeleteTimerRef.current);
-              setConfirmDeleteArmed(false);
+              disarmBulkDelete();
               patch({ sel: [] });
             }}
             style={{

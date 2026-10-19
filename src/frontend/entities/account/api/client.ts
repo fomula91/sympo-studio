@@ -1,5 +1,4 @@
-import { readError } from '@fe/shared/api/studio-error';
-import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
+import { ApiClientError, fetchWithTimeout, readError } from '@fe/shared/api/http';
 import type { AuthUser } from "../model/types";
 
 /**
