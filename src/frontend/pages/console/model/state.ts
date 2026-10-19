@@ -1,13 +1,14 @@
 import type { EventItem } from "@fe/entities/event";
 import type { StatePatch } from '@fe/shared/lib/state/patch';
+import type { Section, SortKey } from "@fe/shared/config/studio-state";
 export interface StudioState {
-  section: 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
+  section: Section;
   events: EventItem[];
   query: string;
   status: string;
-  sort: '최신' | '행사일' | '이름';
+  sort: SortKey;
   bulk: boolean;
   sel: number[];
 }
 export type PatchFn = StatePatch<StudioState>;
-export type SortKey = StudioState['sort'];
+export type { SortKey } from "@fe/shared/config/studio-state";

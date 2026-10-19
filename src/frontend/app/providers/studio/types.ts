@@ -1,11 +1,8 @@
 import type { Preset } from "@fe/entities/theme";
 import type { EventItem } from "@fe/entities/event";
+import type { Device, Section, SortKey } from "@fe/shared/config/studio-state";
 
-export type Section = 'basic' | 'agenda' | 'docs' | 'engage' | 'theme';
-
-export type SortKey = '최신' | '행사일' | '이름';
-
-export type Device = 'mobile' | 'tablet';
+export type { Device, Section, SortKey } from "@fe/shared/config/studio-state";
 
 export interface StudioState {
   viewerOpen: boolean;

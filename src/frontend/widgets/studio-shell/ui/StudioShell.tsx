@@ -2,7 +2,6 @@
 
 import { LogoMark } from "@fe/shared/ui/Logo";
 import ThemeToggle from "@fe/shared/ui/ThemeToggle";
-import { ApiClientError } from "@fe/shared/api/http";
 import { NAV } from "../config/navigation";
 
 import { ghostBtn, MONO, primaryBtn, savedColor, UI } from "@fe/shared/config/ui";
@@ -12,7 +11,7 @@ const BULK_ACTIONS = ['공개', '초안', '보관', '복제', '삭제'];
 const PUBLIC_HOST = 'sympo.superjacob.com';
 
 export default function StudioShell({ children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds }: StudioShellProps) {
- const { router, pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, setCreateError, createExpired, setCreateExpired, creating, setCreating, creatingRef, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, goTo, crumb, heading } = useStudioShell({children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds});
+ const { pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, createExpired, creating, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, handleCreateEvent, goTo, crumb, heading } = useStudioShell({s, ev, presets, patch, setEventStatus, serverIds, createEvent});
 return (
     <div
       style={{
@@ -235,43 +234,7 @@ return (
               <button
                 className="hv-brandpress"
                 disabled={creating}
-                onClick={async () => {
-                  // 가드 없이 연타(또는 더블탭)하면 첫 요청이 아직 안 끝난 사이 두 번째
-                  // 클릭이 createEvent()를 또 부른다 — 게스트는 Date.now() id 충돌,
-                  // 로그인 상태는 POST /api/events 중복 요청으로 서버에 이벤트가 두 개
-                  // 생겨 하나는 고아로 남는다(/code-review 지적). ref를 먼저 본다 — state는
-                  // React가 커밋할 때까지 지연돼 같은 틱 안의 두 번째 클릭을 못 막는다.
-                  if (creatingRef.current) return;
-                  creatingRef.current = true;
-                  setCreating(true);
-                  setCreateError(null);
-                  setCreateExpired(false);
-                  // createEvent()는 로그인 상태에서 POST /api/events가 실패하면 그대로
-                  // throw한다(catch 없이 방치되면 unhandled rejection만 남고 버튼을 눌러도
-                  // 화면엔 아무 일도 없었던 것처럼 보인다 — FE-41). router.push는 이 try
-                  // 밖에서 불러 — 안에 있으면 생성은 성공했는데 이동만 실패한 경우까지
-                  // "생성 실패"로 오탐돼 사용자가 재시도해 중복 생성을 만들 수 있다
-                  // (/code-review 지적).
-                  let id: number;
-                  try {
-                    id = await createEvent();
-                  } catch (e) {
-                    console.error('새 이벤트 생성 실패:', e);
-                    setCreateError(
-                      e instanceof ApiClientError ? e.message : '새 이벤트를 만들지 못했습니다. 다시 시도해주세요.',
-                    );
-                    setCreateExpired(e instanceof ApiClientError && e.status === 401);
-                    creatingRef.current = false;
-                    setCreating(false);
-                    return;
-                  }
-                  // 여기서 creatingRef·setCreating(false)를 풀지 않는다 — router.push는
-                  // 화면 전환을 예약할 뿐 즉시 콘솔을 벗어나지 않아서, 여기서 풀면 그 틈에
-                  // 더블클릭 두 번째 클릭이 또 통과한다. pathname이 실제로 바뀌는
-                  // 시점(위 render 중 state 조정 + pathname effect의 ref 초기화)에 푼다 —
-                  // 그러면 에디터로 이동했다 콘솔로 돌아왔을 때도 "생성 중…"에 안 멈춘다.
-                  router.push(`/events/${id}/edit`);
-                }}
+                onClick={() => void handleCreateEvent()}
                 style={{ ...primaryBtn, opacity: creating ? 0.6 : 1, cursor: creating ? 'not-allowed' : 'pointer' }}
               >
                 {creating ? '생성 중…' : '새 이벤트'}

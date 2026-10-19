@@ -74,4 +74,19 @@ describe('FSD boundaries', () => {
     const [result] = await eslint.lintText(code, { filePath: from('features/example/types.ts') });
     expect(result.messages.filter((message) => message.ruleId === 'fsd/boundaries')).toHaveLength(1);
   });
+  it("checks TSImportEqualsDeclaration: import db = require('...')", async () => {
+    const eslint = new ESLint({ cwd: root });
+    const code = "import db = require('@fe/app/providers/studio/StudioProvider');";
+    const [result] = await eslint.lintText(code, { filePath: from('features/example/requires.ts') });
+    expect(result.messages.filter((message) => message.ruleId === 'fsd/boundaries')).toHaveLength(1);
+  });
+  // 리뷰 발견 — prefix 계산이 ESLint 실행 당시 context.cwd 기준이면, repo 루트가
+  // 아닌 곳(하위 폴더 통합 실행 등)에서 돌릴 때 규칙이 조용히 꺼진다. 플러그인
+  // 파일 자신의 위치로 고정했으니 cwd를 repo 루트가 아닌 곳으로 둬도 그대로 잡혀야 한다.
+  it('stays active when ESLint runs with a non-root cwd', async () => {
+    const eslint = new ESLint({ cwd: path.join(root, 'src') });
+    const code = "import { x } from '@/lib/db';";
+    const [result] = await eslint.lintText(code, { filePath: from('features/example/cwd.ts') });
+    expect(result.messages.filter((message) => message.ruleId === 'fsd/boundaries')).toHaveLength(1);
+  });
 });

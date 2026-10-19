@@ -1,5 +1,12 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { builtinModules } from 'node:module';
+
+// `context.cwd`는 ESLint를 어디서 실행했느냐에 따라 바뀐다 — repo 루트가 아닌
+// 하위 폴더에서 돌리면(예: 에디터 통합, `cd src && eslint ...`) prefix 계산이
+// 전부 틀어져 이 규칙이 조용히 꺼진다(리뷰 발견). 이 플러그인 파일 자신의 위치로
+// 고정 경로를 잡는다 — `scripts/eslint/`에서 두 단계 위가 repo 루트다.
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const layers = ['app', 'pages', 'widgets', 'features', 'entities', 'shared'];
 const serverBuiltins = new Set(builtinModules);
@@ -72,7 +79,7 @@ const rule = {
         context.report({ node, messageId: 'dynamic' });
         return;
       }
-      const reason = boundaryViolation(context.filename, source.value, context.cwd);
+      const reason = boundaryViolation(context.filename, source.value, PROJECT_ROOT);
       if (reason) context.report({ node: source, messageId: 'boundary', data: { reason } });
     }
     return {
@@ -81,6 +88,11 @@ const rule = {
       ExportAllDeclaration: (node) => check(node.source, node),
       ImportExpression: (node) => check(node.source, node),
       TSImportType: (node) => { const source = node.source ?? node.argument ?? node.parameter; check(source?.literal ?? source, node); },
+      // `import db = require('@/lib/db')` — `@typescript-eslint/no-require-imports`만
+      // 이 형태를 잡고 있었다. 그 규칙을 끄면 경계 검사 없이 서버 모듈이 들어온다(리뷰 발견).
+      TSImportEqualsDeclaration: (node) => {
+        if (node.moduleReference.type === 'TSExternalModuleReference') check(node.moduleReference.expression, node);
+      },
       CallExpression: (node) => { if (node.callee.type === 'Identifier' && node.callee.name === 'require') check(node.arguments[0], node); },
     };
   },
