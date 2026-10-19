@@ -2,11 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import FeatureShowcase from '@/components/FeatureShowcase';
 import IntroNav from '@/components/IntroNav';
-import { LogoLockup, LogoMark } from '@/components/Logo';
-import Reveal from '@/components/Reveal';
-import ThemeToggle from '@/components/ThemeToggle';
+import { LogoLockup, LogoMark } from '@fe/shared/ui/Logo';
+import Reveal from '@fe/shared/ui/Reveal';
+import ThemeToggle from '@fe/shared/ui/ThemeToggle';
 import { METRICS } from '@/lib/data';
-import { MONO } from '@/lib/ui';
+import { MONO } from '@fe/shared/config/ui';
 
 export const metadata: Metadata = {
   title: 'SYMPO STUDIO — 소개',

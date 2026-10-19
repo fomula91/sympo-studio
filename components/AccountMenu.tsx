@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useStudio } from '@/components/StudioProvider';
 import { ApiClientError } from '@/lib/api';
-import { MONO, UI } from '@/lib/ui';
+import { MONO, UI } from '@fe/shared/config/ui';
 
 export default function AccountMenu() {
   const { user, authStatus, logout, deleteAccount, serverIds, eventsListLoaded } = useStudio();

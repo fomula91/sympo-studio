@@ -1,6 +1,6 @@
 // 의미색 배지 — 상태(공개/초안/보관)·대비비 통과/미달·리포트 증감을 하나의 톤 체계로 통일한다(FE-13).
 import type { CSSProperties, ReactNode } from 'react';
-import { UI } from '@/lib/ui';
+import { UI } from '@fe/shared/config/ui';
 
 export type BadgeTone = 'success' | 'warning' | 'danger' | 'muted' | 'faint';
 

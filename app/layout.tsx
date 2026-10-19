@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { pretendard } from '@/lib/font';
+import '@fe/shared/styles/tokens.css';
 import './globals.css';
 
 export const metadata: Metadata = {

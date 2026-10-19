@@ -3,7 +3,7 @@
 import Microsite from '@/components/Microsite';
 import { derive, ICONSETS } from '@/lib/theme';
 import type { DocumentInfo, EventItem, Preset } from '@/lib/types';
-import { monoLabel, UI } from '@/lib/ui';
+import { monoLabel, UI } from '@fe/shared/config/ui';
 
 export default function ViewerScreen({ ev, presets }: { ev: EventItem; presets: Preset[] }) {
   const preset = presets.find((p) => p.id === ev.presetId) || presets[0];

@@ -15,6 +15,8 @@
 
 ## 2026-10-19
 
+- **[FE] FE-14 1단계 구현 — shared 추출과 에디터 섹션 분리**: 공용 UI·스타일·온라인 감지와 디자인 토큰을 `src/frontend/shared`로 옮기고 `@fe/*` alias를 추가했다. EditorScreen의 5개 섹션을 분리했고 함수 본문이 원본과 동일함을 AST로 대조했다. build·기존 테스트 135건 통과. 로컬 브라우저에서 기본정보·아젠다·자료·참여·테마 화면 진입을 확인했다. 전체 lint는 응답 지연으로 별도 확인 중이며 로그인 저장·실제 업로드는 아직 검증하지 않았다.
+
 - **[PROJ] FE-14 브랜치 이름과 작업 방식 변경**: 사용자 요청으로 `codex/fe-14-architecture-adr`를 `fe-14-architecture-adr`로 변경했다. 이후 단계도 같은 브랜치에서 단계별 커밋·검증으로 진행하며 별도 단계 브랜치는 만들지 않는다. GitHub가 head 이름 변경으로 #78을 자동 종료해 대체 draft PR로 이어간다.
 
 - **[PROJ] FE-14 0단계 ADR 작성 — Next 라우트·Microsite·Provider·서버 경계와 이동 계획**: PR #74 보완 커밋에서 `codex/fe-14-architecture-adr` 브랜치를 만들어 [[0015-frontend-fsd-boundaries]]를 작성했다. 실제 import를 조사해 루트 app 유지, 중첩 FE 경로, app의 Provider와 props 연결, 프리뷰 공유 widget, 서버 제외·순수 규칙 예외를 명시했다. 과제·요약·진입 링크를 갱신했으며 0단계는 제안/리뷰 대기, 1~4단계는 미착수다. 문서만 변경했고 동작 검증을 새로 수행한 것은 아니다.

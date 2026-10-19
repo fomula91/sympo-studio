@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { MONO, UI } from '@/lib/ui';
+import { MONO, UI } from '@fe/shared/config/ui';
 
 // public/logo-mark.png — 3개 가로 바(아젠다 블록) 마크. 모서리는 이미지 자체에
 // 이미 둥글게+투명 처리돼 있다(scratchpad/process-logo.js 참조).

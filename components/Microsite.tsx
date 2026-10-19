@@ -7,7 +7,7 @@ import SurveyPanel from '@/components/SurveyPanel';
 import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
 import { KV_PATTERNS, type Theme } from '@/lib/theme';
 import type { Density, DocumentInfo, EventInfo, KvPattern, Session } from '@/lib/types';
-import { useOnlineStatus } from '@/lib/useOnlineStatus';
+import { useOnlineStatus } from '@fe/shared/lib/network/useOnlineStatus';
 
 const MONO = 'ui-monospace, monospace';
 

@@ -7,7 +7,7 @@ import Microsite from '@/components/Microsite';
 import { fetchWithTimeout, sendEventLogs } from '@/lib/api';
 import { derive, ICONSETS, PRESETS } from '@/lib/theme';
 import type { Density, DocumentInfo, IconSetId, KvPattern, Mode, Session } from '@/lib/types';
-import { UI } from '@/lib/ui';
+import { UI } from '@fe/shared/config/ui';
 
 interface PublicEvent {
   id: number;

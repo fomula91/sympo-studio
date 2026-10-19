@@ -2,12 +2,12 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import { Badge, type BadgeTone } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { Badge, type BadgeTone } from '@fe/shared/ui/Badge';
+import { EmptyState } from '@fe/shared/ui/EmptyState';
 import { STATUS } from '@/lib/data';
 import type { AuthUser, EventItem, PatchFn, SortKey, StudioState } from '@/lib/types';
 import { eventPhase } from '@/lib/status';
-import { MONO, phasePillStyle, seg, UI } from '@/lib/ui';
+import { MONO, phasePillStyle, seg, UI } from '@fe/shared/config/ui';
 
 const SORTS: SortKey[] = ['최신', '행사일', '이름'];
 // 로그인 라우트(/api/auth/google·/api/auth/callback/google)가 실패를 리다이렉트로

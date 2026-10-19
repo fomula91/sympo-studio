@@ -1,10 +1,10 @@
 'use client';
 
-import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
+import { Badge } from '@fe/shared/ui/Badge';
+import { Card } from '@fe/shared/ui/Card';
 import { METRICS, OPS } from '@/lib/data';
 import type { EventItem } from '@/lib/types';
-import { MONO, UI } from '@/lib/ui';
+import { MONO, UI } from '@fe/shared/config/ui';
 
 export default function ReportScreen({ ev }: { ev: EventItem }) {
   const bars = ev.sessions.map((x, i) => ({

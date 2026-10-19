@@ -3,7 +3,7 @@
 import { notFound, useParams } from 'next/navigation';
 import EditorScreen from '@/components/screens/EditorScreen';
 import { useStudio } from '@/components/StudioProvider';
-import { UI } from '@/lib/ui';
+import { UI } from '@fe/shared/config/ui';
 
 export default function EditEventPage() {
   const { id } = useParams<{ id: string }>();

@@ -3,15 +3,15 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import AccountMenu from '@/components/AccountMenu';
-import { LogoMark } from '@/components/Logo';
+import { LogoMark } from '@fe/shared/ui/Logo';
 import ViewerScreen from '@/components/screens/ViewerScreen';
 import { useStudio } from '@/components/StudioProvider';
-import ThemeToggle from '@/components/ThemeToggle';
+import ThemeToggle from '@fe/shared/ui/ThemeToggle';
 import { ApiClientError } from '@/lib/api';
 import { NAV } from '@/lib/data';
 import { deleteStudioEvent, patchStudioEventStatus } from '@/lib/studio-api';
 import { contrastAllPass } from '@/lib/theme';
-import { ghostBtn, MONO, primaryBtn, savedColor, UI } from '@/lib/ui';
+import { ghostBtn, MONO, primaryBtn, savedColor, UI } from '@fe/shared/config/ui';
 
 // 발행 상태만 일괄로 바꾼다 — '완료'·'공개예정'은 시점이라 사람이 지정할 값이 아니다(BE-23).
 // '삭제'는 상태 전환이 아니라 영구 삭제(DELETE, FK CASCADE로 세션·자료·질문·설문·로그까지

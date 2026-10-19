@@ -10,7 +10,7 @@
 import { notFound, useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { type EventOps, fetchPublicReport, fetchWithTimeout } from '@/lib/api';
-import { MONO, UI } from '@/lib/ui';
+import { MONO, UI } from '@fe/shared/config/ui';
 
 interface ReportEvent {
   id: number;
