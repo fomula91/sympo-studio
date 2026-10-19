@@ -1,10 +1,18 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import fsd from './scripts/eslint/fsd-boundaries.mjs';
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  {
+    // app/** is the Next.js composition root outside src/frontend, but it
+    // must still reach FSD slices only through their public API (0015).
+    files: ['src/frontend/**/*.{ts,tsx}', 'app/**/*.{ts,tsx}'],
+    plugins: { fsd },
+    rules: { 'fsd/boundaries': 'error' },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
@@ -19,6 +27,7 @@ const eslintConfig = defineConfig([
     // 한 번이라도 로컬에서 워커를 띄우면 `npm run lint`가 남의 코드로 64건씩
     // 실패했다 — 공식 검증 입구가 빌드 산출물 때문에 막히면 안 된다.
     ".wrangler/**",
+    ".claude/**",
   ]),
 ]);
 

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
-import { pretendard } from '@/lib/font';
-import './globals.css';
+import { pretendard } from "@fe/app/styles/font";
+import '@fe/shared/styles/tokens.css';
+import '@fe/app/styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'SYMPO STUDIO',
