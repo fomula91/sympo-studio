@@ -71,7 +71,7 @@
 
 **FE-14(FSD 재편)는 단계별로 진행한다**(2026-10-14 범위 재정의) — 묶음 1~4의 구현·병합이
 끝나 기존 선행 조건은 해소됐다. 0단계에서 목표 구조·이동 계획·예외를 ADR로 확정한 뒤,
-shared·대형 파일 분리 → entities → features → widgets/pages 순서로 별도 PR을 진행한다.
+shared·대형 파일 분리 → entities → features → widgets/pages 순서로 단계별 커밋을 진행한다.
 코드 변경 단계마다 lint·build와 화면 회귀를 검증하고, 마지막 단계에서 실제 구조와 ADR의
 일치 및 import 규칙 위반 0건을 확인한다. 상세는 [[Next-Tasks]]의 FE-14.
 
