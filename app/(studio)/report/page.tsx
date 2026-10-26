@@ -1,7 +1,7 @@
 'use client';
 
-import ReportScreen from '@/components/screens/ReportScreen';
-import { useStudio } from '@/components/StudioProvider';
+import { ReportScreen } from '@fe/pages/report';
+import { useStudio } from '@fe/app/providers';
 
 export default function ReportPage() {
   const { ev } = useStudio();

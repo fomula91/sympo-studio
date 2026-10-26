@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server';
-import { autoSlug } from '@/lib/data';
+import { autoSlug } from '@/lib/event-slug';
 import { BadRequest, getDb, json, withRoute } from '@/lib/db';
 import { requireUser } from '@/lib/auth';
 import { DEMO_SLUG } from '@/lib/seed';
