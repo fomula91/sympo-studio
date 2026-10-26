@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiClientError, fetchWithTimeout } from './api';
+import { ApiClientError, fetchWithTimeout } from '@fe/shared/api/http';
 
 /**
  * FE-33 — `fetchWithTimeout`이 호출자의 `signal`을 더 이상 덮어쓰지 않고 자기
