@@ -84,7 +84,7 @@ SessionStart 훅(`~/.claude/plugins/.../hooks/lib.sh`의 `extract_open_tasks`)�
 
 | 과제의 성격 | 섹션 |
 | --- | --- |
-| `components/`·`app/`의 화면·상호작용·스타일, 클라이언트 전용 라이브러리(PDF.js, pdf-lib, culori) | FE |
+| `src/frontend/`의 화면·상호작용·스타일(FSD 레이어), 클라이언트 전용 라이브러리(PDF.js, pdf-lib, culori) | FE |
 | D1 스키마·마이그레이션, API 라우트, R2, Cron, rate limit, 배포·바인딩 | BE |
 | 양쪽을 가로지름 | **쪼갠다** — 아래 규칙 |
 
