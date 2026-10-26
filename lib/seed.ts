@@ -1,4 +1,5 @@
-import { autoSlug, SESSIONS0 } from './data';
+import { autoSlug } from '@/lib/event-slug';
+import { SESSIONS0 } from '@/lib/demo-sessions';
 
 /**
  * 데모 데이터를 시드 상태로 되돌린다. 매일 자정(KST) Cron이 호출한다(BE-3).

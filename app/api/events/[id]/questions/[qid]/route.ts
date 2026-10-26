@@ -18,9 +18,8 @@ const STATUSES = ['published', 'hidden'];
  * 질문을 복구할 방법이 없으면 모더레이션 자체를 주저하게 된다.
  *
  * **운영자용이라 공개 상태 게이트(BE-16)를 걸지 않는다** — 초안·보관 상태의
- * 행사도 정리할 수 있어야 한다. 다만 **지금은 인가 검사가 없어 누구나 호출할 수
- * 있다**(BE-13에서 소유권 검사를 얹는다). 그때까지는 이 엔드포인트가 열려 있다는
- * 것을 알고 쓴다.
+ * 행사도 정리할 수 있어야 한다. BE-13의 소유권 검사(assertCanEdit)를 거치며
+ * 소유자가 있는 행사는 본인만, 무소유 서버 데모는 기존 체험 정책대로 허용한다.
  */
 export const PATCH = withRoute(async (request: NextRequest, ctx: QuestionCtx) => {
   const db = await getDb();
