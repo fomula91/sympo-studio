@@ -1,4 +1,5 @@
 import { BadRequest } from './db';
+import { SESSION_KINDS, SESSION_TITLE_MAX, SESSION_SPEAKER_MAX } from './agenda-limits';
 
 // 아젠다(sessions)·자료(documents) 쓰기의 입력 검증 (BE-14).
 //
@@ -13,13 +14,8 @@ import { BadRequest } from './db';
 export const MAX_SESSIONS = 60;
 export const MAX_DOCUMENTS = 60;
 
-const TITLE_MAX = 120;
-const SPEAKER_MAX = 80;
 const DOC_NAME_MAX = 160;
 const TAG_MAX = 40;
-
-/** 0001_init.sql의 sessions.kind 주석과 같은 목록. 화이트리스트 밖은 400. */
-const SESSION_KINDS = ['OPENING', 'LECTURE', 'PANEL', 'QA', 'CASE', 'CLOSING'];
 
 /**
  * documents.status — 'ready'는 파일이 있는 상태다(BE-6).
@@ -121,8 +117,8 @@ export function validateSessionsBody(raw: unknown): SessionInput[] {
     return {
       id: rowId(o.id, `sessions[${i}].id`),
       time,
-      title: text(o.title, `sessions[${i}].title`, TITLE_MAX, true)!,
-      speaker: text(o.speaker, `sessions[${i}].speaker`, SPEAKER_MAX, false),
+      title: text(o.title, `sessions[${i}].title`, SESSION_TITLE_MAX, true)!,
+      speaker: text(o.speaker, `sessions[${i}].speaker`, SESSION_SPEAKER_MAX, false),
       kind,
     };
   });

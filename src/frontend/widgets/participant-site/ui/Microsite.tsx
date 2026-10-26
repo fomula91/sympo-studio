@@ -1,0 +1,738 @@
+'use client';
+
+import dynamic from 'next/dynamic';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { QaPanel } from '@fe/features/ask-question';
+import { SurveyPanel } from '@fe/features/answer-survey';
+import { fetchWithTimeout } from "@fe/shared/api/http";
+import { sendEventLogs } from "@fe/entities/event";
+import { KV_PATTERNS, type Theme } from "@fe/shared/lib/theme/palette";
+import type { Density, KvPattern } from "@fe/shared/lib/theme/options";
+import type { DocumentInfo, EventInfo, Session } from "@fe/entities/event";
+import { useOnlineStatus } from "@fe/shared/lib/network/useOnlineStatus";
+
+const MONO = 'ui-monospace, monospace';
+
+// PDF.js 번들(무겁다)이 초기 로딩에 안 실리도록 뷰어를 여는 시점에만 가져온다(FE-6).
+const PdfViewer = dynamic(() => import("@fe/features/view-document/client"), { ssr: false });
+
+interface MicrositeProps {
+  theme: Theme;
+  sessions: Session[];
+  icons: string[];
+  event: EventInfo;
+  /** 참가자 공개 페이지(`/[slug]`)에서만 넘긴다 — 실제 D1 이벤트에 Q&A GET·POST를 보낼 때 쓰는 id. */
+  eventId?: number;
+  /** 스튜디오 에디터·뷰어 미리보기에서 true — Q&A 입력·폴링을 렌더하지 않아 목업 편집 중에 실제 행사 데이터를 건드리지 않는다. */
+  preview?: boolean;
+  /** 참가자 공개 페이지에서만 넘긴다 — 없으면(스튜디오 미리보기) 대표 예시 2건을 보여준다. */
+  documents?: DocumentInfo[];
+  /** 참가자 공개 페이지에서만 넘긴다 — 자료를 열기 직전 서명 URL을 새로 받아오는 데 쓴다(서명은 10분 TTL). */
+  slug?: string;
+  kv?: string;
+  kvPattern?: KvPattern;
+  density?: Density;
+  wide?: boolean;
+}
+
+// 참가자 공개 페이지가 documents를 안 넘길 때(스튜디오 미리보기)만 쓰는 대표 예시.
+// url은 가상 강의자료(FE-6)를 가리켜 미리보기에서도 뷰어를 실제로 열어볼 수 있다.
+const DEMO_DOCUMENTS: DocumentInfo[] = [
+  { id: -1, name: 'Early Intervention Strategies with ATELOVAN', status: 'ready', pages: 24, url: '/demo/sample-lecture.pdf' },
+  { id: -2, name: 'Long-Term Adherence: RWE Review', status: 'ready', pages: 18, url: '/demo/sample-lecture.pdf' },
+];
+
+export default function Microsite({
+  theme: t,
+  sessions,
+  icons,
+  event: ev,
+  eventId,
+  preview = false,
+  documents,
+  slug,
+  kv = '',
+  kvPattern = 'stripe',
+  density = '기본',
+  wide = false,
+}: MicrositeProps) {
+  const online = useOnlineStatus();
+  // ViewerScreen이 모바일·태블릿 미리보기로 이 컴포넌트를 두 개 동시에 그린다 — 고정
+  // id(tab-agenda 등)를 쓰면 한 페이지에 같은 id가 두 번 생겨 aria-controls/
+  // aria-labelledby 짝짓기가 첫 번째 것으로만 묶인다(팀원 코드리뷰, PR #66). 인스턴스별
+  // 접두사로 분리한다 — 참가자 페이지(/[slug])는 하나만 그리므로 원래도 문제없었다.
+  const uid = useId();
+  // 탭바가 실제로 전환되게 한다(FE-17) — 예전엔 onClick이 아예 없어 첫 탭만 항상
+  // "활성" 스타일이고 아래엔 네 섹션이 한 페이지에 죽 이어져 있었다. 꺼진 engage
+  // 토글의 탭은 목록 자체에서 뺀다 — 눌러도 아무 것도 없는 탭을 보여주지 않는다.
+  const TABS = [
+    { key: 'agenda' as const, label: '아젠다', glyphIndex: 0 },
+    { key: 'docs' as const, label: '자료', glyphIndex: 1 },
+    ...(ev.engage.qa !== false ? [{ key: 'qa' as const, label: 'Q&A', glyphIndex: 2 }] : []),
+    ...(ev.engage.survey !== false ? [{ key: 'survey' as const, label: '설문', glyphIndex: 3 }] : []),
+  ];
+  // 마운트 시 URL 해시를 한 번 읽어 그 탭으로 연다(팀원 코드리뷰, PR #66) — 안 그러면
+  // "자료 탭 바로가기" 같은 링크를 받아도 항상 아젠다로 열린다. 참가자 공개 페이지
+  // (app/[slug]/page.tsx)는 데이터 fetch가 끝나기 전엔 이 컴포넌트를 렌더하지 않아
+  // Microsite는 서버에서 그려지는 일이 없다 — useState 초기값에서 window를 바로 읽어도
+  // 하이드레이션 불일치가 생기지 않는다(effect+setState로 돌리면 이 저장소 lint의
+  // react-hooks/set-state-in-effect가 걸린다).
+  const [requestedTab, setActiveTab] = useState<(typeof TABS)[number]['key']>(() => {
+    if (preview || !slug) return 'agenda';
+    const hash = window.location.hash.slice(1);
+    return TABS.some((tab) => tab.key === hash) ? (hash as (typeof TABS)[number]['key']) : 'agenda';
+  });
+  // 스튜디오 라이브 프리뷰에서는 이 컴포넌트가 다시 마운트되지 않고 engage 토글이
+  // 바뀔 때마다 새 props로 리렌더된다(EditorScreen.tsx가 Microsite에 key를 안 준다) —
+  // Q&A 탭을 보던 중 그 토글을 끄면 TABS에서 'qa'가 빠지는데 activeTab을 그대로
+  // 'qa'로 두면 탭바 활성 표시도, 콘텐츠도 전부 사라져 화면이 통째로 빈다(코드
+  // 리뷰 발견). state를 직접 쓰지 않고 매 렌더 TABS에 있는지 확인해 파생시킨다 —
+  // 이펙트로 되돌리면 react-hooks/set-state-in-effect가 걸린다.
+  const activeTab = TABS.some((tab) => tab.key === requestedTab) ? requestedTab : TABS[0].key;
+  const [qaOpen, setQaOpen] = useState(false);
+  const [surveyOpen, setSurveyOpen] = useState(false);
+  const [openDoc, setOpenDoc] = useState<DocumentInfo | null>(null);
+  const [loadingDocId, setLoadingDocId] = useState<number | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+  const docs = documents ?? DEMO_DOCUMENTS;
+  // FE-32 — openDocument 호출마다 고유한 토큰을 매겨 "가장 최근 호출의 응답인가"를 판정한다.
+  // doc.id로 판정하면(이전 시도) 같은 문서를 A→B→A로 다시 열 때 낡은 A 요청과 새 A 요청을
+  // 구분 못 해, 낡은 쪽이 먼저 응답하면 그게 "최신"으로 오인되고 진짜 최신 응답은 반대로
+  // "낡음"으로 버려질 수 있었다(`/code-review` 발견). 호출마다 증가하는 카운터면 이 문제가
+  // 없다 — 항상 가장 마지막 호출의 토큰만 유효하다.
+  const requestIdRef = useRef(0);
+  // FE-33 — 낡은 요청을 "무시"만 하지 않고 실제로 끊는다. requestIdRef의 "이미 낡은
+  // 응답" 판정은 화면이 잘못 갱신되는 것만 막을 뿐, 응답 자체는 내부 타임아웃(8초)이
+  // 찰 때까지 그대로 네트워크를 붙잡고 있었다(`/code-review` 발견, FE-32 리뷰 과정).
+  const docAbortRef = useRef<AbortController | null>(null);
+  // 재클릭·탭 이동 말고 화면을 완전히 떠나는 경우(참가자가 탭을 닫거나 다른 경로로
+  // 이동)도 같은 문제다 — 언마운트 시에도 끊는다(`/code-review` 발견).
+  useEffect(() => {
+    return () => docAbortRef.current?.abort();
+  }, []);
+
+  async function openDocument(doc: DocumentInfo) {
+    if (doc.status === 'pending' || !doc.url) return;
+    // 참가자 공개 페이지의 서명 URL은 10분 TTL이라(lib/r2.ts) 아젠다를 한참 훑다가 열면
+    // 처음 받은 url이 이미 만료됐을 수 있다 — 열기 직전에 새로 받는다.
+    if (preview || !slug) {
+      setOpenDoc(doc);
+      return;
+    }
+    // 같은 문서 재클릭이든 다른 문서든, 새 요청을 시작하는 순간 이전 요청은 더 이상
+    // 필요 없다 — 끊는다.
+    docAbortRef.current?.abort();
+    const controller = new AbortController();
+    docAbortRef.current = controller;
+    const requestId = ++requestIdRef.current;
+    setDocError(null);
+    setLoadingDocId(doc.id);
+    try {
+      const res = await fetchWithTimeout(`/api/public/${slug}`, { cache: 'no-store', signal: controller.signal });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as { documents: { id: number; url: string | null }[] };
+      const fresh = data.documents.find((d) => d.id === doc.id)?.url;
+      if (!fresh) throw new Error();
+      // 응답을 기다리는 사이 다른 openDocument 호출이 있었다면(같은 문서 재클릭이든 다른
+      // 문서든) 이 응답은 이미 낡은 것이다 — 지금 화면을 덮어쓰지 않는다.
+      if (requestIdRef.current !== requestId) return;
+      setOpenDoc({ ...doc, url: fresh });
+      if (eventId != null) sendEventLogs(eventId, [{ kind: 'doc_view', documentId: doc.id }]);
+    } catch (e) {
+      // 새 요청·탭 이동으로 의도적으로 끊은 것 — 에러가 아니다(위에서 이미 새 요청이
+      // 이 자리를 넘겨받았거나 화면을 벗어났다).
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (requestIdRef.current === requestId) setDocError('자료를 불러오지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      if (requestIdRef.current === requestId) setLoadingDocId(null);
+    }
+  }
+
+  // 탭 전환 자체를 여기서 다룬다 — 자료 탭을 벗어날 때 대기 중인 서명 URL 요청을
+  // 무효화한다(코드 리뷰 발견). 안 그러면 자료를 누르고 응답을 기다리는 사이 다른
+  // 탭으로 넘어가도 요청은 계속 유효해서, 뒤늦게 도착한 응답이 지금 보고 있는(자료가
+  // 아닌) 탭 위에 PDF 뷰어를 불쑥 띄운다 — requestIdRef를 올리면 위 openDocument의
+  // "이미 낡은 응답" 판정(FE-32)에 그대로 걸려 무시된다. docAbortRef.abort()는 그
+  // 요청을 실제로 끊어 낡은 응답이 도착하는 것 자체를 막는다(FE-33).
+  function changeTab(key: (typeof TABS)[number]['key']) {
+    setActiveTab(key);
+    if (key !== 'docs') {
+      requestIdRef.current++;
+      docAbortRef.current?.abort();
+      setLoadingDocId(null);
+    }
+    // "자료 탭 바로가기" 같은 링크를 보낼 수 있게 URL 해시에도 반영한다(팀원
+    // 코드리뷰, PR #66) — 참가자 공개 페이지에서만 한다. 스튜디오 미리보기는
+    // 모바일·태블릿 두 인스턴스가 동시에 떠서 location.hash를 서로 덮어쓴다.
+    // pushState가 아니라 replaceState인 이유 — pushState였다면 탭 전환마다
+    // 히스토리가 쌓여 뒤로가기가 참가자 페이지를 떠나지 않고 탭만 오가게 된다.
+    if (!preview && slug) window.history.replaceState(null, '', `#${key}`);
+  }
+  const agendaRef = useRef<HTMLOListElement>(null);
+  // 세션 목록이 새 배열로 갱신돼도(예: 오프라인 복구 재조회) 아래 effect가 다시 도는데,
+  // seen을 effect 안에 두면 그때마다 초기화돼 이미 본 세션을 다시 화면에 노출된 것으로 오인해
+  // session_view를 중복 전송한다 — ref로 렌더 사이에 유지한다.
+  const seenSessionsRef = useRef<Set<number>>(new Set());
+
+  // 아젠다 카드가 화면에 노출될 때 session_view를 배치로 보낸다(FE-20) — 스튜디오 미리보기(preview)에서는 보내지 않는다.
+  // 값은 이 화면에서만 검증된 선택이다 — FE-6·FE-4가 같은 패턴으로 doc_view·survey_complete를 추가할 때
+  // 그대로 맞출지 다르게 갈지 판단하고 넘어갈 것.
+  useEffect(() => {
+    const SESSION_VIEW_DEBOUNCE_MS = 1500;
+    const SESSION_VIEW_THRESHOLD = 0.5;
+    if (preview || eventId == null) return;
+    const container = agendaRef.current;
+    if (!container) return;
+    const seen = seenSessionsRef.current;
+    let pending: number[] = [];
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      const ids = pending;
+      pending = [];
+      if (ids.length === 0) return;
+      sendEventLogs(eventId, ids.map((sessionId) => ({ kind: 'session_view' as const, sessionId }))).then((ok) => {
+        // 실패분은 seen에서 빼서, sessions 재조회로 effect가 다시 돌 때(FE-9 재연결) 다시 관찰되게 한다(FE-21).
+        if (!ok) for (const id of ids) seen.delete(id);
+      });
+    };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const id = Number((entry.target as HTMLElement).dataset.sessionId);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          pending.push(id);
+          observer.unobserve(entry.target);
+        }
+        if (pending.length > 0 && !timer) timer = setTimeout(flush, SESSION_VIEW_DEBOUNCE_MS);
+      },
+      { threshold: SESSION_VIEW_THRESHOLD },
+    );
+    // 이미 seen인 요소는 다시 관찰하지 않는다 — sessions 참조가 바뀌어 effect가 재실행돼도
+    // 화면에 그대로 떠 있는 항목을 또 감지해 옵저버에 올리지 않게.
+    container
+      .querySelectorAll<HTMLElement>('[data-session-id]')
+      .forEach((el) => {
+        if (!seen.has(Number(el.dataset.sessionId))) observer.observe(el);
+      });
+    return () => {
+      observer.disconnect();
+      if (timer) clearTimeout(timer);
+      // 디바운스 중 effect가 재실행되면(예: sessions 재조회) seen에는 이미 기록됐지만
+      // 아직 전송 안 된 pending이 남는다 — 유실 없이 지금 바로 흘려보낸다.
+      if (pending.length > 0) flush();
+    };
+  }, [eventId, preview, sessions]);
+  const gap = density === '컴팩트' ? 6 : density === '여유' ? 14 : 9;
+  const pad = density === '컴팩트' ? 11 : density === '여유' ? 18 : 14;
+
+  // Q&A·설문 탭 둘 다 오프라인이면 같은 안내를 보여준다 — 한 곳만 계산해 재사용한다
+  // (코드 리뷰 발견 — 예전엔 두 자리에 그대로 복붙돼 있었다).
+  const offlineBanner =
+    !preview && !online ? (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: t.muted, marginBottom: 10 }}>
+        <div style={{ width: 6, height: 6, borderRadius: 99, background: t.muted, flex: '0 0 6px' }} />
+        오프라인 상태 — 연결되면 다시 시도하세요
+      </div>
+    ) : null;
+
+  const bg = kv ? `url("${kv}") center/cover` : KV_PATTERNS[kvPattern](t);
+  const heroFg = `oklch(0.985 0.006 ${t.h})`;
+
+  const sectionLabel: CSSProperties = {
+    fontFamily: MONO,
+    fontSize: 10,
+    letterSpacing: '0.16em',
+    color: t.muted,
+    margin: '0 0 11px',
+    textTransform: 'uppercase',
+  };
+
+  const numberIcons = icons[0].length > 1;
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        overflow: 'auto',
+        background: t.bg,
+        color: t.ink,
+        fontFamily: "var(--font-pretendard), 'Helvetica Neue', Helvetica, sans-serif",
+        letterSpacing: '-0.01em',
+      }}
+    >
+      <div style={{ position: 'relative', height: wide ? 244 : 210, background: bg, overflow: 'hidden' }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `linear-gradient(to bottom, ${
+              t.mode === 'dark'
+                ? 'oklch(0 0 0 / 0.28), oklch(0 0 0 / 0.7)'
+                : 'oklch(0 0 0 / 0.18), oklch(0 0 0 / 0.58)'
+            })`,
+          }}
+        />
+        <div
+          style={{
+            position: 'relative',
+            padding: '22px 20px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 7,
+                background: heroFg,
+                color: `oklch(0.26 0.02 ${t.h})`,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              S
+            </div>
+            <div
+              style={{
+                fontFamily: MONO,
+                fontSize: 10,
+                letterSpacing: '0.16em',
+                color: heroFg,
+                opacity: 0.92,
+                textTransform: 'uppercase',
+              }}
+            >
+              {ev.brandLabel || 'SYMPO STUDIO'}
+            </div>
+          </div>
+          <div>
+            {/* FE-46 — 값이 있을 때만 렌더한다. 전에는 빈 문자열이어도 이 div 자체는
+                그대로 남아 marginBottom만큼 제목 위에 빈 여백이 생겼다(실측으로 발견). */}
+            {ev.date ? (
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 11.5,
+                  letterSpacing: '0.1em',
+                  color: heroFg,
+                  opacity: 0.86,
+                  marginBottom: 7,
+                }}
+              >
+                {ev.date.replace(/-/g, '. ')}
+              </div>
+            ) : null}
+            {/* title은 brand와 함께 생성 시 필수이고 서버는 PATCH로 비우는 것도 거절하지만
+                (BE-37), 게스트 로컬 이벤트는 서버 검증 자체를 안 거치고 서버 이벤트도 에디터
+                프리뷰엔 저장 실패 전의 빈 값이 그대로 보인다 — 화면에서 빈 값을 만날 수 있다.
+                venue·host와 같은 이유로 데모 값("MERIDIAN 심포지엄") 폴백을 걷어냈다(PR #67
+                리뷰에서 발견). */}
+            {ev.title.trim() ? (
+              <div
+                style={{
+                  fontSize: wide ? 30 : 25,
+                  fontWeight: 750,
+                  letterSpacing: '-0.035em',
+                  lineHeight: 1.2,
+                  color: heroFg,
+                  textWrap: 'pretty',
+                  marginBottom: 8,
+                }}
+              >
+                {ev.title}
+              </div>
+            ) : null}
+            {/* venue·host는 생성 시 필수가 아니다(POST /api/events) — 비워 둔 채 공개하면
+                이 자리가 데모 목업 값("아르떼 호텔 서울"·"좌장 서정우")을 실제 값인 것처럼
+                보여줬다. 실제로 아무도 안 적었는데 적은 것처럼 보이는 문제라, 빈 값은
+                자리 자체를 안 보여준다(둘 다 비었으면 이 줄 자체가 빈 채로 렌더된다). */}
+            <div style={{ fontSize: 12.5, color: heroFg, opacity: 0.88 }}>
+              {[ev.venue, ev.host].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="참가자 화면 섹션"
+        onKeyDown={(e) => {
+          // WAI-ARIA 탭 패턴 권장대로 Home/End로 첫·마지막 탭 이동도 지원한다
+          // (팀원 코드리뷰, PR #66 — 화살표만으로도 쓰는 데 지장은 없어 선택
+          // 사항이었지만 넘기지 않고 바로 추가했다).
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+          e.preventDefault();
+          const idx = TABS.findIndex((tab) => tab.key === activeTab);
+          const next =
+            e.key === 'Home'
+              ? TABS[0]
+              : e.key === 'End'
+                ? TABS[TABS.length - 1]
+                : TABS[(idx + (e.key === 'ArrowRight' ? 1 : -1) + TABS.length) % TABS.length];
+          changeTab(next.key);
+          // 포커스도 같이 옮겨야 화살표를 계속 눌러 다음 탭으로 이어갈 수 있다 —
+          // activeTab만 바꾸면 포커스는 이전 탭 버튼에 그대로 남는다.
+          // id가 아니라 data 속성으로 찾는다 — useId()가 만드는 id는 콜론(:)을
+          // 포함해 CSS id 선택자에 그대로 못 쓴다.
+          (e.currentTarget.querySelector(`[data-tab-key="${next.key}"]`) as HTMLElement | null)?.focus();
+        }}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${TABS.length}, 1fr)`,
+          background: t.surface,
+          borderBottom: `1px solid ${t.line}`,
+          position: 'sticky',
+          top: 0,
+          zIndex: 2,
+        }}
+      >
+        {TABS.map((tab) => {
+          const on = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              id={`${uid}-tab-${tab.key}`}
+              data-tab-key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              aria-controls={`${uid}-panel-${tab.key}`}
+              tabIndex={on ? 0 : -1}
+              onClick={() => changeTab(tab.key)}
+              style={{
+                height: 60,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                border: 'none',
+                background: 'transparent',
+                fontFamily: 'inherit',
+                color: on ? t.brand : t.muted,
+                borderBottom: `3px solid ${on ? t.brand : 'transparent'}`,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: numberIcons ? 12 : 16,
+                  lineHeight: 1,
+                  fontFamily: numberIcons ? MONO : 'inherit',
+                  fontWeight: 700,
+                }}
+              >
+                {icons[tab.glyphIndex]}
+              </div>
+              <div style={{ fontSize: 11.5, fontWeight: 650, letterSpacing: '-0.01em' }}>{tab.label}</div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          padding: wide ? '22px 28px 32px' : '18px 16px 28px',
+          maxWidth: wide ? 760 : 'none',
+          margin: '0 auto',
+        }}
+      >
+        <div
+          role="tabpanel"
+          id={`${uid}-panel-agenda`}
+          aria-labelledby={`${uid}-tab-agenda`}
+          style={{ display: activeTab === 'agenda' ? undefined : 'none' }}
+        >
+        <div style={sectionLabel}>아젠다</div>
+        <ol
+          ref={agendaRef}
+          style={{
+            listStyle: 'none',
+            margin: '0 0 24px',
+            padding: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap,
+          }}
+        >
+          {sessions.map((s) => (
+            <li
+              key={s.id}
+              data-session-id={s.id}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 12,
+                background: t.surface,
+                border: `1px solid ${t.line}`,
+                borderRadius: 13,
+                padding: `${pad}px 13px`,
+              }}
+            >
+              <div
+                style={{
+                  width: 46,
+                  flex: '0 0 46px',
+                  fontFamily: MONO,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  letterSpacing: '-0.03em',
+                  color: t.brand,
+                  paddingTop: 1,
+                }}
+              >
+                {s.time}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 650,
+                    lineHeight: 1.4,
+                    letterSpacing: '-0.02em',
+                    color: t.ink,
+                    textWrap: 'pretty',
+                  }}
+                >
+                  {s.title}
+                </div>
+                <div style={{ fontSize: 12, color: t.muted, marginTop: 4, lineHeight: 1.45 }}>{s.speaker}</div>
+              </div>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  color: t.muted,
+                  background: t.soft,
+                  padding: '4px 6px',
+                  borderRadius: 5,
+                  flex: '0 0 auto',
+                }}
+              >
+                {s.kind}
+              </div>
+            </li>
+          ))}
+        </ol>
+        </div>
+
+        <div
+          role="tabpanel"
+          id={`${uid}-panel-docs`}
+          aria-labelledby={`${uid}-tab-docs`}
+          style={{ display: activeTab === 'docs' ? undefined : 'none' }}
+        >
+        <div style={sectionLabel}>자료</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+          {docs.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: t.muted }}>등록된 자료가 없습니다.</div>
+          ) : (
+            docs.map((f) => {
+              const pending = f.status === 'pending';
+              // status가 pending을 벗어났어도 파일(url)이 없는 자료는 열 수 없다 — pending과
+              // 똑같이 비활성으로 그려야 "활성화된 것처럼 보이는데 눌러도 반응이 없는" 상태를 피한다.
+              const unavailable = pending || !f.url;
+              const loading = loadingDocId === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  disabled={unavailable}
+                  onClick={() => openDocument(f)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    width: '100%',
+                    textAlign: 'left',
+                    appearance: 'none',
+                    background: t.surface,
+                    border: `1px solid ${t.line}`,
+                    borderRadius: 13,
+                    padding: '12px 13px',
+                    cursor: unavailable ? 'not-allowed' : 'pointer',
+                    opacity: unavailable ? 0.6 : loading ? 0.8 : 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 34,
+                      height: 40,
+                      flex: '0 0 34px',
+                      borderRadius: 7,
+                      background: t.soft,
+                      color: t.brand,
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontFamily: MONO,
+                      fontSize: 8,
+                      fontWeight: 800,
+                    }}
+                  >
+                    PDF
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 650,
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.35,
+                        color: t.ink,
+                      }}
+                    >
+                      {f.name}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: t.muted, marginTop: 3 }}>
+                      {unavailable ? '준비 중' : `${f.pages ?? '?'}p · 앱 내 열람`}
+                    </div>
+                  </div>
+                  <div style={{ color: t.muted, fontSize: 14 }}>{loading ? '…' : '→'}</div>
+                </button>
+              );
+            })
+          )}
+          {docError ? (
+            <div style={{ fontSize: 12, color: t.muted }}>{docError}</div>
+          ) : null}
+        </div>
+        </div>
+
+        {ev.engage.qa !== false ? (
+        <div
+          role="tabpanel"
+          id={`${uid}-panel-qa`}
+          aria-labelledby={`${uid}-tab-qa`}
+          style={{ display: activeTab === 'qa' ? undefined : 'none' }}
+        >
+        {offlineBanner}
+        {(preview ? (
+            <div
+              aria-disabled
+              style={{
+                height: 54,
+                borderRadius: 14,
+                background: 'transparent',
+                border: `1px solid ${t.line}`,
+                color: t.muted,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                marginBottom: 10,
+                cursor: 'not-allowed',
+              }}
+            >
+              질문 남기기 (미리보기 — 참가자 페이지에서만 동작)
+            </div>
+          ) : qaOpen && eventId != null ? (
+            <QaPanel theme={t} online={online} eventId={eventId} active={activeTab === 'qa'} />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setQaOpen(true)}
+              disabled={!online}
+              style={{
+                width: '100%',
+                height: 54,
+                borderRadius: 14,
+                border: 'none',
+                background: t.brand,
+                color: t.onBrand,
+                fontFamily: 'inherit',
+                fontSize: 14.5,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                cursor: online ? 'pointer' : 'not-allowed',
+                opacity: online ? 1 : 0.45,
+                marginBottom: 10,
+              }}
+            >
+              질문 남기기
+            </button>
+          ))}
+        </div>
+        ) : null}
+        {ev.engage.survey !== false ? (
+        <div
+          role="tabpanel"
+          id={`${uid}-panel-survey`}
+          aria-labelledby={`${uid}-tab-survey`}
+          style={{ display: activeTab === 'survey' ? undefined : 'none' }}
+        >
+        {offlineBanner}
+        {(preview ? (
+            <div
+              aria-disabled
+              style={{
+                height: 54,
+                borderRadius: 14,
+                background: 'transparent',
+                border: `1px solid ${t.line}`,
+                color: t.muted,
+                display: 'grid',
+                placeItems: 'center',
+                fontSize: 13,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                cursor: 'not-allowed',
+              }}
+            >
+              설문 참여 (미리보기 — 참가자 페이지에서만 동작)
+            </div>
+          ) : surveyOpen && eventId != null ? (
+            <SurveyPanel
+              theme={t}
+              online={online}
+              eventId={eventId}
+              sessions={sessions}
+              eventTitle={ev.title}
+              venue={ev.venue}
+              date={ev.date}
+              certEnabled={ev.engage.cert}
+              onComplete={() => sendEventLogs(eventId, [{ kind: 'survey_complete' }])}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSurveyOpen(true)}
+              disabled={!online}
+              style={{
+                width: '100%',
+                height: 54,
+                borderRadius: 14,
+                border: `1px solid ${t.line}`,
+                background: 'transparent',
+                color: t.ink,
+                fontFamily: 'inherit',
+                fontSize: 14,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
+                cursor: online ? 'pointer' : 'not-allowed',
+                opacity: online ? 1 : 0.45,
+              }}
+            >
+              설문 참여 · 2분
+            </button>
+          ))}
+        </div>
+        ) : null}
+      </div>
+      {openDoc && openDoc.url ? (
+        <PdfViewer theme={t} url={openDoc.url} title={openDoc.name} onClose={() => setOpenDoc(null)} />
+      ) : null}
+    </div>
+  );
+}
