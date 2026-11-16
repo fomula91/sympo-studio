@@ -1,12 +1,11 @@
 'use client';
 
-import StudioShell from '@/components/StudioShell';
-import { StudioProvider } from '@/components/StudioProvider';
+import { StudioFrame, StudioProvider } from '@fe/app/providers';
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
     <StudioProvider>
-      <StudioShell>{children}</StudioShell>
+      <StudioFrame>{children}</StudioFrame>
     </StudioProvider>
   );
 }
