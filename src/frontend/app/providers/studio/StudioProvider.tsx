@@ -11,6 +11,7 @@ import { useDocumentUpload } from './useDocumentUpload';
 import { useParams } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClientError } from "@fe/shared/api/http";
+import { requestFailureMessage } from '@fe/shared/api/failure-message';
 import { autoSlug } from "@fe/entities/event";
 import { defaultEventDetail, uniqueSlug } from "@fe/entities/event";
 import { createStudioEvent, detailPatchToBody, fetchStudioEvent, fetchStudioEvents, patchStudioEventStatus } from "@fe/entities/event";
@@ -41,6 +42,8 @@ interface StudioContextValue {
   // 응답이 아직 안 왔다는 뜻 — 이 창에는 로그인/게스트 어느 쪽 UI도 단정해 그리지 않는다.
   user: AuthUser | null;
   authStatus: 'checking' | 'ready';
+  authError: string | null;
+  eventsListError: string | null;
   logout: () => Promise<void>;
   // FE-48 — 계정과 소유 데이터를 서버에서 영구히 지운 뒤 게스트로 되돌린다(로그아웃과
   // 같은 로컬 정리). 실패(401 등)는 그대로 던진다 — 호출자가 사유를 보여준다.
@@ -97,6 +100,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 렌더 중에 읽으면 하이드레이션 불일치가 난다).
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authStatus, setAuthStatus] = useState<'checking' | 'ready'>('checking');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [eventsListError, setEventsListError] = useState<string | null>(null);
   // FE-48 — 로그인 사용자의 이벤트 목록(GET /api/events) 조회가 실제로 끝났는가.
   // `authStatus === 'ready'`는 로그인 여부만 확인됐다는 뜻이라, 그 직후엔 `serverIds`가
   // 아직 비어 있을 수 있다 — 계정 삭제 확인 화면이 "이벤트 0개"로 범위를 실제보다
@@ -138,7 +143,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     setSyncedUrlEventId(urlEventId);
     if (urlEventId != null) setSelectedId(urlEventId);
   }
-  const effectiveId = urlEventId ?? selectedId;
+  const effectiveId = urlEventId ?? (s.events.some((event) => event.id === selectedId) ? selectedId : s.events[0]?.id ?? null);
   const ev = s.events.find((e) => e.id === effectiveId) ?? s.events[0];
   // 이벤트별 "되돌리기" 기준선 — 편집을 시작한 시점의 아젠다 스냅샷(공용 데모 시드가 아니다).
   const baselineRef = useRef<Map<number, Session[]>>(new Map());
@@ -208,13 +213,16 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       try {
         me = await fetchCurrentUser();
       } catch (e) {
-        console.warn('로그인 상태 확인 실패(게스트로 취급):', e);
+        if (!cancelled) setAuthError(requestFailureMessage(e, '로그인 상태를 확인하지 못했습니다'));
+        return;
       }
       if (cancelled) return;
       setUser(me);
       setAuthStatus('ready');
 
       if (me) {
+        // 로그인 계정에 시드/게스트 행사를 섞지 않는다. 조회 중 UI는 StudioFrame이 가린다.
+        setS((prev) => ({ ...prev, events: [] }));
         // FE-39 — 로그인 직후 게스트 워크스페이스에 가져올 게 있으면 묻는다.
         // localRef가 있는 항목만(게스트가 실제로 만든 이벤트) — 시드는 없다.
         // localStorage만 읽는 동기 작업이라 아래 네트워크 조회를 기다릴 이유가
@@ -227,10 +235,15 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         // 그냥 더해진다 — 코드 리뷰 발견). 각자 실패해도 나머지 하나는 그대로 반영되도록
         // try/catch는 분리해 둔다.
         const eventsPromise = fetchStudioEvents();
-        const presetsPromise = fetchStudioPresets();
+        const presetsPromise = fetchStudioPresets().then((presets) => {
+          if (!cancelled && !loggedOutRef.current) {
+            setS((prev) => ({ ...prev, customPresets: presets }));
+            presets.forEach((p) => customPresetIdsRef.current.add(p.id));
+          }
+        }).catch((e) => console.warn('프리셋 목록 조회 실패:', e));
         try {
           const events = await eventsPromise;
-          if (!cancelled) {
+          if (!cancelled && !loggedOutRef.current) {
             // 상세를 이미 불러온 이벤트가 있다면(상세 조회가 목록보다 먼저 끝난 경우) 그
             // 값을 목록의 빈 값으로 덮어쓰지 않는다(위 detailLoadedRef 주석 참조) —
             // mergeDetailLoadedEvents 참조.
@@ -242,25 +255,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
             setEventsListLoaded(true);
           }
         } catch (e) {
-          // 목록을 못 받아도 화면이 완전히 막히지는 않는다 — 시드가 그대로 보인다.
-          // 재시도 UI는 이번 범위 밖(FE-15 완료 기준은 생성·재조회 왕복까지다).
-          // eventsListLoaded는 여기서 true로 올리지 않는다 — serverIds가 실패 전
-          // 값(보통 빈 Set) 그대로라, true로 올리면 계정 삭제 확인 화면이 "이벤트
-          // 0개"를 실제로 다 센 값처럼 보여준다.
-          console.warn('이벤트 목록 조회 실패:', e);
-        }
-        try {
-          // 서버에 저장된 추출 프리셋을 목록에 합친다(FE-40) — 안 하면 "새로고침해도
-          // 프리셋이 목록에 남아 있다"는 완료 기준이 성립하지 않는다(내장은 이미
-          // `PRESETS` 상수에 있으니 서버 응답에서 'extracted' origin만 가져온다).
-          const presets = await presetsPromise;
+          // 실패를 빈 계정이나 예시 행사로 대신하지 않는다. 완료 표시는 성공 때만 한다.
           if (!cancelled && !loggedOutRef.current) {
-            setS((prev) => ({ ...prev, customPresets: presets }));
-            presets.forEach((p) => customPresetIdsRef.current.add(p.id));
+            setEventsListError(requestFailureMessage(e, '행사 목록을 불러오지 못했습니다'));
           }
-        } catch (e) {
-          console.warn('프리셋 목록 조회 실패:', e);
         }
+        await presetsPromise;
       } else {
         const stored = readGuestWorkspace();
         if (stored && !cancelled) setS((prev) => ({ ...prev, events: stored }));
@@ -332,7 +332,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
           ? 'notfound'
           : effectiveId === errorId
             ? 'error'
-            : serverIds.has(effectiveId)
+            : user || serverIds.has(effectiveId)
               ? 'loading'
               : isKnownLocally
                 ? 'idle'
@@ -347,11 +347,12 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
   // 버려졌다(FE-24 ③ 검증 중 발견 — 새로고침하면 방금 저장한 세션이 화면에서
   // 사라지지만 D1엔 멀쩡히 남아 있는 것으로 확인).
   useEffect(() => {
+    if (authStatus !== 'ready' || authError) return;
     if (effectiveId == null || detailLoadedRef.current.has(effectiveId)) return;
     let cancelled = false;
     fetchStudioEvent(effectiveId)
       .then((real) => {
-        if (cancelled) return;
+        if (cancelled || (user && loggedOutRef.current)) return;
         detailLoadedRef.current.add(effectiveId);
         setDetailLoadedIds((prev) => new Set(prev).add(effectiveId));
         setS((prev) => {
@@ -365,7 +366,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         knownSessionIdsRef.current.set(effectiveId, new Set(real.sessions.map((sess) => sess.id)));
       })
       .catch((e) => {
-        if (cancelled) return;
+        if (cancelled || (user && loggedOutRef.current)) return;
         // 순수 로컬 이벤트(목업 시드 또는 방금 만든 새 이벤트, serverIds에 없음)는
         // 서버에 없는 게 정상 경로라 조용히 로컬로 남는다. `serverIds`에 이미 있는
         // (목록 조회로 존재가 확인된) 이벤트는 isKnownLocally가 true여도 정상 경로가
@@ -376,7 +377,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
         // notFound가 아니라 별도 에러 상태로 알린다(전에는 여기가 'loading'에 계속
         // 머물러 무한 스피너가 됐다 — 교차 리뷰 발견).
         console.warn('스튜디오 이벤트 실측 조회 실패:', e);
-        if (isKnownLocally && !serverIds.has(effectiveId)) return;
+        if (!user && isKnownLocally && !serverIds.has(effectiveId)) return;
         if (e instanceof ApiClientError && e.status === 404) {
           setNotFoundId(effectiveId);
         } else {
@@ -386,9 +387,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [effectiveId, isKnownLocally, knownSessionIdsRef, serverIds]);
+  }, [authStatus, authError, user, effectiveId, isKnownLocally, knownSessionIdsRef, serverIds]);
 
   useEffect(() => {
+    if (authStatus !== 'ready' || authError) return;
     // 이벤트 목록에 더는 없는 기준선은 정리한다 — 방치하면 세션 내내 Map이 계속 쌓인다.
     const validIds = new Set(s.events.map((e) => e.id));
     for (const id of baselineRef.current.keys()) {
@@ -399,10 +401,10 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     // 목록 조회가 만든 빈 세션 스텁을 "원래 상태"로 잘못 기억해, 상세를 다 읽은
     // 뒤에 "아젠다 되돌리기"를 눌러도 서버의 기존 세션을 지우는 배열로 되돌아간다
     // (팀원 코드리뷰가 PR #63에서 발견).
-    if (serverIds.has(effectiveId) && !detailLoadedIds.has(effectiveId)) return;
+    if ((user || serverIds.has(effectiveId)) && !detailLoadedIds.has(effectiveId)) return;
     const found = s.events.find((e) => e.id === effectiveId);
     if (found) baselineRef.current.set(effectiveId, found.sessions);
-  }, [effectiveId, s.events, serverIds, detailLoadedIds]);
+  }, [authStatus, authError, user, effectiveId, s.events, serverIds, detailLoadedIds]);
 
   const patchEvent: PatchEventFn = useCallback(
     (p) => {
@@ -616,6 +618,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       loadStatus,
       user,
       authStatus,
+      authError,
+      eventsListError,
       logout,
       deleteAccount,
       createEvent,
@@ -644,6 +648,8 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
       loadStatus,
       user,
       authStatus,
+      authError,
+      eventsListError,
       logout,
       deleteAccount,
       createEvent,

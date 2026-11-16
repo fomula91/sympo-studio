@@ -446,7 +446,7 @@ export default function ConsoleScreen({
         })}
       </div>
 
-      {list.length === 0 ? <EmptyState>조건에 맞는 이벤트가 없습니다.</EmptyState> : null}
+      {list.length === 0 ? <EmptyState>{s.events.length === 0 ? '아직 만든 행사가 없습니다. 새 이벤트를 만들어 시작하세요.' : '조건에 맞는 이벤트가 없습니다.'}</EmptyState> : null}
 
       <div
         style={{
