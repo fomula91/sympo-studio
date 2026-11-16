@@ -12,8 +12,8 @@ import { useStudioShell } from '../model/useStudioShell';
 const BULK_ACTIONS = ['공개', '초안', '보관', '삭제'];
 const PUBLIC_HOST = 'sympo.superjacob.com';
 
-export default function StudioShell({ children, preview, accountMenu, s, ev, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds }: StudioShellProps) {
- const { pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, createExpired, creating, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, handleCreateEvent, goTo, crumb, heading } = useStudioShell({s, ev, presets, patch, setEventStatus, serverIds, createEvent});
+export default function StudioShell({ children, preview, accountMenu, s, ev, effectiveId, presets, patch, resetSessions, createEvent, isServerEvent, setEventStatus, serverIds }: StudioShellProps) {
+ const { pathname, statusPending, copied, bulkPending, bulkResult, confirmDeleteArmed, armBulkDelete, disarmBulkDelete, createError, createExpired, creating, inEditor, screenKind, canPublish, handlePublish, handleUnpublish, handleCopyUrl, handleBulkAction, handleCreateEvent, goTo, crumb, heading } = useStudioShell({s, ev, effectiveId, presets, patch, setEventStatus, serverIds, createEvent});
 return (
     <div
       style={{

@@ -27,6 +27,7 @@ import type { Preset } from "@fe/entities/theme";
 interface StudioContextValue {
   s: StudioState;
   ev: EventItem;
+  effectiveId: number | null;
   presets: Preset[];
   patch: PatchFn;
   patchEvent: PatchEventFn;
@@ -606,6 +607,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     () => ({
       s,
       ev,
+      effectiveId,
       presets,
       patch,
       patchEvent,
@@ -633,6 +635,7 @@ export function StudioProvider({ children }: { children: React.ReactNode }) {
     [
       s,
       ev,
+      effectiveId,
       presets,
       patch,
       patchEvent,

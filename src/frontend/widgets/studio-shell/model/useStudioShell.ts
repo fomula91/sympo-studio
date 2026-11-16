@@ -20,8 +20,8 @@ function failureReasonText(reason: unknown): string {
 // StudioShellProps 전체가 아니라 이 훅이 실제로 쓰는 필드만 받는다 — children·
 // preview·accountMenu·resetSessions·isServerEvent는 컴포넌트가 직접 쓰고 이
 // 훅에는 전달되지 않는다(리뷰 발견: 예전엔 받기만 하고 안 썼다).
-type UseStudioShellProps = Pick<StudioShellProps, 's' | 'ev' | 'presets' | 'patch' | 'setEventStatus' | 'serverIds' | 'createEvent'>;
-export function useStudioShell({s, ev, presets, patch, setEventStatus, serverIds, createEvent}: UseStudioShellProps) {
+type UseStudioShellProps = Pick<StudioShellProps, 's' | 'ev' | 'effectiveId' | 'presets' | 'patch' | 'setEventStatus' | 'serverIds' | 'createEvent'>;
+export function useStudioShell({s, ev, effectiveId, presets, patch, setEventStatus, serverIds, createEvent}: UseStudioShellProps) {
   const router = useRouter();
   const pathname = usePathname();
   // StudioShell은 화면 전환에도 언마운트되지 않는 공용 레이아웃이라, 진행 중인
@@ -307,7 +307,9 @@ export function useStudioShell({s, ev, presets, patch, setEventStatus, serverIds
       section:
         target === 'theme' ? 'theme' : target === 'editor' ? (st.section === 'theme' ? 'agenda' : st.section) : st.section,
     }));
-    router.push(target === 'theme' || target === 'editor' ? `/events/${ev.id}/edit` : `/${target}`);
+    // 상세 조회 전 ev는 시드일 수 있으므로 URL/마지막 선택 id를 우선한다.
+    const eventId = effectiveId ?? ev.id;
+    router.push(target === 'theme' || target === 'editor' ? `/events/${eventId}/edit` : `/${target}`);
   };
 
   const dateCode = ev.date.replace(/-/g, '').slice(2);
