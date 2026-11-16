@@ -5,6 +5,8 @@ export interface StudioState {
   viewerOpen: boolean;
   section: Section;
   events: EventItem[];
+  query: string;
+  status: string;
   bulk: boolean;
   sel: number[];
   saved: string;

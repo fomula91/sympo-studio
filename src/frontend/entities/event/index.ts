@@ -36,3 +36,4 @@ export { fetchPublicReport } from './api/participant';
 export type { EventInfo } from './model/types';
 export { deleteStudioEvent } from './api/studio';
 export { METRICS } from './model/sample-metrics';
+export { filterEvents } from './lib/filter-events';

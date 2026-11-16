@@ -7,7 +7,7 @@ import { ApiClientError } from "@fe/shared/api/http";
 import { requestFailureMessage } from '@fe/shared/api/failure-message';
 import { useArmedAction } from "@fe/shared/lib/state/useArmedAction";
 
-import { deleteStudioEvent, patchStudioEventStatus } from "@fe/entities/event";
+import { deleteStudioEvent, filterEvents, patchStudioEventStatus } from "@fe/entities/event";
 import { contrastAllPass } from "@fe/shared/lib/theme/palette";
 
 import type { StudioShellProps } from './props';
@@ -323,7 +323,7 @@ export function useStudioShell({s, ev, effectiveId, presets, patch, setEventStat
           : 'REPORT';
   const heading =
     screenKind === 'console'
-      ? `이벤트 ${s.events.length}건`
+      ? `이벤트 ${filterEvents(s.events, s.query, s.status).length}건`
       : screenKind === 'editor'
         ? `${dateCode} ${ev.title} · ${ev.venue}`
         : screenKind === 'viewer'

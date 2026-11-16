@@ -5,6 +5,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { Badge, type BadgeTone } from "@fe/shared/ui/Badge";
 import { EmptyState } from "@fe/shared/ui/EmptyState";
 import { EVENT_STATUSES as STATUS } from "@fe/entities/event";
+import { filterEvents as filterEventList } from '@fe/entities/event';
 import type { AuthUser } from "@fe/entities/account";
 import type { EventItem } from "@fe/entities/event";
 import type { PatchFn, SortKey, StudioState } from "../model/state";
@@ -179,12 +180,7 @@ function ImportBanner({
 }
 
 export function filterEvents(s: StudioState) {
-  const q = s.query.trim().toLowerCase();
-  let list = s.events.filter(
-    (e) =>
-      (s.status === '전체' || e.status === s.status) &&
-      (!q || (e.title + e.brand + e.venue + e.slug + e.dateCode).toLowerCase().includes(q)),
-  );
+  let list = filterEventList(s.events, s.query, s.status);
   if (s.sort === '행사일') list = list.toSorted((a, b) => a.dateCode.localeCompare(b.dateCode));
   if (s.sort === '이름') list = list.toSorted((a, b) => a.title.localeCompare(b.title));
   return list;
@@ -213,6 +209,8 @@ export default function ConsoleScreen({
 }) {
   const router = useRouter();
   const list = filterEvents(s);
+  // 다른 상태 탭의 건수도 볼 수 있도록 검색어만 적용한 결과에서 각각 집계한다.
+  const searched = filterEventList(s.events, s.query);
 
   return (
     <div style={{ padding: '24px 24px 120px', maxWidth: 1400 }}>
@@ -300,7 +298,7 @@ export default function ConsoleScreen({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
         {['전체', ...STATUS].map((x) => {
           const on = s.status === x;
-          const count = x === '전체' ? s.events.length : s.events.filter((e) => e.status === x).length;
+          const count = x === '전체' ? searched.length : searched.filter((e) => e.status === x).length;
           return (
             <button
               key={x}
@@ -459,7 +457,7 @@ export default function ConsoleScreen({
           letterSpacing: '0.04em',
         }}
       >
-        {list.length} / {s.events.length} EVENTS · 가상 스크롤
+        {list.length} / {searched.length} EVENTS · 가상 스크롤
       </div>
     </div>
   );

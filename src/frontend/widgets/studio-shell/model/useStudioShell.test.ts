@@ -14,7 +14,11 @@ const navigation = vi.hoisted(() => ({ pathname: '/events/1/edit', push: vi.fn()
 vi.mock('next/navigation', () => ({ usePathname: () => navigation.pathname, useRouter: () => ({ push: navigation.push }) }));
 vi.mock('@fe/shared/lib/state/useArmedAction', () => ({ useArmedAction: () => [null, vi.fn(), vi.fn()] }));
 vi.mock('@fe/shared/lib/theme/palette', () => ({ contrastAllPass: () => true }));
-vi.mock('@fe/entities/event', () => ({ deleteStudioEvent: vi.fn(), patchStudioEventStatus: vi.fn() }));
+vi.mock('@fe/entities/event', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@fe/entities/event')>(),
+  deleteStudioEvent: vi.fn(),
+  patchStudioEventStatus: vi.fn(),
+}));
 
 beforeEach(() => {
   navigation.pathname = '/events/1/edit';
@@ -26,7 +30,7 @@ afterEach(() => vi.restoreAllMocks());
 it.each(['handlePublish', 'handleUnpublish'] as const)('%s 실패 시 서버의 입력 검증 사유를 유지한다', async (action) => {
   const patch = vi.fn();
   const ev = { id: 1, title: '', venue: '', slug: 'test', presetId: 'test', mode: 'light', date: '2026-10-26', dateCode: '261026' } as StudioShellProps['ev'];
-  const s = { events: [ev], sel: [], viewerOpen: false, section: 'basic', bulk: false, saved: '방금 저장됨' } as StudioShellProps['s'];
+  const s = { events: [ev], query: '', status: '전체', sel: [], viewerOpen: false, section: 'basic', bulk: false, saved: '방금 저장됨' } as StudioShellProps['s'];
   const setEventStatus = vi.fn().mockRejectedValue(new ApiClientError(400, 'title은 필수입니다.'));
   const shell = createShell({ s, ev, effectiveId: 1, presets: [{ id: 'test', label: 'test', h: 200, c: 0.1 }], patch, setEventStatus, serverIds: new Set([1]), createEvent: vi.fn() });
   await shell[action]();
@@ -38,7 +42,7 @@ it.each(['handlePublish', 'handleUnpublish'] as const)('%s 실패 시 서버의 
 
 function navigationShell(effectiveId: number | null, displayedId: number) {
   const ev = { id: displayedId, title: '테스트 행사', venue: '', date: '2026-11-16', presetId: 'test', mode: 'light' } as StudioShellProps['ev'];
-  const s = { events: [ev], sel: [], viewerOpen: false, section: 'agenda', bulk: false, saved: '방금 저장됨' } as StudioShellProps['s'];
+  const s = { events: [ev], query: '', status: '전체', sel: [], viewerOpen: false, section: 'agenda', bulk: false, saved: '방금 저장됨' } as StudioShellProps['s'];
   return createShell({ s, ev, effectiveId, presets: [], patch: vi.fn(), setEventStatus: vi.fn(), serverIds: new Set(), createEvent: vi.fn() });
 }
 
@@ -79,4 +83,20 @@ it('선택 id가 없을 때는 표시 중인 행사로 이동한다', () => {
 it.each(['console', 'report'] as const)('%s 이동은 행사 id와 관계없이 기존 경로를 쓴다', (target) => {
   navigationShell(27, 0).goTo(target);
   expect(navigation.push).toHaveBeenCalledExactlyOnceWith(`/${target}`);
+});
+
+it.each([
+  ['없는검색어', '전체', 0],
+  ['  aurora  ', '전체', 2],
+  ['aurora', '초안', 1],
+  ['aurora', '보관', 0],
+  ['', '전체', 3],
+  ['', '공개', 2],
+])('콘솔 헤더는 검색어 %s · 상태 %s의 목록 건수를 표시한다', (query, status, count) => {
+  navigation.pathname = '/console';
+  const ev = { id: 1, title: '테스트 행사', brand: 'AURORA', venue: '서울', slug: 'first', date: '2026-11-16', dateCode: '261116', status: '초안', presetId: 'test', mode: 'light' } as StudioShellProps['ev'];
+  const events = [ev, { ...ev, id: 2, status: '공개' }, { ...ev, id: 3, brand: 'PRIME', status: '공개' }];
+  const s = { events, query, status, sel: [], viewerOpen: false, section: 'agenda', bulk: false, saved: '방금 저장됨' } as StudioShellProps['s'];
+  const shell = createShell({ s, ev, effectiveId: 1, presets: [], patch: vi.fn(), setEventStatus: vi.fn(), serverIds: new Set(), createEvent: vi.fn() });
+  expect(shell.heading).toBe(`이벤트 ${count}건`);
 });
