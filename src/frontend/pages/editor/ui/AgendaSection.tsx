@@ -47,7 +47,8 @@ export default function AgendaSection({
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      patch({ dragIdx: -1, saved: savingMessage(isServerEvent) });
+      // 저장 상태는 실제 순서가 바뀐 move에서만 갱신한다.
+      patch({ dragIdx: -1 });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
